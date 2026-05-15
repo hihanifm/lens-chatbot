@@ -56,7 +56,9 @@ export class ClineSdkAgentRunner implements AgentRunner {
         log.info("agent:done", { ms: Date.now() - startedAt });
         done = true;
       } else if (event.type === "run-failed") {
-        log.error("agent:run-failed", { error: event.error ?? event.message ?? event });
+        const errMsg = event.error ?? event.message ?? "Agent run failed";
+        log.error("agent:run-failed", { error: errMsg });
+        events.push({ type: "error", content: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg) });
         done = true;
       } else {
         log.debug("agent:event", { type: event.type });
