@@ -1,5 +1,6 @@
 import { Agent } from "@cline/sdk";
 import type { AgentRunner, AgentEvent } from "./agentRunner.js";
+import { log } from "../logger.js";
 
 const SYSTEM_PROMPT = `You are analyzing a bug report. Use only files in this workspace.
 Do not modify files. Do not invent missing facts.
@@ -39,17 +40,29 @@ export class ClineSdkAgentRunner implements AgentRunner {
     const agent = this.makeAgent();
     const events: AgentEvent[] = [];
     let done = false;
+    let firstToken = false;
+    const startedAt = Date.now();
+
+    log.info("agent:start", { model: process.env.LLM_MODEL, files: input.files.length, question: input.question.slice(0, 60) });
 
     agent.subscribe((event: any) => {
       if (event.type === "assistant-text-delta" && event.text) {
+        if (!firstToken) {
+          log.debug("agent:first-token", { ms: Date.now() - startedAt });
+          firstToken = true;
+        }
         events.push({ type: "text", content: event.text });
       } else if (event.type === "completed" || event.type === "done") {
+        log.info("agent:done", { ms: Date.now() - startedAt });
         done = true;
+      } else {
+        log.debug("agent:event", { type: event.type });
       }
     });
 
     const prompt = buildPrompt(input);
     const runPromise = agent.run(prompt).catch((err: Error) => {
+      log.error("agent:run-error", { error: err.message });
       events.push({ type: "error", content: err.message });
       done = true;
     });
