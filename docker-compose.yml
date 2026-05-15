@@ -21,6 +21,8 @@ services:
       - ./static:/app/static:ro
       - lens-data-dev:/app/data
     env_file:
+      - path: .env.example
+        required: true
       - path: .env
         required: false
     environment:
@@ -44,6 +46,8 @@ services:
     volumes:
       - lens-data-prod:/app/data
     env_file:
+      - path: .env.example
+        required: true
       - path: .env
         required: false
     environment:

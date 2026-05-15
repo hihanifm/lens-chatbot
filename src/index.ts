@@ -1,4 +1,6 @@
-import "dotenv/config";
+import { config as dotenv } from "dotenv";
+import { existsSync } from "fs";
+dotenv({ path: existsSync(".env") ? ".env" : ".env.example" });
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
