@@ -28,7 +28,7 @@ function buildPrompt(input: {
 export class ClineSdkAgentRunner implements AgentRunner {
   private makeAgent() {
     return new Agent({
-      providerId: "openai-compatible",
+      providerId: (process.env.LLM_PROVIDER ?? "ollama") as any,
       modelId: process.env.LLM_MODEL!,
       apiKey: process.env.LLM_API_KEY!,
       baseUrl: process.env.LLM_BASE_URL!,
@@ -45,7 +45,7 @@ export class ClineSdkAgentRunner implements AgentRunner {
     const startedAt = Date.now();
 
     log.info("agent:start", { model: process.env.LLM_MODEL, files: input.files.length, question: input.question.slice(0, 60) });
-    events.push({ type: "status", content: `⚙ model: ${process.env.LLM_MODEL} | files: ${input.files.length} | endpoint: ${process.env.LLM_BASE_URL}` });
+    events.push({ type: "status", content: `⚙ provider: ${process.env.LLM_PROVIDER ?? "ollama"} | model: ${process.env.LLM_MODEL} | files: ${input.files.length} | endpoint: ${process.env.LLM_BASE_URL}` });
 
     agent.subscribe((event: any) => {
       if (event.type === "assistant-text-delta" && event.text) {
