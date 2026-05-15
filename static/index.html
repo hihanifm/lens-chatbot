@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lens Chatbot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; height: 100vh; display: flex; }
+    #sidebar { width: 260px; background: #1e1e2e; color: #cdd6f4; padding: 16px; overflow-y: auto; flex-shrink: 0; }
+    #sidebar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #a6adc8; margin-bottom: 12px; }
+    #session-list { list-style: none; }
+    #session-list li { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-bottom: 4px; }
+    #session-list li:hover, #session-list li.active { background: #313244; }
+    #session-list .bug-id { font-weight: 600; color: #89b4fa; }
+    #session-list .date { font-size: 11px; color: #6c7086; margin-top: 2px; }
+    #main { flex: 1; display: flex; flex-direction: column; }
+    #header { background: white; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; }
+    #bug-id-input { border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px; font-size: 14px; width: 200px; }
+    #load-bug-btn { background: #89b4fa; color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
+    #load-bug-btn:hover { background: #74a7f5; }
+    #bug-info { background: white; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: none; }
+    #bug-info h3 { font-size: 15px; margin-bottom: 8px; }
+    #bug-info p { font-size: 13px; color: #555; margin-bottom: 10px; }
+    #attachments { display: flex; flex-wrap: wrap; gap: 8px; }
+    .attachment-btn { background: #f0f4ff; border: 1px solid #c7d2f5; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+    .attachment-btn:hover { background: #dde7ff; }
+    .attachment-btn.downloaded { background: #d4edda; border-color: #a8d5b5; }
+    #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .msg.user { background: #89b4fa; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .msg.assistant { background: white; color: #1e1e2e; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .msg.streaming { opacity: 0.85; }
+    #input-area { background: white; padding: 16px 20px; border-top: 1px solid #e0e0e0; display: flex; gap: 10px; }
+    #question-input { flex: 1; border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px; font-size: 14px; resize: none; height: 44px; font-family: inherit; }
+    #send-btn { background: #89b4fa; color: white; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 14px; }
+    #send-btn:disabled { opacity: 0.5; cursor: default; }
+    #send-btn:hover:not(:disabled) { background: #74a7f5; }
+    .empty-state { text-align: center; color: #aaa; margin: auto; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Past Sessions</h2>
+  <ul id="session-list"></ul>
+</div>
+
+<div id="main">
+  <div id="header">
+    <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
+    <button id="load-bug-btn">Load Bug</button>
+  </div>
+
+  <div id="bug-info">
+    <h3 id="bug-title"></h3>
+    <p id="bug-description"></p>
+    <div id="attachments"></div>
+  </div>
+
+  <div id="chat">
+    <div class="empty-state">Load a bug and select an attachment to start analysis</div>
+  </div>
+
+  <div id="input-area">
+    <textarea id="question-input" placeholder="Ask a question about the log..." disabled></textarea>
+    <button id="send-btn" disabled>Send</button>
+  </div>
+</div>
+
+<script>
+  let currentSessionId = null;
+
+  async function loadSessions() {
+    const res = await fetch('/sessions');
+    const list = await res.json();
+    const ul = document.getElementById('session-list');
+    ul.innerHTML = '';
+    for (const s of list) {
+      const li = document.createElement('li');
+      li.innerHTML = `<div class="bug-id">${s.bug_id}</div><div class="date">${new Date(s.created_at).toLocaleString()}</div>`;
+      li.onclick = () => resumeSession(s.id);
+      if (s.id === currentSessionId) li.classList.add('active');
+      ul.appendChild(li);
+    }
+  }
+
+  async function resumeSession(sessionId) {
+    const res = await fetch(`/session/${sessionId}`);
+    const { session, messages } = await res.json();
+    currentSessionId = sessionId;
+
+    const chat = document.getElementById('chat');
+    chat.innerHTML = '';
+    for (const m of messages) {
+      appendMessage(m.role, m.content);
+    }
+
+    document.getElementById('question-input').disabled = false;
+    document.getElementById('send-btn').disabled = false;
+    loadSessions();
+  }
+
+  document.getElementById('load-bug-btn').onclick = async () => {
+    const bugId = document.getElementById('bug-id-input').value.trim();
+    if (!bugId) return;
+
+    const res = await fetch('/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bugId }),
+    });
+    const { session, bug } = await res.json();
+    currentSessionId = session.id;
+
+    document.getElementById('bug-title').textContent = bug.title;
+    document.getElementById('bug-description').textContent = bug.description;
+
+    const attDiv = document.getElementById('attachments');
+    attDiv.innerHTML = '';
+    for (const att of bug.attachments) {
+      const btn = document.createElement('button');
+      btn.className = 'attachment-btn';
+      btn.textContent = `📎 ${att.name}`;
+      btn.onclick = async () => {
+        btn.textContent = `⏬ ${att.name}`;
+        btn.disabled = true;
+        await fetch(`/session/${currentSessionId}/attachment/${att.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attName: att.name }),
+        });
+        btn.textContent = `✅ ${att.name}`;
+        btn.classList.add('downloaded');
+        btn.disabled = false;
+        document.getElementById('question-input').disabled = false;
+        document.getElementById('send-btn').disabled = false;
+      };
+      attDiv.appendChild(btn);
+    }
+
+    document.getElementById('bug-info').style.display = 'block';
+    document.getElementById('chat').innerHTML = '';
+    loadSessions();
+  };
+
+  document.getElementById('send-btn').onclick = sendQuestion;
+  document.getElementById('question-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+  });
+
+  async function sendQuestion() {
+    const input = document.getElementById('question-input');
+    const question = input.value.trim();
+    if (!question || !currentSessionId) return;
+
+    input.value = '';
+    document.getElementById('send-btn').disabled = true;
+
+    appendMessage('user', question);
+    const assistantEl = appendMessage('assistant', '', true);
+
+    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'text') {
+        assistantEl.textContent += data.content;
+        assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else if (data.type === 'done' || data.type === 'error') {
+        assistantEl.classList.remove('streaming');
+        es.close();
+        document.getElementById('send-btn').disabled = false;
+      }
+    };
+
+    es.onerror = () => {
+      assistantEl.textContent += '\n[Connection error]';
+      assistantEl.classList.remove('streaming');
+      es.close();
+      document.getElementById('send-btn').disabled = false;
+    };
+  }
+
+  function appendMessage(role, content, streaming = false) {
+    const chat = document.getElementById('chat');
+    const el = document.createElement('div');
+    el.className = `msg ${role}${streaming ? ' streaming' : ''}`;
+    el.textContent = content;
+    chat.appendChild(el);
+    el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    return el;
+  }
+
+  loadSessions();
+</script>
+</body>
+</html>
