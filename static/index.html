@@ -42,9 +42,11 @@
     #attachments { display: flex; flex-wrap: wrap; gap: 8px; }
 
     /* Attachment buttons — pill shape */
-    .attachment-btn { background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 12px; font-weight: 500; font-family: inherit; color: #374151; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
-    .attachment-btn:hover { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
-    .attachment-btn.downloaded { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+    .attachment-btn { background: #eef2ff; border: 1.5px solid #a5b4fc; border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; color: #4338ca; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(99,102,241,0.15); }
+    .attachment-btn:hover { background: #e0e7ff; border-color: #6366f1; color: #3730a3; box-shadow: 0 2px 6px rgba(99,102,241,0.25); transform: translateY(-1px); }
+    .attachment-btn.downloaded { background: #f0fdf4; border-color: #86efac; color: #15803d; box-shadow: none; transform: none; cursor: default; font-weight: 500; }
+    .attachment-btn.dl-link { background: #f0fdf4; border-color: #86efac; color: #15803d; font-weight: 500; }
+    .attachment-hint { font-size: 11px; color: #9ca3af; font-style: italic; margin-bottom: 8px; }
 
     /* Comments */
     #comments { display: flex; flex-direction: column; gap: 10px; }
@@ -93,6 +95,7 @@
     <div class="bug-meta" id="bug-meta"></div>
     <div id="bug-description"></div>
     <div class="section-title">Attachments</div>
+    <div class="attachment-hint">Click a file to download it before running analysis</div>
     <div id="attachments"></div>
     <div class="section-title" id="comments-title" style="display:none"></div>
     <div id="comments"></div>
@@ -209,12 +212,20 @@
     loadSessions();
   };
 
+  function formatSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   function makeAttachmentBtn(att) {
     const btn = document.createElement('button');
     btn.className = 'attachment-btn';
-    btn.textContent = `📎 ${att.name}`;
+    const sizeLabel = att.size ? ` · ${formatSize(att.size)}` : '';
+    btn.textContent = `⬇ ${att.name}${sizeLabel}`;
     btn.onclick = async () => {
-      btn.textContent = `⏬ ${att.name}`;
+      btn.textContent = `⏬ ${att.name}${sizeLabel}`;
       btn.disabled = true;
       const attRes = await fetch(`/session/${currentSessionId}/attachment/${att.id}`, {
         method: 'POST',
@@ -224,13 +235,12 @@
       if (!attRes.ok) {
         const attBody = await attRes.json().catch(() => ({}));
         appendMessage('error', `✗ Download failed: ${attBody.error ?? attRes.statusText} (HTTP ${attRes.status})`);
-        btn.textContent = `📎 ${att.name}`;
+        btn.textContent = `⬇ ${att.name}${sizeLabel}`;
         btn.disabled = false;
         return;
       }
-      btn.textContent = `✅ ${att.name}`;
+      btn.textContent = `✅ ${att.name}${sizeLabel}`;
       btn.classList.add('downloaded');
-      btn.disabled = false;
       const dl = document.createElement('a');
       dl.href = `/session/${currentSessionId}/attachment/download?name=${encodeURIComponent(att.name)}`;
       dl.download = att.name;
