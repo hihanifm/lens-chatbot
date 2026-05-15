@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import type { BugTracker } from "./bugTracker.js";
+import type { BugTracker, BugDetails } from "./bugTracker.js";
 import { log } from "../logger.js";
 
 const WORKSPACES_ROOT = process.env.DATA_DIR
@@ -31,17 +31,14 @@ export async function downloadAttachment(
 
 export async function saveBugSummary(
   workspacePath: string,
-  bugId: string,
-  title: string,
-  description: string
+  bug: BugDetails
 ): Promise<void> {
-  const raw = { id: bugId, title, description };
   await fs.writeFile(
     path.join(workspacePath, "bug.json"),
-    JSON.stringify(raw, null, 2)
+    JSON.stringify(bug, null, 2)
   );
   await fs.writeFile(
     path.join(workspacePath, "bug_summary.md"),
-    `# ${title}\n\n**ID:** ${bugId}\n\n${description}\n`
+    `# ${bug.title}\n\n**ID:** ${bug.id}\n\n${bug.description}\n`
   );
 }

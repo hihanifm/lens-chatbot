@@ -33,7 +33,7 @@ app.post("/session", async (req, res) => {
   const bug = await tracker.getBug(bugId);
   log.debug("bug:fetched", { bugId, title: bug.title, attachments: bug.attachments.length });
   const workspacePath = await getOrCreateWorkspace(bugId);
-  await saveBugSummary(workspacePath, bug.id, bug.title, bug.description);
+  await saveBugSummary(workspacePath, bug);
 
   const session = sessions.create(bugId, workspacePath);
   log.info("session:created", { sessionId: session.id, workspace: workspacePath });
@@ -45,11 +45,18 @@ app.get("/sessions", (_req, res) => {
   res.json(sessions.list());
 });
 
-// Get session state + message history
-app.get("/session/:id", (req, res) => {
+// Get session state + message history + bug details
+app.get("/session/:id", async (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: "session not found" });
-  res.json({ session, messages: messages.list(req.params.id) });
+  let bug = null;
+  try {
+    const raw = await import("fs/promises").then(fs => fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+    bug = JSON.parse(raw);
+  } catch {
+    // bug.json missing or unreadable — omit gracefully
+  }
+  res.json({ session, messages: messages.list(req.params.id), bug });
 });
 
 // Serve attachment file to browser for local download

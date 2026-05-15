@@ -128,42 +128,10 @@
     }
   }
 
-  async function resumeSession(sessionId) {
-    const res = await fetch(`/session/${sessionId}`);
-    const { session, messages } = await res.json();
-    currentSessionId = sessionId;
+  const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-    const chat = document.getElementById('chat');
-    chat.innerHTML = '';
-    for (const m of messages) {
-      appendMessage(m.role, m.content);
-    }
-
-    document.getElementById('question-input').disabled = false;
-    document.getElementById('send-btn').disabled = false;
-    loadSessions();
-  }
-
-  document.getElementById('load-bug-btn').onclick = async () => {
-    const bugId = document.getElementById('bug-id-input').value.trim();
-    if (!bugId) return;
-
-    const res = await fetch('/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bugId }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      appendMessage('error', `✗ Failed to load bug: ${body.error ?? res.statusText} (HTTP ${res.status})`);
-      return;
-    }
-    const { session, bug } = body;
-    currentSessionId = session.id;
-
+  function renderBugPanel(bug) {
     document.getElementById('bug-title').textContent = bug.title;
-
-    const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     document.getElementById('bug-meta').innerHTML = `
       <span><span class="label">Author</span>${bug.author}</span>
       <span><span class="label">Owner</span>${bug.owner}</span>
@@ -176,9 +144,7 @@
 
     const attDiv = document.getElementById('attachments');
     attDiv.innerHTML = '';
-    for (const att of bug.attachments) {
-      attDiv.appendChild(makeAttachmentBtn(att));
-    }
+    for (const att of bug.attachments ?? []) attDiv.appendChild(makeAttachmentBtn(att));
 
     const commentsDiv = document.getElementById('comments');
     commentsDiv.innerHTML = '';
@@ -206,8 +172,43 @@
     } else {
       commentsTitle.style.display = 'none';
     }
-
     document.getElementById('bug-info').style.display = 'block';
+  }
+
+  async function resumeSession(sessionId) {
+    const res = await fetch(`/session/${sessionId}`);
+    if (!res.ok) { appendMessage('error', `✗ Failed to load session (HTTP ${res.status})`); return; }
+    const { session, messages, bug } = await res.json();
+    currentSessionId = sessionId;
+
+    if (bug) renderBugPanel(bug);
+
+    const chat = document.getElementById('chat');
+    chat.innerHTML = '';
+    for (const m of messages) appendMessage(m.role, m.content);
+
+    document.getElementById('question-input').disabled = false;
+    document.getElementById('send-btn').disabled = false;
+    loadSessions();
+  }
+
+  document.getElementById('load-bug-btn').onclick = async () => {
+    const bugId = document.getElementById('bug-id-input').value.trim();
+    if (!bugId) return;
+
+    const res = await fetch('/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bugId }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      appendMessage('error', `✗ Failed to load bug: ${body.error ?? res.statusText} (HTTP ${res.status})`);
+      return;
+    }
+    const { session, bug } = body;
+    currentSessionId = session.id;
+    renderBugPanel(bug);
     document.getElementById('chat').innerHTML = '';
     loadSessions();
   };
