@@ -26,6 +26,7 @@ services:
     environment:
       PORT: "3000"
       DATA_DIR: /app/data
+      PUBLIC_URL: "http://localhost:${DEV_PORT:-38001}"
 
   # ── prod ─────────────────────────────────────────────────────────────
   app-prod:
@@ -48,6 +49,7 @@ services:
     environment:
       PORT: "3000"
       DATA_DIR: /app/data
+      PUBLIC_URL: "http://localhost:${PROD_PORT:-38000}"
     restart: unless-stopped
 
 volumes:

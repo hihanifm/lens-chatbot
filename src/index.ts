@@ -106,4 +106,5 @@ app.get("/session/:id/analyze", async (req, res) => {
 });
 
 const port = process.env.PORT ?? 3000;
-app.listen(port, () => console.log(`Lens chatbot running at http://localhost:${port}`));
+const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${port}`;
+app.listen(port, () => console.log(`Lens chatbot listening on port ${port} → ${publicUrl}`));
