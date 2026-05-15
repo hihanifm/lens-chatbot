@@ -50,6 +50,21 @@ app.get("/session/:id", (req, res) => {
   res.json({ session, messages: messages.list(req.params.id) });
 });
 
+// Serve attachment file to browser for local download
+app.get("/session/:id/attachment/download", (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: "session not found" });
+
+  const name = path.basename(req.query.name as string ?? "");
+  if (!name) return res.status(400).json({ error: "name required" });
+
+  const filePath = path.join(session.workspace_path, "attachments", name);
+  log.info("attachment:serve", { sessionId: req.params.id, filePath });
+  res.download(filePath, name, (err) => {
+    if (err) log.error("attachment:serve-error", { filePath, error: err.message });
+  });
+});
+
 // Download attachment into workspace
 app.post("/session/:id/attachment/:attId", async (req, res) => {
   const session = sessions.get(req.params.id);

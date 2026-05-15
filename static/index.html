@@ -147,6 +147,12 @@
         btn.textContent = `✅ ${att.name}`;
         btn.classList.add('downloaded');
         btn.disabled = false;
+        const dl = document.createElement('a');
+        dl.href = `/session/${currentSessionId}/attachment/download?name=${encodeURIComponent(att.name)}`;
+        dl.download = att.name;
+        dl.className = 'attachment-btn';
+        dl.textContent = '⬇ download';
+        btn.insertAdjacentElement('afterend', dl);
         document.getElementById('question-input').disabled = false;
         document.getElementById('send-btn').disabled = false;
       };
