@@ -40,6 +40,7 @@ export class ClineSdkAgentRunner implements AgentRunner {
     const agent = this.makeAgent();
     const events: AgentEvent[] = [];
     let done = false;
+    let errored = false;
     let firstToken = false;
     const startedAt = Date.now();
 
@@ -58,9 +59,10 @@ export class ClineSdkAgentRunner implements AgentRunner {
         events.push({ type: "status", content: `✓ done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s` });
         done = true;
       } else if (event.type === "run-failed") {
-        const errMsg = event.error ?? event.message ?? "Agent run failed";
-        log.error("agent:run-failed", { error: errMsg });
+        log.error("agent:run-failed", { full_event: JSON.stringify(event) });
+        const errMsg = event.error ?? event.message ?? JSON.stringify(event);
         events.push({ type: "error", content: `run-failed: ${typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg)}` });
+        errored = true;
         done = true;
       } else if (event.type === "run-started") {
         events.push({ type: "status", content: "▶ run started" });
@@ -76,6 +78,7 @@ export class ClineSdkAgentRunner implements AgentRunner {
     const runPromise = agent.run(prompt).catch((err: Error) => {
       log.error("agent:run-error", { error: err.message });
       events.push({ type: "error", content: err.message });
+      errored = true;
       done = true;
     });
 
@@ -88,6 +91,6 @@ export class ClineSdkAgentRunner implements AgentRunner {
     }
 
     await runPromise;
-    yield { type: "done", content: "" };
+    if (!errored) yield { type: "done", content: "" };
   }
 }
