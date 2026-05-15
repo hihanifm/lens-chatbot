@@ -4,53 +4,75 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lens Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f5f5f5; height: 100vh; display: flex; }
-    #sidebar { width: 260px; background: #1e1e2e; color: #cdd6f4; padding: 16px; overflow-y: auto; flex-shrink: 0; }
-    #sidebar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #a6adc8; margin-bottom: 12px; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2f5; height: 100vh; display: flex; color: #111827; }
+
+    /* Sidebar */
+    #sidebar { width: 256px; background: #0f1117; color: #e5e7eb; padding: 20px 14px; overflow-y: auto; flex-shrink: 0; }
+    #sidebar h2 { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #4b5563; margin-bottom: 14px; padding: 0 8px; }
     #session-list { list-style: none; }
-    #session-list li { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-bottom: 4px; }
-    #session-list li:hover, #session-list li.active { background: #313244; }
-    #session-list .bug-id { font-weight: 600; color: #89b4fa; }
-    #session-list .date { font-size: 11px; color: #6c7086; margin-top: 2px; }
-    #main { flex: 1; display: flex; flex-direction: column; }
-    #header { background: white; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; }
-    #bug-id-input { border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px; font-size: 14px; width: 200px; }
-    #load-bug-btn { background: #89b4fa; color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
-    #load-bug-btn:hover { background: #74a7f5; }
-    #bug-info { background: white; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: none; max-height: 45vh; overflow-y: auto; }
-    #bug-info h3 { font-size: 15px; margin-bottom: 8px; }
-    .bug-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #555; background: #f8f8f8; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; }
-    .bug-meta span { white-space: nowrap; }
-    .bug-meta .label { color: #999; margin-right: 2px; }
-    .bug-meta .state { font-weight: 600; color: #2d7a2d; }
-    #bug-description { font-size: 13px; color: #333; margin-bottom: 12px; line-height: 1.5; }
-    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin: 12px 0 6px; }
-    #attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
-    .attachment-btn { background: #f0f4ff; border: 1px solid #c7d2f5; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
-    .attachment-btn:hover { background: #dde7ff; }
-    .attachment-btn.downloaded { background: #d4edda; border-color: #a8d5b5; }
+    #session-list li { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; transition: background 0.12s; }
+    #session-list li:hover { background: #1c1f26; }
+    #session-list li.active { background: #1e2a3a; }
+    #session-list .bug-id { font-size: 13px; font-weight: 600; color: #93c5fd; }
+    #session-list .date { font-size: 11px; color: #4b5563; margin-top: 3px; }
+
+    /* Main */
+    #main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+
+    /* Header */
+    #header { background: white; padding: 14px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 10px; z-index: 10; }
+    #bug-id-input { border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 8px 14px; font-size: 14px; font-family: inherit; width: 220px; outline: none; transition: border-color 0.15s; color: #111827; }
+    #bug-id-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+    #load-bug-btn { background: #6366f1; color: white; border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; }
+    #load-bug-btn:hover { background: #4f46e5; }
+
+    /* Bug info */
+    #bug-info { background: white; padding: 18px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: none; max-height: 42vh; overflow-y: auto; border-bottom: 1px solid #f3f4f6; }
+    #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 10px; line-height: 1.4; }
+    .bug-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 12px; font-size: 12px; }
+    .bug-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .bug-meta .label { color: #9ca3af; font-weight: 500; }
+    .bug-meta .state { background: #d1fae5; color: #065f46; font-weight: 600; font-size: 11px; padding: 2px 9px; border-radius: 999px; }
+    #bug-description { font-size: 13px; color: #4b5563; line-height: 1.65; margin-bottom: 14px; }
+    .section-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: #9ca3af; margin: 14px 0 8px; }
+    #attachments { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    /* Attachment buttons — pill shape */
+    .attachment-btn { background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 12px; font-weight: 500; font-family: inherit; color: #374151; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+    .attachment-btn:hover { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+    .attachment-btn.downloaded { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+
+    /* Comments */
     #comments { display: flex; flex-direction: column; gap: 10px; }
-    .comment { border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
-    .comment-header { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
-    .comment-author { font-weight: 600; color: #1e1e2e; }
-    .comment-date { font-size: 11px; color: #aaa; }
-    .comment-body { color: #444; line-height: 1.5; margin-bottom: 6px; }
-    .comment-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-    #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-    .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
-    .msg.user { background: #89b4fa; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-    .msg.assistant { background: white; color: #1e1e2e; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-    .msg.streaming { opacity: 0.85; }
-    .msg.status { align-self: flex-start; background: none; padding: 2px 4px; font-family: monospace; font-size: 11px; color: #888; max-width: 100%; }
-    .msg.error { align-self: flex-start; background: #fff0f0; border: 1px solid #ffcccc; color: #c0392b; font-family: monospace; font-size: 12px; max-width: 100%; border-radius: 6px; }
-    #input-area { background: white; padding: 16px 20px; border-top: 1px solid #e0e0e0; display: flex; gap: 10px; }
-    #question-input { flex: 1; border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px; font-size: 14px; resize: none; height: 44px; font-family: inherit; }
-    #send-btn { background: #89b4fa; color: white; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 14px; }
-    #send-btn:disabled { opacity: 0.5; cursor: default; }
-    #send-btn:hover:not(:disabled) { background: #74a7f5; }
-    .empty-state { text-align: center; color: #aaa; margin: auto; }
+    .comment { background: #fafafa; border: 1px solid #f3f4f6; border-left: 3px solid #e0e7ff; border-radius: 8px; padding: 12px 14px; }
+    .comment-header { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .comment-author { font-size: 13px; font-weight: 600; color: #1f2937; }
+    .comment-date { font-size: 11px; color: #9ca3af; }
+    .comment-body { font-size: 13px; color: #4b5563; line-height: 1.6; margin-bottom: 8px; }
+    .comment-attachments { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* Chat area */
+    #chat { flex: 1; overflow-y: auto; padding: 24px; background: #f8fafc; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 72%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 2px 8px rgba(99,102,241,0.25); }
+    .msg.assistant { background: white; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .msg.streaming { opacity: 0.88; }
+    .msg.status { align-self: flex-start; background: none; padding: 1px 6px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #9ca3af; max-width: 100%; border-radius: 4px; }
+    .msg.error { align-self: flex-start; background: #fff5f5; border: 1px solid #fecaca; color: #dc2626; font-family: monospace; font-size: 12px; max-width: 100%; border-radius: 8px; }
+    .empty-state { text-align: center; color: #9ca3af; margin: auto; font-size: 14px; line-height: 1.6; }
+
+    /* Input */
+    #input-area { background: white; padding: 14px 24px; box-shadow: 0 -1px 3px rgba(0,0,0,0.05); display: flex; gap: 10px; align-items: flex-end; }
+    #question-input { flex: 1; border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 10px 16px; font-size: 14px; font-family: inherit; resize: none; height: 44px; outline: none; transition: border-color 0.15s; color: #111827; }
+    #question-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+    #question-input:disabled { background: #f9fafb; color: #9ca3af; }
+    #send-btn { background: #6366f1; color: white; border: none; border-radius: 12px; padding: 10px 22px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; white-space: nowrap; }
+    #send-btn:disabled { background: #c7d2fe; cursor: default; }
+    #send-btn:hover:not(:disabled) { background: #4f46e5; }
   </style>
 </head>
 <body>
