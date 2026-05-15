@@ -1,0 +1,55 @@
+# Ports:  prod → BASE_PORT (38000)   dev → BASE_PORT+1 (38001)
+# Run both simultaneously — different ports, isolated networks via project name.
+
+services:
+
+  # ── dev ──────────────────────────────────────────────────────────────
+  app:
+    profiles: ["dev"]
+    build:
+      context: .
+      target: dev
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-public.ecr.aws/docker/library/node:22-bookworm-slim}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    ports:
+      - "${DEV_PORT:-38001}:3000"
+    volumes:
+      - ./src:/app/src:ro
+      - ./static:/app/static:ro
+      - lens-data-dev:/app/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "3000"
+      DATA_DIR: /app/data
+
+  # ── prod ─────────────────────────────────────────────────────────────
+  app-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      target: prod
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-public.ecr.aws/docker/library/node:22-bookworm-slim}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    ports:
+      - "${PROD_PORT:-38000}:3000"
+    volumes:
+      - lens-data-prod:/app/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "3000"
+      DATA_DIR: /app/data
+    restart: unless-stopped
+
+volumes:
+  lens-data-dev:
+  lens-data-prod:

@@ -2,7 +2,9 @@ import fs from "fs/promises";
 import path from "path";
 import type { BugTracker } from "./bugTracker.js";
 
-const WORKSPACES_ROOT = "/tmp/lens-workspaces";
+const WORKSPACES_ROOT = process.env.DATA_DIR
+  ? `${process.env.DATA_DIR}/workspaces`
+  : "/tmp/lens-workspaces";
 
 export async function getOrCreateWorkspace(bugId: string): Promise<string> {
   const workspacePath = path.join(WORKSPACES_ROOT, bugId);

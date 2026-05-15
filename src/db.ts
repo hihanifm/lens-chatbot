@@ -1,7 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "crypto";
 
-const db = new DatabaseSync("lens-chatbot.db");
+const DB_PATH = process.env.DATA_DIR
+  ? `${process.env.DATA_DIR}/lens-chatbot.db`
+  : "lens-chatbot.db";
+const db = new DatabaseSync(DB_PATH);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
