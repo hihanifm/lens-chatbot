@@ -71,7 +71,7 @@ This tool is for engineers. Surface all agent lifecycle events to the UI — mor
 
 | What | Where | How |
 |------|-------|-----|
-| Bug tracker | `src/index.ts:17` | `new InternalBugTracker()` |
-| Agent runner | `src/index.ts:18` | `new ClineCliAgentRunner()` |
+| Bug tracker | `src/index.ts:24` | `new InternalBugTracker()` |
+| Agent runner | `src/index.ts:25` | `new ClineCliAgentRunner()` |
 | LLM model | `.env` → `LLM_MODEL` | any Ollama model name |
 | Ports | `.env` → `DEV_PORT` / `PROD_PORT` | override compose defaults |
