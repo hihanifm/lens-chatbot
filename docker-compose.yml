@@ -19,7 +19,7 @@ services:
     volumes:
       - ./src:/app/src:ro
       - ./static:/app/static:ro
-      - lens-data-dev:/app/data
+      - ./data/dev:/app/data
     env_file:
       - path: .env.example
         required: true
@@ -44,7 +44,7 @@ services:
     ports:
       - "${PROD_PORT:-38000}:3000"
     volumes:
-      - lens-data-prod:/app/data
+      - ./data/prod:/app/data
     env_file:
       - path: .env.example
         required: true
@@ -56,6 +56,3 @@ services:
       PUBLIC_URL: "http://localhost:${PROD_PORT:-38000}"
     restart: unless-stopped
 
-volumes:
-  lens-data-dev:
-  lens-data-prod:
