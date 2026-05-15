@@ -66,8 +66,6 @@ export class ClineSdkAgentRunner implements AgentRunner {
         events.push({ type: "status", content: "▶ run started" });
       } else if (event.type === "turn-started") {
         events.push({ type: "status", content: "↻ thinking..." });
-      } else if (event.type === "message-added") {
-        log.debug("agent:event", { type: event.type });
       } else {
         log.debug("agent:event", { type: event.type });
         events.push({ type: "status", content: `· ${event.type}${event.message ? ": " + event.message : ""}` });

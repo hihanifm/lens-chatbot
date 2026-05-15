@@ -112,7 +112,12 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bugId }),
     });
-    const { session, bug } = await res.json();
+    const body = await res.json();
+    if (!res.ok) {
+      appendMessage('error', `✗ Failed to load bug: ${body.error ?? res.statusText} (HTTP ${res.status})`);
+      return;
+    }
+    const { session, bug } = body;
     currentSessionId = session.id;
 
     document.getElementById('bug-title').textContent = bug.title;
@@ -127,11 +132,18 @@
       btn.onclick = async () => {
         btn.textContent = `⏬ ${att.name}`;
         btn.disabled = true;
-        await fetch(`/session/${currentSessionId}/attachment/${att.id}`, {
+        const attRes = await fetch(`/session/${currentSessionId}/attachment/${att.id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ attName: att.name }),
         });
+        if (!attRes.ok) {
+          const attBody = await attRes.json().catch(() => ({}));
+          appendMessage('error', `✗ Download failed: ${attBody.error ?? attRes.statusText} (HTTP ${attRes.status})`);
+          btn.textContent = `📎 ${att.name}`;
+          btn.disabled = false;
+          return;
+        }
         btn.textContent = `✅ ${att.name}`;
         btn.classList.add('downloaded');
         btn.disabled = false;
