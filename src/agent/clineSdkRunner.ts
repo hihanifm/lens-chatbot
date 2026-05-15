@@ -44,6 +44,7 @@ export class ClineSdkAgentRunner implements AgentRunner {
     const startedAt = Date.now();
 
     log.info("agent:start", { model: process.env.LLM_MODEL, files: input.files.length, question: input.question.slice(0, 60) });
+    events.push({ type: "status", content: `⚙ model: ${process.env.LLM_MODEL} | files: ${input.files.length} | endpoint: ${process.env.LLM_BASE_URL}` });
 
     agent.subscribe((event: any) => {
       if (event.type === "assistant-text-delta" && event.text) {
@@ -54,14 +55,22 @@ export class ClineSdkAgentRunner implements AgentRunner {
         events.push({ type: "text", content: event.text });
       } else if (event.type === "completed" || event.type === "done") {
         log.info("agent:done", { ms: Date.now() - startedAt });
+        events.push({ type: "status", content: `✓ done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s` });
         done = true;
       } else if (event.type === "run-failed") {
         const errMsg = event.error ?? event.message ?? "Agent run failed";
         log.error("agent:run-failed", { error: errMsg });
-        events.push({ type: "error", content: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg) });
+        events.push({ type: "error", content: `run-failed: ${typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg)}` });
         done = true;
+      } else if (event.type === "run-started") {
+        events.push({ type: "status", content: "▶ run started" });
+      } else if (event.type === "turn-started") {
+        events.push({ type: "status", content: "↻ thinking..." });
+      } else if (event.type === "message-added") {
+        log.debug("agent:event", { type: event.type });
       } else {
         log.debug("agent:event", { type: event.type });
+        events.push({ type: "status", content: `· ${event.type}${event.message ? ": " + event.message : ""}` });
       }
     });
 

@@ -31,6 +31,8 @@
     .msg.user { background: #89b4fa; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
     .msg.assistant { background: white; color: #1e1e2e; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
     .msg.streaming { opacity: 0.85; }
+    .msg.status { align-self: flex-start; background: none; padding: 2px 4px; font-family: monospace; font-size: 11px; color: #888; max-width: 100%; }
+    .msg.error { align-self: flex-start; background: #fff0f0; border: 1px solid #ffcccc; color: #c0392b; font-family: monospace; font-size: 12px; max-width: 100%; border-radius: 6px; }
     #input-area { background: white; padding: 16px 20px; border-top: 1px solid #e0e0e0; display: flex; gap: 10px; }
     #question-input { flex: 1; border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px; font-size: 14px; resize: none; height: 44px; font-family: inherit; }
     #send-btn { background: #89b4fa; color: white; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 14px; }
@@ -165,10 +167,17 @@
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.type === 'text') {
+      if (data.type === 'status') {
+        appendMessage('status', data.content);
+      } else if (data.type === 'text') {
         assistantEl.textContent += data.content;
         assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      } else if (data.type === 'done' || data.type === 'error') {
+      } else if (data.type === 'error') {
+        appendMessage('error', '✗ ' + data.content);
+        assistantEl.remove();
+        es.close();
+        document.getElementById('send-btn').disabled = false;
+      } else if (data.type === 'done') {
         assistantEl.classList.remove('streaming');
         es.close();
         document.getElementById('send-btn').disabled = false;
@@ -176,8 +185,8 @@
     };
 
     es.onerror = () => {
-      assistantEl.textContent += '\n[Connection error]';
-      assistantEl.classList.remove('streaming');
+      appendMessage('error', '✗ SSE connection lost — check server logs');
+      assistantEl.remove();
       es.close();
       document.getElementById('send-btn').disabled = false;
     };

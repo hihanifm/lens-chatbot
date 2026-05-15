@@ -1,5 +1,5 @@
 export interface AgentEvent {
-  type: "text" | "done" | "error";
+  type: "text" | "done" | "error" | "status";
   content: string;
 }
 
