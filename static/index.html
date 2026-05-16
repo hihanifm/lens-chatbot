@@ -33,11 +33,13 @@
     /* Bug info */
     #bug-info { background: white; padding: 14px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: none; border-bottom: 1px solid #f3f4f6; }
     #bug-info.expanded { max-height: 42vh; overflow-y: auto; padding-bottom: 18px; }
-    #bug-info-header { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; user-select: none; }
-    #bug-info-header:hover #bug-info-toggle { color: #6366f1; }
-    #bug-info-toggle { flex-shrink: 0; margin-top: 2px; background: none; border: none; padding: 0; width: 20px; height: 20px; cursor: pointer; color: #9ca3af; font-size: 12px; line-height: 20px; text-align: center; font-family: inherit; transition: color 0.15s, transform 0.15s; }
-    #bug-info.expanded #bug-info-toggle { transform: rotate(90deg); }
+    #bug-info-header { display: flex; gap: 12px; align-items: flex-start; }
     #bug-summary { flex: 1; min-width: 0; }
+    #bug-info-toggle { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; line-height: 1.2; transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s; }
+    #bug-info-toggle:hover { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
+    #bug-info-toggle:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+    .bug-info-toggle-icon { font-size: 11px; line-height: 1; opacity: 0.85; }
+    .bug-info-toggle-label { white-space: nowrap; }
     #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 8px; line-height: 1.4; }
     .bug-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12px; }
     #bug-info-details { margin-top: 12px; }
@@ -67,11 +69,42 @@
 
     /* Chat area */
     #chat { flex: 1; overflow-y: auto; padding: 24px; background: #f8fafc; display: flex; flex-direction: column; gap: 12px; }
-    .msg { max-width: 72%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: 80%; }
+    .msg-row.user { align-self: flex-end; }
+    .msg-row.assistant { align-self: flex-start; }
+    .msg-time { font-size: 11px; color: #9ca3af; white-space: nowrap; flex-shrink: 0; line-height: 1.4; padding-bottom: 2px; }
+    .msg-row.assistant.streaming .msg-time { color: #c4b5fd; }
+    .msg-bubble-wrap { position: relative; max-width: 100%; }
+    .msg-bubble-wrap .msg { padding-right: 36px; }
+    .msg-row.user .msg-bubble-wrap .msg { padding-right: 16px; padding-left: 36px; }
+    .copy-btn { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 4px 8px; cursor: pointer; font-family: inherit; font-size: 10px; font-weight: 500; color: #6b7280; opacity: 0; transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s; }
+    .copy-btn:hover { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
+    .copy-btn.copied { opacity: 1; color: #059669; border-color: #86efac; background: #f0fdf4; }
+    .msg-bubble-wrap:hover .copy-btn, .msg-bubble-wrap:focus-within .copy-btn, .copy-btn.copied { opacity: 1; }
+    .msg-bubble-wrap .copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 6px; }
+    .msg-row.user .msg-bubble-wrap .copy-btn { right: auto; left: 8px; }
+    .msg-row.user .copy-btn { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.25); color: rgba(255,255,255,0.9); }
+    .msg-row.user .copy-btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.4); color: #fff; }
+    .copy-btn-icon { font-size: 13px; line-height: 1; opacity: 0.85; }
+    .copy-btn-label { line-height: 1; }
+    .msg { max-width: 100%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
     .msg.user { background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 2px 8px rgba(99,102,241,0.25); }
     .msg.assistant { background: white; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
     .msg.streaming { opacity: 0.88; }
     .msg.status { align-self: flex-start; background: none; padding: 1px 6px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #9ca3af; max-width: 100%; border-radius: 4px; }
+    .eng-log { align-self: flex-start; max-width: 100%; margin: -4px 0 4px; }
+    .eng-log-header { display: flex; align-items: center; gap: 6px; }
+    .eng-log-header .eng-log-toggle { flex: 1; min-width: 0; }
+    .eng-log-header .copy-btn { opacity: 1; flex-shrink: 0; flex-direction: row; gap: 4px; padding: 4px 10px; border-radius: 999px; }
+    .eng-log-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; padding: 4px 6px; cursor: pointer; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #9ca3af; text-align: left; border-radius: 6px; transition: color 0.15s, background 0.15s; }
+    .eng-log-toggle:hover { color: #6366f1; background: #f8fafc; }
+    .eng-log-chevron { flex-shrink: 0; width: 12px; transition: transform 0.15s; }
+    .eng-log.expanded .eng-log-chevron { transform: rotate(90deg); }
+    .eng-log-label { font-weight: 600; color: #6b7280; }
+    .eng-log-summary { color: #9ca3af; font-weight: 400; }
+    .eng-log-body { display: none; flex-direction: column; gap: 1px; padding: 2px 0 4px 18px; }
+    .eng-log.expanded .eng-log-body { display: flex; }
+    .eng-log-line { padding: 1px 6px; }
     .msg.error { align-self: flex-start; background: #fff5f5; border: 1px solid #fecaca; color: #dc2626; font-family: monospace; font-size: 12px; max-width: 100%; border-radius: 8px; }
     .empty-state { text-align: center; color: #9ca3af; margin: auto; font-size: 14px; line-height: 1.6; }
 
@@ -113,11 +146,14 @@
 
   <div id="bug-info" class="expanded">
     <div id="bug-info-header">
-      <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" title="Collapse bug details">▶</button>
       <div id="bug-summary">
         <h3 id="bug-title"></h3>
         <div class="bug-meta" id="bug-meta-summary"></div>
       </div>
+      <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" aria-label="Collapse bug details">
+        <span class="bug-info-toggle-icon" aria-hidden="true">▼</span>
+        <span class="bug-info-toggle-label">Hide details</span>
+      </button>
     </div>
     <div id="bug-info-details">
       <div class="bug-meta" id="bug-meta-extra"></div>
@@ -147,6 +183,7 @@
   let currentSessionId = null;
   let contextFiles = {};
   let currentEs = null;
+  let currentEngLog = null;
 
   function updateContextBar() {
     const bar = document.getElementById('context-bar');
@@ -198,15 +235,31 @@
 
   const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
+  function formatMsgTime(value) {
+    const d = value instanceof Date ? value : new Date(value);
+    const now = new Date();
+    const opts = { hour: 'numeric', minute: '2-digit' };
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], opts);
+    return d.toLocaleString([], { month: 'short', day: 'numeric', ...opts });
+  }
+
+  function setMsgTime(timeEl, value) {
+    const d = value instanceof Date ? value : new Date(value);
+    timeEl.dateTime = d.toISOString();
+    timeEl.textContent = formatMsgTime(d);
+  }
+
   function setBugInfoExpanded(expanded) {
     const panel = document.getElementById('bug-info');
     const toggle = document.getElementById('bug-info-toggle');
     panel.classList.toggle('expanded', expanded);
     toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.title = expanded ? 'Collapse bug details' : 'Expand bug details';
+    toggle.setAttribute('aria-label', expanded ? 'Collapse bug details' : 'Expand bug details');
+    toggle.querySelector('.bug-info-toggle-icon').textContent = expanded ? '▼' : '▶';
+    toggle.querySelector('.bug-info-toggle-label').textContent = expanded ? 'Hide details' : 'Show details';
   }
 
-  document.getElementById('bug-info-header').addEventListener('click', () => {
+  document.getElementById('bug-info-toggle').addEventListener('click', () => {
     const panel = document.getElementById('bug-info');
     setBugInfoExpanded(!panel.classList.contains('expanded'));
   });
@@ -259,7 +312,7 @@
   }
 
   async function resumeSession(sessionId) {
-    if (currentEs) { currentEs.close(); currentEs = null; }
+    if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
     const res = await fetch(`/session/${sessionId}`);
     if (!res.ok) { appendMessage('error', `✗ Failed to load session (HTTP ${res.status})`); return; }
     const { session, messages, bug } = await res.json();
@@ -273,7 +326,7 @@
 
     const chat = document.getElementById('chat');
     chat.innerHTML = '';
-    for (const m of messages) appendMessage(m.role, m.content);
+    for (const m of messages) appendMessage(m.role, m.content, false, m.created_at);
 
     document.getElementById('question-input').disabled = false;
     document.getElementById('send-btn').disabled = false;
@@ -446,8 +499,9 @@
 
     appendMessage('user', question);
     const assistantEl = appendMessage('assistant', '', true);
+    beginEngineeringLog();
 
-    if (currentEs) { currentEs.close(); currentEs = null; }
+    if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
 
     const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}`;
     const es = new EventSource(url);
@@ -457,18 +511,22 @@
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.type === 'status') {
-        appendMessage('status', data.content);
+        appendEngineeringLogLine(data.content);
       } else if (data.type === 'text') {
         assistantEl.textContent += data.content;
         assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
       } else if (data.type === 'error') {
+        finishEngineeringLog();
         appendMessage('error', '✗ ' + data.content);
-        assistantEl.remove();
+        removeMsgRow(assistantEl);
         es.close(); currentEs = null;
         document.getElementById('send-btn').disabled = false;
       } else if (data.type === 'done') {
         isDone = true;
         assistantEl.classList.remove('streaming');
+        assistantEl.closest('.msg-row')?.classList.remove('streaming');
+        if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
+        finishEngineeringLog();
         es.close(); currentEs = null;
         document.getElementById('send-btn').disabled = false;
       }
@@ -476,20 +534,143 @@
 
     es.onerror = () => {
       if (isDone) return;
+      finishEngineeringLog();
       appendMessage('error', '✗ SSE connection lost — check server logs');
-      assistantEl.remove();
+      removeMsgRow(assistantEl);
       es.close(); currentEs = null;
       document.getElementById('send-btn').disabled = false;
     };
   }
 
-  function appendMessage(role, content, streaming = false) {
+  function removeMsgRow(bubbleEl) {
+    bubbleEl?.closest('.msg-row')?.remove();
+  }
+
+  async function copyText(text, btn) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    if (!btn) return;
+    const label = btn.querySelector('.copy-btn-label');
+    const prev = label?.textContent ?? 'Copy';
+    btn.classList.add('copied');
+    if (label) label.textContent = 'Copied';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      if (label) label.textContent = prev;
+    }, 1500);
+  }
+
+  function createCopyButton(getText) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.title = 'Copy to clipboard';
+    btn.innerHTML = '<span class="copy-btn-icon" aria-hidden="true">⧉</span><span class="copy-btn-label">Copy</span>';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyText(getText(), btn);
+    });
+    return btn;
+  }
+
+  function beginEngineeringLog() {
     const chat = document.getElementById('chat');
+    const group = document.createElement('div');
+    group.className = 'eng-log expanded';
+    group.innerHTML = `
+      <div class="eng-log-header">
+        <button type="button" class="eng-log-toggle" aria-expanded="true">
+          <span class="eng-log-chevron">▶</span>
+          <span class="eng-log-label">Engineering log</span>
+          <span class="eng-log-summary">· running…</span>
+        </button>
+      </div>
+      <div class="eng-log-body"></div>
+    `;
+    group.querySelector('.eng-log-header').appendChild(createCopyButton(() =>
+      [...group.querySelectorAll('.eng-log-line')].map((l) => l.textContent).join('\n')
+    ));
+    group.querySelector('.eng-log-toggle').addEventListener('click', () => {
+      const expanded = group.classList.toggle('expanded');
+      group.querySelector('.eng-log-toggle').setAttribute('aria-expanded', String(expanded));
+    });
+    chat.appendChild(group);
+    currentEngLog = group;
+    group.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  function appendEngineeringLogLine(content) {
+    if (!currentEngLog) return;
+    const body = currentEngLog.querySelector('.eng-log-body');
+    const line = document.createElement('div');
+    line.className = 'eng-log-line msg status';
+    line.textContent = content;
+    body.appendChild(line);
+    const n = body.childElementCount;
+    currentEngLog.querySelector('.eng-log-summary').textContent = `· ${n} event${n === 1 ? '' : 's'}`;
+    currentEngLog.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  function finishEngineeringLog() {
+    if (!currentEngLog) return;
+    const group = currentEngLog;
+    currentEngLog = null;
+    const body = group.querySelector('.eng-log-body');
+    const n = body.childElementCount;
+    if (!n) { group.remove(); return; }
+    const summary = group.querySelector('.eng-log-summary');
+    summary.textContent = `· ${n} event${n === 1 ? '' : 's'}`;
+    group.classList.remove('expanded');
+    group.querySelector('.eng-log-toggle').setAttribute('aria-expanded', 'false');
+  }
+
+  function appendMessage(role, content, streaming = false, createdAt = null) {
+    const chat = document.getElementById('chat');
+    if (role !== 'user' && role !== 'assistant') {
+      const el = document.createElement('div');
+      el.className = `msg ${role}`;
+      el.textContent = content;
+      chat.appendChild(el);
+      el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return el;
+    }
+
+    const row = document.createElement('div');
+    row.className = `msg-row ${role}${streaming ? ' streaming' : ''}`;
+    const timeEl = document.createElement('time');
+    timeEl.className = 'msg-time';
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-bubble-wrap';
     const el = document.createElement('div');
     el.className = `msg ${role}${streaming ? ' streaming' : ''}`;
     el.textContent = content;
-    chat.appendChild(el);
-    el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    el.msgTime = timeEl;
+    wrap.append(el, createCopyButton(() => el.textContent));
+
+    if (streaming) {
+      timeEl.textContent = '…';
+    } else {
+      setMsgTime(timeEl, createdAt ?? new Date());
+    }
+
+    if (role === 'user') {
+      row.append(timeEl, wrap);
+    } else {
+      row.append(wrap, timeEl);
+    }
+    chat.appendChild(row);
+    row.scrollIntoView({ behavior: 'smooth', block: 'end' });
     return el;
   }
 
