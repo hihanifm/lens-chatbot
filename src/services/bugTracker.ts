@@ -91,6 +91,7 @@ export class MockBugTracker implements BugTracker {
         { id: "att-1", name: "modem_log.txt", size: 320 },
         { id: "att-2", name: "screenshot.png", size: 34059 },
         { id: "att-4", name: "screenshot (2).png", size: 22748 },
+        { id: "att-5", name: "crash_dump.zip", size: 1992 },
       ],
       comments: [
         {
