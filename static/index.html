@@ -255,6 +255,9 @@
   }
 
   document.getElementById('send-btn').onclick = sendQuestion;
+  document.getElementById('bug-id-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('load-bug-btn').click();
+  });
   document.getElementById('question-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
   });
