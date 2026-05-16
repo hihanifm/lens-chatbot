@@ -1,3 +1,9 @@
+---
+name: Explore Workspace
+description: List all files in the bug workspace and extract zip attachments
+triggers: [ls, list files, what files, attachments, zip, explore, show files, downloaded]
+---
+
 # Explore Workspace
 
 Use this skill when the user asks to list files, wants to know what was downloaded,

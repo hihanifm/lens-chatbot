@@ -1,6 +1,7 @@
 import { Agent } from "@cline/sdk";
 import path from "node:path";
 import type { AgentRunner, AgentEvent } from "./agentRunner.js";
+import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 import { log } from "../logger.js";
 
 const AGENTS_MD = path.resolve(import.meta.dirname, "../../agents.md");
@@ -24,14 +25,14 @@ function buildPrompt(input: {
   files: string[];
   question: string;
   conversationSummary?: string;
+  skills: LoadedSkill[];
 }): string {
   const fileList = input.files.map((f) => `- ${f}`).join("\n");
   const history = input.conversationSummary
     ? `Conversation so far:\n${input.conversationSummary}\n\n`
     : "";
-  const skillsDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);
-  const skillsHint = skillsDirs.length > 0
-    ? `Agent skills are defined as markdown files in these directories:\n${skillsDirs.map((d) => `  - ${d}`).join("\n")}\nRead relevant skill files before starting.\n\n`
+  const skillsHint = input.skills.length > 0
+    ? `Available skills — read the relevant ones before starting:\n${input.skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n")}\n\n`
     : "";
   return [
     `Read ${AGENTS_MD} for environment context and available tools.`,
@@ -57,6 +58,9 @@ export class ClineSdkAgentRunner implements AgentRunner {
   }
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
+    const skillsDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);
+    const skills = await loadSkills(skillsDirs);
+
     const agent = this.makeAgent();
     const events: AgentEvent[] = [];
     let done = false;
@@ -64,8 +68,11 @@ export class ClineSdkAgentRunner implements AgentRunner {
     let firstToken = false;
     const startedAt = Date.now();
 
-    log.info("agent:start", { model: process.env.LLM_MODEL, files: input.files.length, question: input.question.slice(0, 60) });
+    log.info("agent:start", { model: process.env.LLM_MODEL, files: input.files.length, skills: skills.length, question: input.question.slice(0, 60) });
     events.push({ type: "status", content: `⚙ provider: ${process.env.LLM_PROVIDER ?? "ollama"} | model: ${process.env.LLM_MODEL} | files: ${input.files.length} | endpoint: ${process.env.LLM_BASE_URL}` });
+    if (skills.length > 0) {
+      events.push({ type: "status", content: `🎯 skills: ${skills.map((s) => s.name).join(", ")}` });
+    }
 
     agent.subscribe((event: any) => {
       if (event.type === "assistant-text-delta" && event.text) {
@@ -94,7 +101,7 @@ export class ClineSdkAgentRunner implements AgentRunner {
       }
     });
 
-    const prompt = buildPrompt(input);
+    const prompt = buildPrompt({ ...input, skills });
     const runPromise = agent.run(prompt).then(() => {
       if (!done) {
         log.info("agent:done-via-promise", { ms: Date.now() - startedAt });

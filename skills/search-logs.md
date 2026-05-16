@@ -1,3 +1,9 @@
+---
+name: Search Logs
+description: Fast log search patterns using ripgrep
+triggers: [search, grep, find, pattern, error message, exception, keyword, contains, look for]
+---
+
 # Search Logs
 
 Use this skill when the user asks to search for a pattern, error message,
