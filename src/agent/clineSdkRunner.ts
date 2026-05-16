@@ -1,6 +1,9 @@
 import { Agent } from "@cline/sdk";
+import path from "node:path";
 import type { AgentRunner, AgentEvent } from "./agentRunner.js";
 import { log } from "../logger.js";
+
+const AGENTS_MD = path.resolve(import.meta.dirname, "../../agents.md");
 
 const SYSTEM_PROMPT = `You are analyzing a bug report. Use only files in this workspace.
 Do not modify files. Do not invent missing facts.
@@ -22,7 +25,19 @@ function buildPrompt(input: {
   const history = input.conversationSummary
     ? `Conversation so far:\n${input.conversationSummary}\n\n`
     : "";
-  return `Workspace: ${input.workspacePath}\nFiles to analyze:\n${fileList}\n\n${history}New question:\n${input.question}`;
+  const skillsHint = process.env.SKILLS_DIR
+    ? `Agent skills are defined as markdown files in: ${process.env.SKILLS_DIR}\nRead relevant skill files before starting.\n\n`
+    : "";
+  return [
+    `Read ${AGENTS_MD} for environment context and available tools.`,
+    ``,
+    `Workspace: ${input.workspacePath}`,
+    `Files to analyze:\n${fileList}`,
+    ``,
+    history,
+    skillsHint,
+    `New question:\n${input.question}`,
+  ].join("\n");
 }
 
 export class ClineSdkAgentRunner implements AgentRunner {
