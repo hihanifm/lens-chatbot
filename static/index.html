@@ -31,9 +31,18 @@
     #load-bug-btn:hover { background: #4f46e5; }
 
     /* Bug info */
-    #bug-info { background: white; padding: 18px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: none; max-height: 42vh; overflow-y: auto; border-bottom: 1px solid #f3f4f6; }
-    #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 10px; line-height: 1.4; }
-    .bug-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 12px; font-size: 12px; }
+    #bug-info { background: white; padding: 14px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: none; border-bottom: 1px solid #f3f4f6; }
+    #bug-info.expanded { max-height: 42vh; overflow-y: auto; padding-bottom: 18px; }
+    #bug-info-header { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; user-select: none; }
+    #bug-info-header:hover #bug-info-toggle { color: #6366f1; }
+    #bug-info-toggle { flex-shrink: 0; margin-top: 2px; background: none; border: none; padding: 0; width: 20px; height: 20px; cursor: pointer; color: #9ca3af; font-size: 12px; line-height: 20px; text-align: center; font-family: inherit; transition: color 0.15s, transform 0.15s; }
+    #bug-info.expanded #bug-info-toggle { transform: rotate(90deg); }
+    #bug-summary { flex: 1; min-width: 0; }
+    #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 8px; line-height: 1.4; }
+    .bug-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12px; }
+    #bug-info-details { margin-top: 12px; }
+    #bug-info:not(.expanded) #bug-info-details { display: none; }
+    #bug-meta-extra { margin-bottom: 12px; }
     .bug-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
     .bug-meta .label { color: #9ca3af; font-weight: 500; }
     .bug-meta .state { background: #d1fae5; color: #065f46; font-weight: 600; font-size: 11px; padding: 2px 9px; border-radius: 999px; }
@@ -102,15 +111,23 @@
     <button id="load-bug-btn">Load Bug</button>
   </div>
 
-  <div id="bug-info">
-    <h3 id="bug-title"></h3>
-    <div class="bug-meta" id="bug-meta"></div>
+  <div id="bug-info" class="expanded">
+    <div id="bug-info-header">
+      <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" title="Collapse bug details">▶</button>
+      <div id="bug-summary">
+        <h3 id="bug-title"></h3>
+        <div class="bug-meta" id="bug-meta-summary"></div>
+      </div>
+    </div>
+    <div id="bug-info-details">
+      <div class="bug-meta" id="bug-meta-extra"></div>
     <div id="bug-description"></div>
     <div class="section-title">Attachments</div>
     <div class="attachment-hint">Click a file to download it before running analysis</div>
     <div id="attachments"></div>
     <div class="section-title" id="comments-title" style="display:none"></div>
-    <div id="comments"></div>
+      <div id="comments"></div>
+    </div>
   </div>
 
   <div id="chat">
@@ -181,12 +198,27 @@
 
   const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
+  function setBugInfoExpanded(expanded) {
+    const panel = document.getElementById('bug-info');
+    const toggle = document.getElementById('bug-info-toggle');
+    panel.classList.toggle('expanded', expanded);
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.title = expanded ? 'Collapse bug details' : 'Expand bug details';
+  }
+
+  document.getElementById('bug-info-header').addEventListener('click', () => {
+    const panel = document.getElementById('bug-info');
+    setBugInfoExpanded(!panel.classList.contains('expanded'));
+  });
+
   function renderBugPanel(bug, selectedFiles = []) {
     document.getElementById('bug-title').textContent = bug.title;
-    document.getElementById('bug-meta').innerHTML = `
+    document.getElementById('bug-meta-summary').innerHTML = `
       <span><span class="label">Author</span>${bug.author}</span>
       <span><span class="label">Owner</span>${bug.owner}</span>
       <span><span class="label">State</span><span class="state">${bug.state}</span></span>
+    `;
+    document.getElementById('bug-meta-extra').innerHTML = `
       <span><span class="label">Module</span>${bug.module}</span>
       <span><span class="label">Created</span>${fmt(bug.created_at)}</span>
       <span><span class="label">Updated</span>${fmt(bug.updated_at)}</span>
