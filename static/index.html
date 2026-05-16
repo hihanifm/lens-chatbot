@@ -387,7 +387,8 @@
 
     btn.onclick = (e) => {
       e.stopPropagation();
-      if (openMenu === wrapper.querySelector('.att-menu')) { openMenu.remove(); openMenu = null; return; }
+      const existing = wrapper.querySelector('.att-menu');
+      if (existing) { existing.remove(); openMenu = null; return; }
       openPopover();
     };
 
