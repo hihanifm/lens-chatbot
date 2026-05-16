@@ -1,0 +1,6 @@
+[MOCK] modem_verbose.txt — lens-chatbot demo fixture
+2024-01-15 10:23:01 VERBOSE RIL: radioState=ON
+2024-01-15 10:23:02 VERBOSE IMS: P-CSCF list empty after handover
+2024-01-15 10:23:03 VERBOSE DHCP: option 120 not present
+2024-01-15 10:23:05 ERROR   DNS: NXDOMAIN pcscf.ims.internal
+2024-01-15 10:23:10 ERROR   IMS: REGISTRATION_FAILED cause=504

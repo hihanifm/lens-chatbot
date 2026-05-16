@@ -1,0 +1,145 @@
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import type { BugTracker } from "./services/bugTracker.js";
+import { getOrCreateWorkspace, downloadAttachment, saveBugSummary } from "./services/attachmentService.js";
+import type { AgentRunner } from "./agent/agentRunner.js";
+import { sessions, messages } from "./db.js";
+import { log } from "./logger.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export function createApp(tracker: BugTracker, runner: AgentRunner): express.Application {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    log.info(`${req.method} ${req.path}`, Object.keys(req.query).length ? { query: req.query } : undefined);
+    next();
+  });
+
+  app.use(express.static(path.join(__dirname, "../static")));
+
+  app.post("/session", async (req, res) => {
+    const { bugId } = req.body;
+    if (!bugId) return res.status(400).json({ error: "bugId required" });
+
+    log.info("session:create", { bugId });
+    const bug = await tracker.getBug(bugId);
+    log.debug("bug:fetched", { bugId, title: bug.title, attachments: bug.attachments.length });
+    const workspacePath = await getOrCreateWorkspace(bugId);
+    await saveBugSummary(workspacePath, bug);
+
+    const session = sessions.create(bugId, workspacePath);
+    log.info("session:created", { sessionId: session.id, workspace: workspacePath });
+    res.json({ session, bug });
+  });
+
+  app.get("/sessions", (_req, res) => {
+    res.json(sessions.list());
+  });
+
+  app.get("/session/:id", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    let bug = null;
+    try {
+      const raw = await import("fs/promises").then(fs => fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+      bug = JSON.parse(raw);
+    } catch {
+      // bug.json missing or unreadable — omit gracefully
+    }
+    res.json({ session, messages: messages.list(req.params.id), bug });
+  });
+
+  app.get("/session/:id/attachment/download", (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+
+    const name = path.basename(req.query.name as string ?? "");
+    if (!name) return res.status(400).json({ error: "name required" });
+
+    const filePath = path.join(session.workspace_path, "attachments", name);
+    log.info("attachment:serve", { sessionId: req.params.id, filePath });
+    res.download(filePath, name, (err) => {
+      if (err) log.error("attachment:serve-error", { filePath, error: err.message });
+    });
+  });
+
+  app.post("/session/:id/attachment/:attId", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+
+    const { attName } = req.body;
+    if (!attName) return res.status(400).json({ error: "attName required" });
+
+    log.info("attachment:download", { sessionId: req.params.id, attId: req.params.attId, attName });
+    const filePath = await downloadAttachment(
+      tracker,
+      session.bug_id,
+      req.params.attId,
+      attName,
+      session.workspace_path
+    );
+    log.info("attachment:saved", { filePath });
+    res.json({ filePath });
+  });
+
+  app.patch("/session/:id/files", (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const { filePath, selected } = req.body;
+    if (!filePath) return res.status(400).json({ error: "filePath required" });
+    if (selected) sessions.addFile(req.params.id, filePath);
+    else sessions.removeFile(req.params.id, filePath);
+    res.json({ ok: true });
+  });
+
+  app.get("/session/:id/analyze", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+
+    const question = req.query.question as string;
+    if (!question) return res.status(400).json({ error: "question required" });
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    messages.add(req.params.id, "user", question);
+
+    const conversationSummary = messages.buildSummary(req.params.id);
+    const updatedSession = sessions.get(req.params.id)!;
+
+    log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: question.slice(0, 80) });
+    let fullResponse = "";
+
+    try {
+      for await (const event of runner.analyze({
+        workspacePath: updatedSession.workspace_path,
+        files: updatedSession.selected_files,
+        question,
+        conversationSummary,
+      })) {
+        if (event.type === "text") {
+          fullResponse += event.content;
+          res.write(`data: ${JSON.stringify({ type: "text", content: event.content })}\n\n`);
+        } else if (event.type === "done") {
+          log.info("analyze:done", { sessionId: req.params.id, responseLen: fullResponse.length });
+          messages.add(req.params.id, "assistant", fullResponse);
+          res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+          res.end();
+        } else if (event.type === "error") {
+          log.error("analyze:agent-error", { sessionId: req.params.id, error: event.content });
+          res.write(`data: ${JSON.stringify({ type: "error", content: event.content })}\n\n`);
+          res.end();
+        }
+      }
+    } catch (err: any) {
+      log.error("analyze:exception", { sessionId: req.params.id, error: err.message });
+      res.write(`data: ${JSON.stringify({ type: "error", content: err.message })}\n\n`);
+      res.end();
+    }
+  });
+
+  return app;
+}

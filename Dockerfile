@@ -28,5 +28,6 @@ ENV HTTP_PROXY=$HTTP_PROXY HTTPS_PROXY=$HTTPS_PROXY NO_PROXY=$NO_PROXY
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/static ./static
+COPY --from=build /app/fixtures ./fixtures
 ENV NODE_OPTIONS=--experimental-sqlite
 CMD ["node", "dist/index.js"]

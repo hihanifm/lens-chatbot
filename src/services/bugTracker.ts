@@ -1,3 +1,7 @@
+import { readFile } from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+
 export interface BugAttachment {
   id: string;
   name: string;
@@ -31,6 +35,18 @@ export interface BugTracker {
   downloadAttachment(bugId: string, attId: string): Promise<Buffer>;
 }
 
+const MOCK_FIXTURES_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../fixtures/mock"
+);
+
+const MOCK_ATTACHMENTS: Record<string, string> = {
+  "att-1": "modem_log.txt",
+  "att-2": "screenshot.png",
+  "att-3": "modem_verbose.txt",
+  "att-4": "screenshot-2.png",
+};
+
 // Stub — replace with InternalBugTracker when API is ready
 export class MockBugTracker implements BugTracker {
   async getBug(bugId: string): Promise<BugDetails> {
@@ -45,8 +61,9 @@ export class MockBugTracker implements BugTracker {
       created_at: "2026-05-10T08:00:00Z",
       updated_at: "2026-05-14T17:30:00Z",
       attachments: [
-        { id: "att-1", name: "modem_log.txt", size: 20480 },
-        { id: "att-2", name: "screenshot.png", size: 45312 },
+        { id: "att-1", name: "modem_log.txt", size: 320 },
+        { id: "att-2", name: "screenshot.png", size: 34059 },
+        { id: "att-4", name: "screenshot (2).png", size: 22748 },
       ],
       comments: [
         {
@@ -54,7 +71,7 @@ export class MockBugTracker implements BugTracker {
           author: "jane.doe",
           body: "Reproduced on build 4.2.1. Attached verbose modem log. DNS resolution consistently fails after handover.",
           created_at: "2026-05-10T09:15:00Z",
-          attachments: [{ id: "att-3", name: "modem_verbose.txt", size: 51200 }],
+          attachments: [{ id: "att-3", name: "modem_verbose.txt", size: 360 }],
         },
         {
           id: "cmt-2",
@@ -68,14 +85,11 @@ export class MockBugTracker implements BugTracker {
   }
 
   async downloadAttachment(_bugId: string, attId: string): Promise<Buffer> {
-    const content = `[MOCK] Log content for attachment ${attId}
-2024-01-15 10:23:01 INFO  IMS registration attempt started
-2024-01-15 10:23:02 DEBUG P-CSCF discovery via DHCP
-2024-01-15 10:23:05 ERROR DNS resolution failed for pcscf.ims.internal
-2024-01-15 10:23:05 WARN  Retrying with secondary DNS...
-2024-01-15 10:23:10 ERROR Registration timeout after 5000ms
-Replace this with real API download.`;
-    return Buffer.from(content);
+    const fixtureName = MOCK_ATTACHMENTS[attId];
+    if (!fixtureName) {
+      throw new Error(`Unknown mock attachment: ${attId}`);
+    }
+    return readFile(path.join(MOCK_FIXTURES_DIR, fixtureName));
   }
 }
 

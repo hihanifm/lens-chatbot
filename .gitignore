@@ -3,3 +3,4 @@ dist/
 .env
 *.db
 data/
+e2e/.data/

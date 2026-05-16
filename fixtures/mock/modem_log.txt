@@ -1,0 +1,6 @@
+[MOCK] modem_log.txt — lens-chatbot demo fixture
+2024-01-15 10:23:01 INFO  IMS registration attempt started
+2024-01-15 10:23:02 DEBUG P-CSCF discovery via DHCP
+2024-01-15 10:23:05 ERROR DNS resolution failed for pcscf.ims.internal
+2024-01-15 10:23:05 WARN  Retrying with secondary DNS...
+2024-01-15 10:23:10 ERROR Registration timeout after 5000ms

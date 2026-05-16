@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@cline/sdk": "latest",
@@ -13,6 +15,7 @@
     "express": "^4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/express": "^4",
     "@types/node": "^22",
     "tsx": "^4",

@@ -3,7 +3,7 @@
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
 #   make logs               Tail dev logs
 .PHONY: help up down build rebuild logs restart ps \
-        prod-up prod-down prod-logs prod-build clean
+        prod-up prod-down prod-logs prod-build clean test-e2e
 
 help:
 	@echo "Dev (default):                                               Ports: dev=38001"
@@ -18,6 +18,9 @@ help:
 	@echo "  make prod-up            Build + start prod stack"
 	@echo "  make prod-down          Stop prod stack"
 	@echo "  make prod-logs          Tail prod logs"
+	@echo ""
+	@echo "Tests:"
+	@echo "  make test-e2e           Run Playwright e2e (needs: npm install && npx playwright install chromium)"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean              Remove containers/volumes; prune images"
@@ -57,6 +60,9 @@ prod-down:
 
 prod-logs:
 	docker compose --profile prod logs -f
+
+test-e2e:
+	DATA_DIR=./e2e/.data npx playwright test
 
 clean:
 	docker compose --profile dev down --remove-orphans --volumes
