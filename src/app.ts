@@ -130,6 +130,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           res.end();
         } else if (event.type === "error") {
           log.error("analyze:agent-error", { sessionId: req.params.id, error: event.content });
+          messages.add(req.params.id, "assistant", `[Analysis error: ${event.content}]`);
           res.write(`data: ${JSON.stringify({ type: "error", content: event.content })}\n\n`);
           res.end();
         } else if (event.type === "status") {
@@ -138,6 +139,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       }
     } catch (err: any) {
       log.error("analyze:exception", { sessionId: req.params.id, error: err.message });
+      messages.add(req.params.id, "assistant", `[Analysis error: ${err.message}]`);
       res.write(`data: ${JSON.stringify({ type: "error", content: err.message })}\n\n`);
       res.end();
     }
