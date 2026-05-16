@@ -5,7 +5,7 @@ import { log } from "../logger.js";
 
 const WORKSPACES_ROOT = process.env.DATA_DIR
   ? `${process.env.DATA_DIR}/workspaces`
-  : "/tmp/lens-workspaces";
+  : "data/local/workspaces";
 
 export async function getOrCreateWorkspace(bugId: string): Promise<string> {
   const workspacePath = path.join(WORKSPACES_ROOT, bugId);
