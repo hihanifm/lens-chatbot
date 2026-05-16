@@ -124,15 +124,16 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!attName) return res.status(400).json({ error: "attName required" });
 
     log.info("attachment:download", { sessionId: req.params.id, attId: req.params.attId, attName });
-    const filePath = await downloadAttachment(
+    const { filePath, extractedFiles } = await downloadAttachment(
       tracker,
       session.bug_id,
       req.params.attId,
       attName,
       session.workspace_path
     );
-    log.info("attachment:saved", { filePath });
-    res.json({ filePath });
+    log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length });
+    for (const ef of extractedFiles) sessions.addFile(req.params.id, ef);
+    res.json({ filePath, extractedFiles });
   });
 
   app.patch("/session/:id/files", (req, res) => {

@@ -520,6 +520,7 @@
     let filePath = selectedFiles.find(fp => fp.endsWith('/' + att.name)) ?? null;
     let isDownloaded = !!filePath;
     let isInChat = !!filePath;
+    let extractedFiles = []; // populated for zips after download
 
     function applyState() {
       btn.classList.remove('downloaded', 'in-chat');
@@ -567,9 +568,17 @@
             applyState();
             return;
           }
-          filePath = (await res.json()).filePath;
+          const dlBody = await res.json();
+          filePath = dlBody.filePath;
           isDownloaded = true;
           registerCallback();
+          if (dlBody.extractedFiles?.length) {
+            // zip: auto-add extracted files to context, mark button as in-chat
+            extractedFiles = dlBody.extractedFiles;
+            for (const ef of extractedFiles) contextFiles[ef] = ef.split('/').pop();
+            updateContextBar();
+            isInChat = true;
+          }
           applyState();
           document.getElementById('question-input').disabled = false;
           document.getElementById('send-btn').disabled = false;
@@ -595,7 +604,11 @@
           rmItem.onclick = async (e) => {
             e.stopPropagation();
             menu.remove(); openMenu = null;
-            await toggleFileInChat(filePath, att.name, false);
+            if (extractedFiles.length) {
+              for (const ef of extractedFiles) await toggleFileInChat(ef, ef.split('/').pop(), false);
+            } else {
+              await toggleFileInChat(filePath, att.name, false);
+            }
             isInChat = false;
             applyState();
           };

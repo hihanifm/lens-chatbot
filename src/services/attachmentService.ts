@@ -17,13 +17,24 @@ export async function getOrCreateWorkspace(bugId: string): Promise<string> {
   return workspacePath;
 }
 
+async function walkFiles(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const results: string[] = [];
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) results.push(...await walkFiles(full));
+    else results.push(full);
+  }
+  return results;
+}
+
 export async function downloadAttachment(
   tracker: BugTracker,
   bugId: string,
   attId: string,
   attName: string,
   workspacePath: string
-): Promise<string> {
+): Promise<{ filePath: string; extractedFiles: string[] }> {
   const data = await tracker.downloadAttachment(bugId, attId);
   const filePath = path.join(workspacePath, "attachments", attName);
   await fs.writeFile(filePath, data);
@@ -38,10 +49,12 @@ export async function downloadAttachment(
         .on("close", resolve)
         .on("error", reject);
     });
-    log.info("attachment:extracted", { extractDir });
+    const extractedFiles = await walkFiles(extractDir);
+    log.info("attachment:extracted", { extractDir, files: extractedFiles.length });
+    return { filePath, extractedFiles };
   }
 
-  return filePath;
+  return { filePath, extractedFiles: [] };
 }
 
 export async function saveBugSummary(
