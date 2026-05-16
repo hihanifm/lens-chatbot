@@ -25,8 +25,9 @@ function buildPrompt(input: {
   const history = input.conversationSummary
     ? `Conversation so far:\n${input.conversationSummary}\n\n`
     : "";
-  const skillsHint = process.env.SKILLS_DIR
-    ? `Agent skills are defined as markdown files in: ${process.env.SKILLS_DIR}\nRead relevant skill files before starting.\n\n`
+  const skillsDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);
+  const skillsHint = skillsDirs.length > 0
+    ? `Agent skills are defined as markdown files in these directories:\n${skillsDirs.map((d) => `  - ${d}`).join("\n")}\nRead relevant skill files before starting.\n\n`
     : "";
   return [
     `Read ${AGENTS_MD} for environment context and available tools.`,
