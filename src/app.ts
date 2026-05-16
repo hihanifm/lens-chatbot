@@ -51,6 +51,22 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.json({ session, messages: messages.list(req.params.id), bug });
   });
 
+  app.post("/session/:id/refresh-bug", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+
+    log.info("bug:refresh", { sessionId: req.params.id, bugId: session.bug_id });
+    try {
+      const bug = await tracker.getBug(session.bug_id);
+      await saveBugSummary(session.workspace_path, bug);
+      log.debug("bug:refreshed", { bugId: session.bug_id, state: bug.state, comments: bug.comments.length });
+      res.json({ bug });
+    } catch (err: any) {
+      log.error("bug:refresh-error", { sessionId: req.params.id, error: err.message });
+      res.status(502).json({ error: `Failed to refresh bug: ${err.message}` });
+    }
+  });
+
   app.get("/session/:id/attachment/download", (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });

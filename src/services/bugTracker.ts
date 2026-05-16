@@ -59,7 +59,7 @@ export class MockBugTracker implements BugTracker {
       state: "In Progress",
       module: "IMS",
       created_at: "2026-05-10T08:00:00Z",
-      updated_at: "2026-05-14T17:30:00Z",
+      updated_at: new Date().toISOString(),
       attachments: [
         { id: "att-1", name: "modem_log.txt", size: 320 },
         { id: "att-2", name: "screenshot.png", size: 34059 },

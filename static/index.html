@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lens Chatbot</title>
+  <title>WarRoom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
@@ -12,6 +12,9 @@
 
     /* Sidebar */
     #sidebar { width: 256px; background: #0f1117; color: #e5e7eb; padding: 20px 14px; overflow-y: auto; flex-shrink: 0; }
+    #sidebar-brand { font-size: 18px; font-weight: 700; letter-spacing: 1px; color: #f9fafb; padding: 0 8px 20px; border-bottom: 1px solid #1f2937; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+    #sidebar-brand .brand-icon { font-size: 20px; }
+    #sidebar-brand .brand-sub { font-size: 10px; font-weight: 400; color: #4b5563; letter-spacing: 1.5px; text-transform: uppercase; display: block; margin-top: 1px; }
     #sidebar h2 { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #4b5563; margin-bottom: 14px; padding: 0 8px; }
     #session-list { list-style: none; }
     #session-list li { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; transition: background 0.12s; }
@@ -38,6 +41,11 @@
     #bug-info-toggle { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; line-height: 1.2; transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s; }
     #bug-info-toggle:hover { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
     #bug-info-toggle:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+    .bug-info-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: flex-start; }
+    #bug-refresh-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: white; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+    #bug-refresh-btn:hover:not(:disabled) { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+    #bug-refresh-btn:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+    #bug-refresh-btn:disabled { opacity: 0.65; cursor: wait; }
     .bug-info-toggle-icon { font-size: 11px; line-height: 1; opacity: 0.85; }
     .bug-info-toggle-label { white-space: nowrap; }
     #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 8px; line-height: 1.4; }
@@ -134,6 +142,13 @@
 <body>
 
 <div id="sidebar">
+  <div id="sidebar-brand">
+    <span class="brand-icon">⚔️</span>
+    <div>
+      WarRoom
+      <span class="brand-sub">Bug Analysis</span>
+    </div>
+  </div>
   <h2>Past Sessions</h2>
   <ul id="session-list"></ul>
 </div>
@@ -150,10 +165,13 @@
         <h3 id="bug-title"></h3>
         <div class="bug-meta" id="bug-meta-summary"></div>
       </div>
-      <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" aria-label="Collapse bug details">
-        <span class="bug-info-toggle-icon" aria-hidden="true">▼</span>
-        <span class="bug-info-toggle-label">Hide details</span>
-      </button>
+      <div class="bug-info-actions">
+        <button id="bug-refresh-btn" type="button" title="Refresh status and comments from the bug tracker">↻ Refresh</button>
+        <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" aria-label="Collapse bug details">
+          <span class="bug-info-toggle-icon" aria-hidden="true">▼</span>
+          <span class="bug-info-toggle-label">Hide details</span>
+        </button>
+      </div>
     </div>
     <div id="bug-info-details">
       <div class="bug-meta" id="bug-meta-extra"></div>
@@ -263,6 +281,27 @@
     const panel = document.getElementById('bug-info');
     setBugInfoExpanded(!panel.classList.contains('expanded'));
   });
+
+  async function refreshBugFromTracker() {
+    if (!currentSessionId) return;
+    const btn = document.getElementById('bug-refresh-btn');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '↻ Refreshing…';
+    const res = await fetch(`/session/${currentSessionId}/refresh-bug`, { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    btn.disabled = false;
+    btn.textContent = label;
+    if (!res.ok) {
+      appendMessage('error', `✗ Refresh failed: ${body.error ?? res.statusText} (HTTP ${res.status})`);
+      return;
+    }
+    renderBugPanel(body.bug, Object.keys(contextFiles));
+    btn.textContent = '✓ Updated';
+    setTimeout(() => { btn.textContent = label; }, 2000);
+  }
+
+  document.getElementById('bug-refresh-btn').addEventListener('click', refreshBugFromTracker);
 
   function renderBugPanel(bug, selectedFiles = []) {
     document.getElementById('bug-title').textContent = bug.title;
