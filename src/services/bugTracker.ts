@@ -45,11 +45,38 @@ const MOCK_ATTACHMENTS: Record<string, string> = {
   "att-2": "screenshot.png",
   "att-3": "modem_verbose.txt",
   "att-4": "screenshot-2.png",
+  "att-5": "crash_dump.zip",
 };
 
 // Stub — replace with InternalBugTracker when API is ready
 export class MockBugTracker implements BugTracker {
   async getBug(bugId: string): Promise<BugDetails> {
+    if (bugId === "BUG-456") {
+      return {
+        id: bugId,
+        title: `[MOCK] Bug ${bugId} — Crash After Handover`,
+        description: "Device crashes approximately 8 seconds after LTE handover. Radio and system logs captured in attached zip.",
+        author: "alice.tan",
+        owner: "bob.lee",
+        state: "Open",
+        module: "Radio",
+        created_at: "2026-05-12T11:00:00Z",
+        updated_at: new Date().toISOString(),
+        attachments: [
+          { id: "att-5", name: "crash_dump.zip", size: 1992 },
+        ],
+        comments: [
+          {
+            id: "cmt-10",
+            author: "bob.lee",
+            body: "Reproduced on two handsets. Both crash within 8–10s post-handover. Zip contains radio_logs and system_logs.",
+            created_at: "2026-05-12T13:30:00Z",
+            attachments: [],
+          },
+        ],
+      };
+    }
+
     return {
       id: bugId,
       title: `[MOCK] Bug ${bugId} — IMS Registration Failure`,

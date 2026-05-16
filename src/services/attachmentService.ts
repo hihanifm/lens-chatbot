@@ -1,5 +1,7 @@
 import fs from "fs/promises";
+import { createReadStream } from "fs";
 import path from "path";
+import unzipper from "unzipper";
 import type { BugTracker, BugDetails } from "./bugTracker.js";
 import { log } from "../logger.js";
 
@@ -26,6 +28,19 @@ export async function downloadAttachment(
   const filePath = path.join(workspacePath, "attachments", attName);
   await fs.writeFile(filePath, data);
   log.info("attachment:written", { filePath, bytes: data.length });
+
+  if (attName.endsWith(".zip")) {
+    const extractDir = path.join(workspacePath, "attachments", path.basename(attName, ".zip"));
+    await fs.mkdir(extractDir, { recursive: true });
+    await new Promise<void>((resolve, reject) => {
+      createReadStream(filePath)
+        .pipe(unzipper.Extract({ path: extractDir }))
+        .on("close", resolve)
+        .on("error", reject);
+    });
+    log.info("attachment:extracted", { extractDir });
+  }
+
   return filePath;
 }
 
