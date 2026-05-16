@@ -37,7 +37,7 @@ function buildPrompt(input: {
   return [
     `Read ${AGENTS_MD} for environment context and available tools.`,
     ``,
-    `Workspace: ${input.workspacePath}`,
+    `WORKSPACE=${input.workspacePath}`,
     `Files to analyze:\n${fileList}`,
     ``,
     history,

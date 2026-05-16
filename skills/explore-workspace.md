@@ -11,10 +11,12 @@ says "ls", "what files do we have", "show me the attachments", or similar.
 
 ## Steps
 
+`WORKSPACE` is set in your task header — copy it exactly (the line starting with `WORKSPACE=`).
+
 1. **Extract any zip files** found in `attachments/`:
 
 ```bash
-find <workspacePath>/attachments -name "*.zip" | while read z; do
+find "$WORKSPACE"/attachments -name "*.zip" | while read z; do
   unzip -o "$z" -d "${z%.zip}"
   echo "Extracted: $z"
 done
@@ -23,13 +25,13 @@ done
 2. **List all files** in the workspace with sizes, sorted by path:
 
 ```bash
-find <workspacePath> -type f | sort | xargs ls -lh 2>/dev/null
+find "$WORKSPACE" -type f | sort | xargs ls -lh 2>/dev/null
 ```
 
 Or for a cleaner tree view using rg:
 
 ```bash
-rg --files <workspacePath> | sort
+rg --files "$WORKSPACE" | sort
 ```
 
 ## Output format
