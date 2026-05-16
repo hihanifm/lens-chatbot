@@ -90,9 +90,19 @@ app.post("/session/:id/attachment/:attId", async (req, res) => {
     attName,
     session.workspace_path
   );
-  sessions.addFile(req.params.id, filePath);
   log.info("attachment:saved", { filePath });
   res.json({ filePath });
+});
+
+// Add or remove a file from session context
+app.patch("/session/:id/files", (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: "session not found" });
+  const { filePath, selected } = req.body;
+  if (!filePath) return res.status(400).json({ error: "filePath required" });
+  if (selected) sessions.addFile(req.params.id, filePath);
+  else sessions.removeFile(req.params.id, filePath);
+  res.json({ ok: true });
 });
 
 // SSE: analyze (first query or follow-up)

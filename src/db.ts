@@ -73,6 +73,16 @@ export const sessions = {
       id
     );
   },
+
+  removeFile(id: string, filePath: string): void {
+    const session = sessions.get(id);
+    if (!session) return;
+    const files = session.selected_files.filter((f) => f !== filePath);
+    db.prepare("UPDATE sessions SET selected_files = ? WHERE id = ?").run(
+      JSON.stringify(files),
+      id
+    );
+  },
 };
 
 export const messages = {
