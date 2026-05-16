@@ -314,6 +314,9 @@
     }
   }
 
+  // Registry so chip removals can sync attachment button state
+  const attachmentStateCallbacks = new Map(); // filePath -> { setInChat }
+
   async function toggleFileInChat(filePath, attName, selected) {
     const res = await fetch(`/session/${currentSessionId}/files`, {
       method: 'PATCH',
@@ -322,7 +325,10 @@
     });
     if (!res.ok) { appendMessage('error', '✗ Failed to update context'); return; }
     if (selected) contextFiles[filePath] = attName;
-    else delete contextFiles[filePath];
+    else {
+      delete contextFiles[filePath];
+      attachmentStateCallbacks.get(filePath)?.setInChat(false);
+    }
     updateContextBar();
   }
 
@@ -528,6 +534,13 @@
       }
     }
 
+    function registerCallback() {
+      if (filePath) attachmentStateCallbacks.set(filePath, {
+        setInChat(val) { isInChat = val; applyState(); }
+      });
+    }
+    registerCallback();
+
     function openPopover() {
       if (openMenu) { openMenu.remove(); openMenu = null; }
       const menu = document.createElement('div');
@@ -556,6 +569,7 @@
           }
           filePath = (await res.json()).filePath;
           isDownloaded = true;
+          registerCallback();
           applyState();
           document.getElementById('question-input').disabled = false;
           document.getElementById('send-btn').disabled = false;
