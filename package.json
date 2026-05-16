@@ -6,7 +6,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:live": "playwright test -c playwright.live.config.ts"
   },
   "dependencies": {
     "@cline/sdk": "latest",

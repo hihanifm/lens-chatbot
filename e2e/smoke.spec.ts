@@ -17,7 +17,12 @@ test("download enables chat", async ({ page }) => {
   await page.goto("/");
   await page.locator("#bug-id-input").fill("BUG-123");
   await page.locator("#load-bug-btn").click();
-  await page.getByRole("button", { name: /modem_log\.txt/ }).click();
+  await expect(page.locator("#bug-info")).toBeVisible();
+  await page.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
+    page.locator(".att-menu").getByRole("button", { name: "Download to workspace" }).click(),
+  ]);
   await expect(page.locator("#question-input")).toBeEnabled();
 });
 
@@ -25,7 +30,12 @@ test("analyze streams reply", async ({ page }) => {
   await page.goto("/");
   await page.locator("#bug-id-input").fill("BUG-123");
   await page.locator("#load-bug-btn").click();
-  await page.getByRole("button", { name: /modem_log\.txt/ }).click();
+  await expect(page.locator("#bug-info")).toBeVisible();
+  await page.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
+    page.locator(".att-menu").getByRole("button", { name: "Download to workspace" }).click(),
+  ]);
   await expect(page.locator("#question-input")).toBeEnabled();
   await page.locator("#question-input").fill("What failed?");
   await page.locator("#send-btn").click();
