@@ -75,7 +75,13 @@ export class ClineSdkAgentRunner implements AgentRunner {
     });
 
     const prompt = buildPrompt(input);
-    const runPromise = agent.run(prompt).catch((err: Error) => {
+    const runPromise = agent.run(prompt).then(() => {
+      if (!done) {
+        log.info("agent:done-via-promise", { ms: Date.now() - startedAt });
+        events.push({ type: "status", content: `✓ done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s` });
+        done = true;
+      }
+    }).catch((err: Error) => {
       log.error("agent:run-error", { error: err.message });
       events.push({ type: "error", content: err.message });
       errored = true;
