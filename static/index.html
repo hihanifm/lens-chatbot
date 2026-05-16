@@ -485,9 +485,13 @@
     const { session, bug } = body;
     currentSessionId = session.id;
     contextFiles = {};
+    for (const fp of session.selected_files ?? []) contextFiles[fp] = fp.split('/').pop();
     updateContextBar();
     renderBugPanel(bug, session.selected_files ?? []);
     document.getElementById('chat').innerHTML = '';
+    const hasContext = (session.selected_files ?? []).length > 0;
+    document.getElementById('question-input').disabled = !hasContext;
+    document.getElementById('send-btn').disabled = !hasContext;
     connectListen(session.id);
     loadSessions();
   };
@@ -576,6 +580,10 @@
             // zip: auto-add extracted files to context, mark button as in-chat
             extractedFiles = dlBody.extractedFiles;
             for (const ef of extractedFiles) contextFiles[ef] = ef.split('/').pop();
+            updateContextBar();
+            isInChat = true;
+          } else {
+            contextFiles[filePath] = att.name;
             updateContextBar();
             isInChat = true;
           }

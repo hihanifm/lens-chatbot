@@ -104,7 +104,7 @@ export const sessions = {
   addFile(id: string, filePath: string): void {
     const session = sessions.get(id);
     if (!session) return;
-    const files = [...session.selected_files, filePath];
+    const files = [...new Set([...session.selected_files, filePath])];
     db.prepare("UPDATE sessions SET selected_files = ? WHERE id = ?").run(
       JSON.stringify(files),
       id

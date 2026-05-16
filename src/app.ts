@@ -132,7 +132,11 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       session.workspace_path
     );
     log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length });
-    for (const ef of extractedFiles) sessions.addFile(req.params.id, ef);
+    if (extractedFiles.length > 0) {
+      for (const ef of extractedFiles) sessions.addFile(req.params.id, ef);
+    } else {
+      sessions.addFile(req.params.id, filePath);
+    }
     res.json({ filePath, extractedFiles });
   });
 

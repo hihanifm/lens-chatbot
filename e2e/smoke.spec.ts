@@ -15,6 +15,25 @@ async function seedAuth(page: Page) {
   await page.evaluate((id) => localStorage.setItem("lens_user_id", id), testUserId);
 }
 
+async function ensureModemLogSelected(page: Page) {
+  await page.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
+  const menu = page.locator(".att-menu");
+  const download = menu.locator("button").filter({ hasText: "Download to workspace" });
+  const addToChat = menu.locator("button").filter({ hasText: "Add to chat" });
+  if (await download.count()) {
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
+      download.click(),
+    ]);
+  } else if (await addToChat.count()) {
+    await addToChat.click();
+  } else {
+    await page.mouse.click(1, 1);
+  }
+  await expect(page.locator("#question-input")).toBeEnabled();
+  await expect(page.locator("#context-bar")).toContainText("modem_log.txt");
+}
+
 test("home loads", async ({ page }) => {
   await seedAuth(page);
   await page.goto("/");
@@ -36,12 +55,7 @@ test("download enables chat", async ({ page }) => {
   await page.locator("#bug-id-input").fill("BUG-123");
   await page.locator("#load-bug-btn").click();
   await expect(page.locator("#bug-info")).toBeVisible();
-  await page.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
-  await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
-    page.locator(".att-menu").getByRole("button", { name: "Download to workspace" }).click(),
-  ]);
-  await expect(page.locator("#question-input")).toBeEnabled();
+  await ensureModemLogSelected(page);
 });
 
 test("analyze streams reply", async ({ page }) => {
@@ -50,12 +64,7 @@ test("analyze streams reply", async ({ page }) => {
   await page.locator("#bug-id-input").fill("BUG-123");
   await page.locator("#load-bug-btn").click();
   await expect(page.locator("#bug-info")).toBeVisible();
-  await page.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
-  await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
-    page.locator(".att-menu").getByRole("button", { name: "Download to workspace" }).click(),
-  ]);
-  await expect(page.locator("#question-input")).toBeEnabled();
+  await ensureModemLogSelected(page);
   await page.locator("#question-input").fill("What failed?");
   await page.locator("#send-btn").click();
   await expect(page.locator(".msg.assistant")).toContainText("E2E mock analysis", { timeout: 15_000 });
@@ -68,17 +77,24 @@ test("ls reply contains workspace path not skill paths", async ({ page }) => {
   await page.locator("#load-bug-btn").click();
   await expect(page.locator("#bug-info")).toBeVisible();
   // download attachment so the question input is enabled
-  await page.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
-  await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
-    page.locator(".att-menu").getByRole("button", { name: "Download to workspace" }).click(),
-  ]);
-  await expect(page.locator("#question-input")).toBeEnabled();
+  await ensureModemLogSelected(page);
   await page.locator("#question-input").fill("ls");
   await page.locator("#send-btn").click();
   // stub echoes workspacePath for ls — must contain the bug ID, not skill paths
   await expect(page.locator(".msg.assistant")).toContainText("BUG-123", { timeout: 15_000 });
   await expect(page.locator(".msg.assistant")).not.toContainText("/app/skills");
+});
+
+test("analyze this uses downloaded attachment context", async ({ page }) => {
+  await seedAuth(page);
+  await page.goto("/");
+  await page.locator("#bug-id-input").fill("BUG-123");
+  await page.locator("#load-bug-btn").click();
+  await expect(page.locator("#bug-info")).toBeVisible();
+  await ensureModemLogSelected(page);
+  await page.locator("#question-input").fill("analyze this");
+  await page.locator("#send-btn").click();
+  await expect(page.locator(".msg.assistant")).toContainText("attachments/modem_log.txt", { timeout: 15_000 });
 });
 
 test("shared session: two tabs see same session and broadcast", async ({ browser }) => {
@@ -111,12 +127,7 @@ test("shared session: two tabs see same session and broadcast", async ({ browser
   expect(sessionIdA).toBe(sessionIdB);
 
   // Download attachment and send a question on Tab A
-  await pageA.locator("#attachments .attachment-btn").filter({ hasText: "modem_log.txt" }).click();
-  await Promise.all([
-    pageA.waitForResponse((r) => r.url().includes("/attachment/att-1") && r.ok()),
-    pageA.locator(".att-menu").getByRole("button", { name: "Download to workspace" }).click(),
-  ]);
-  await expect(pageA.locator("#question-input")).toBeEnabled();
+  await ensureModemLogSelected(pageA);
   await pageA.locator("#question-input").fill("What failed?");
   await pageA.locator("#send-btn").click();
 
