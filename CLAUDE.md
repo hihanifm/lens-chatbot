@@ -14,6 +14,10 @@ make build && make up  # build Docker image + start dev stack (port 38001)
 make restart         # down + up without rebuild
 make logs            # tail dev container logs
 make prod-up         # build + start prod stack (port 38000)
+
+npm run test:e2e         # Playwright e2e suite (spins up real Express + MockBugTracker + StubAgentRunner)
+npm run test:e2e:ui      # same, with Playwright UI
+npm run test:e2e:live    # live suite against real Ollama (see playwright.live.config.ts)
 ```
 
 Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=llama3.1:8b`.
@@ -22,7 +26,8 @@ Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_
 
 ```
 static/index.html        ← single-page UI, plain JS, SSE consumer
-src/index.ts             ← Express, all routes, SSE streaming
+src/index.ts             ← entry point: wires MockBugTracker + ClineSdkAgentRunner, calls createApp()
+src/app.ts               ← Express app factory (createApp), all routes, SSE streaming
 src/db.ts                ← SQLite via node:sqlite (built-in, no native addon)
 src/logger.ts            ← thin console wrapper with timestamps + levels
 src/services/
@@ -31,6 +36,11 @@ src/services/
 src/agent/
   agentRunner.ts         ← AgentRunner interface + AgentEvent types
   clineSdkRunner.ts      ← ClineSdkAgentRunner (@cline/sdk, OpenAI-compatible)
+e2e/
+  smoke.spec.ts          ← Playwright tests: load bug, download attachment, analyze stream
+  server.ts              ← test server (MockBugTracker + StubAgentRunner, port 3099)
+  stubAgentRunner.ts     ← AgentRunner stub that emits predictable "E2E mock analysis" reply
+fixtures/                ← static fixture files for tests
 ```
 
 ## Key design decisions
@@ -71,7 +81,7 @@ This tool is for engineers. Surface all agent lifecycle events to the UI — mor
 
 | What | Where | How |
 |------|-------|-----|
-| Bug tracker | `src/index.ts:24` | `new InternalBugTracker()` |
-| Agent runner | `src/index.ts:25` | `new ClineCliAgentRunner()` |
+| Bug tracker | `src/index.ts:9` | `new InternalBugTracker()` |
+| Agent runner | `src/index.ts:9` | `new ClineCliAgentRunner()` |
 | LLM model | `.env` → `LLM_MODEL` | any Ollama model name |
 | Ports | `.env` → `DEV_PORT` / `PROD_PORT` | override compose defaults |
