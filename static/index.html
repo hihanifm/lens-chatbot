@@ -157,6 +157,11 @@
   <div id="header">
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
+    <span id="user-badge" style="margin-left:auto; font-size:13px; color:#6b7280; display:flex; align-items:center; gap:10px;"></span>
+  </div>
+  <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
+    <span style="font-weight:600;">Also here:</span>
+    <span id="presence-names"></span>
   </div>
 
   <div id="bug-info" class="expanded">
@@ -197,11 +202,95 @@
   </div>
 </div>
 
-<script>
+<script type="module">
   let currentSessionId = null;
   let contextFiles = {};
   let currentEs = null;
+  let currentListenEs = null;
   let currentEngLog = null;
+  let currentUser = null;
+  const myClientId = crypto.randomUUID();
+
+  // remote streaming bubbles keyed by clientId
+  const remoteStreams = new Map();
+
+  async function bootstrapUser() {
+    const userId = localStorage.getItem('lens_user_id');
+    if (userId) {
+      const res = await fetch(`/users/${userId}`);
+      if (res.ok) return await res.json();
+      localStorage.removeItem('lens_user_id');
+    }
+    window.location.href = '/login.html';
+    return null;
+  }
+
+  currentUser = await bootstrapUser();
+  if (!currentUser) throw new Error('redirecting');
+
+  document.getElementById('user-badge').innerHTML =
+    `<span>👤 ${currentUser.name}</span>` +
+    `<a href="#" style="font-size:12px; color:#9ca3af; text-decoration:none;" id="logout-link">Log out</a>`;
+  document.getElementById('logout-link').onclick = (e) => {
+    e.preventDefault();
+    localStorage.removeItem('lens_user_id');
+    window.location.href = '/login.html';
+  };
+
+  let presenceUsers = [];
+  function renderPresence(users) {
+    presenceUsers = users;
+    document.getElementById('presence-names').textContent = users.map(u => u.userName).join(', ');
+    document.getElementById('presence-bar').style.display = users.length ? 'block' : 'none';
+  }
+  function addPresenceUser(u) { renderPresence([...presenceUsers, u]); }
+  function removePresenceUser(cid) { renderPresence(presenceUsers.filter(u => u.clientId !== cid)); }
+
+  function connectListen(sessionId) {
+    if (currentListenEs) { currentListenEs.close(); currentListenEs = null; }
+    renderPresence([]);
+    const url = `/session/${sessionId}/listen?userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}`;
+    const es = new EventSource(url);
+    currentListenEs = es;
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'presence:snapshot') {
+        renderPresence(data.users);
+      } else if (data.type === 'presence:join') {
+        addPresenceUser(data);
+      } else if (data.type === 'presence:leave') {
+        removePresenceUser(data.clientId);
+      } else if (data.type === 'analyzing') {
+        appendMessage('status', `· ${data.user} is analyzing…`);
+      } else if (data.type === 'user_message') {
+        appendMessage('user', data.content, false, null, data.user);
+      } else if (data.type === 'text') {
+        let el = remoteStreams.get(data.clientId);
+        if (!el) {
+          el = appendMessage('assistant', '', true, null, data.user);
+          remoteStreams.set(data.clientId, el);
+        }
+        el.textContent += data.content;
+        el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else if (data.type === 'done') {
+        const el = remoteStreams.get(data.clientId);
+        if (el) {
+          el.classList.remove('streaming');
+          el.closest('.msg-row')?.classList.remove('streaming');
+          if (el.msgTime) setMsgTime(el.msgTime, new Date());
+          remoteStreams.delete(data.clientId);
+        }
+      } else if (data.type === 'error') {
+        remoteStreams.delete(data.clientId);
+        appendMessage('error', `✗ ${data.user}: ${data.content}`);
+      } else if (data.type === 'status') {
+        appendEngineeringLogLine(`[${data.user}] ${data.content}`);
+      }
+    };
+
+    es.onerror = () => { /* connection closed — ignore, server cleans up */ };
+  }
 
   function updateContextBar() {
     const bar = document.getElementById('context-bar');
@@ -365,10 +454,11 @@
 
     const chat = document.getElementById('chat');
     chat.innerHTML = '';
-    for (const m of messages) appendMessage(m.role, m.content, false, m.created_at);
+    for (const m of messages) appendMessage(m.role, m.content, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null);
 
     document.getElementById('question-input').disabled = false;
     document.getElementById('send-btn').disabled = false;
+    connectListen(sessionId);
     loadSessions();
   }
 
@@ -390,8 +480,9 @@
     currentSessionId = session.id;
     contextFiles = {};
     updateContextBar();
-    renderBugPanel(bug, []);
+    renderBugPanel(bug, session.selected_files ?? []);
     document.getElementById('chat').innerHTML = '';
+    connectListen(session.id);
     loadSessions();
   };
 
@@ -542,7 +633,7 @@
 
     if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
 
-    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}`;
+    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}&userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}`;
     const es = new EventSource(url);
     currentEs = es;
     let isDone = false;
@@ -674,7 +765,7 @@
     group.querySelector('.eng-log-toggle').setAttribute('aria-expanded', 'false');
   }
 
-  function appendMessage(role, content, streaming = false, createdAt = null) {
+  function appendMessage(role, content, streaming = false, createdAt = null, userName = null) {
     const chat = document.getElementById('chat');
     if (role !== 'user' && role !== 'assistant') {
       const el = document.createElement('div');
@@ -691,6 +782,12 @@
     timeEl.className = 'msg-time';
     const wrap = document.createElement('div');
     wrap.className = 'msg-bubble-wrap';
+    if (userName) {
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:3px; padding: 0 4px;';
+      label.textContent = userName;
+      wrap.appendChild(label);
+    }
     const el = document.createElement('div');
     el.className = `msg ${role}${streaming ? ' streaming' : ''}`;
     el.textContent = content;
