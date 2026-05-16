@@ -4,3 +4,4 @@ dist/
 *.db
 data/
 e2e/.data/
+test-results/
