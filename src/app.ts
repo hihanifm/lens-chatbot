@@ -132,6 +132,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           log.error("analyze:agent-error", { sessionId: req.params.id, error: event.content });
           res.write(`data: ${JSON.stringify({ type: "error", content: event.content })}\n\n`);
           res.end();
+        } else if (event.type === "status") {
+          res.write(`data: ${JSON.stringify({ type: "status", content: event.content })}\n\n`);
         }
       }
     } catch (err: any) {

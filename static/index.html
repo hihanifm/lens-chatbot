@@ -45,7 +45,6 @@
     .attachment-btn { background: #eef2ff; border: 1.5px solid #a5b4fc; border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; color: #4338ca; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(99,102,241,0.15); }
     .attachment-btn:hover { background: #e0e7ff; border-color: #6366f1; color: #3730a3; box-shadow: 0 2px 6px rgba(99,102,241,0.25); transform: translateY(-1px); }
     .attachment-btn.downloaded { background: #f0fdf4; border-color: #86efac; color: #15803d; box-shadow: none; transform: none; cursor: default; font-weight: 500; }
-    .attachment-btn.dl-link { background: #f0fdf4; border-color: #86efac; color: #15803d; font-weight: 500; }
     .attachment-hint { font-size: 11px; color: #9ca3af; font-style: italic; margin-bottom: 8px; }
 
     /* Comments */
@@ -75,9 +74,13 @@
     .context-label { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
     .context-chip { display: inline-flex; align-items: center; gap: 4px; background: #eef2ff; border: 1px solid #a5b4fc; border-radius: 999px; padding: 3px 10px 3px 8px; font-size: 12px; color: #4338ca; font-weight: 500; }
     .context-chip-remove { background: none; border: none; cursor: pointer; color: #818cf8; font-size: 12px; padding: 0; line-height: 1; margin-left: 2px; font-family: inherit; }
-    .add-to-chat-btn { background: none; border: 1.5px solid #6366f1; border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 11px; font-weight: 600; color: #6366f1; font-family: inherit; transition: all 0.15s; }
-    .add-to-chat-btn:hover { background: #eef2ff; }
-    .add-to-chat-btn.in-chat { background: #eef2ff; color: #4338ca; border-color: #a5b4fc; }
+    .attachment-btn.in-chat { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; box-shadow: none; transform: none; cursor: pointer; font-weight: 600; }
+    .att-menu { position: absolute; z-index: 100; background: white; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); padding: 4px; min-width: 160px; margin-top: 4px; }
+    .att-menu-item { display: block; width: 100%; text-align: left; background: none; border: none; padding: 8px 12px; font-size: 13px; font-family: inherit; color: #374151; cursor: pointer; border-radius: 6px; white-space: nowrap; }
+    .att-menu-item:hover { background: #f3f4f6; }
+    .att-menu-item.danger { color: #dc2626; }
+    .att-menu-item.danger:hover { background: #fff5f5; }
+    .att-menu-wrapper { position: relative; display: inline-block; }
     #question-input { flex: 1; border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 10px 16px; font-size: 14px; font-family: inherit; resize: none; height: 44px; outline: none; transition: border-color 0.15s; color: #111827; }
     #question-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
     #question-input:disabled { background: #f9fafb; color: #9ca3af; }
@@ -125,7 +128,8 @@
 
 <script>
   let currentSessionId = null;
-  let contextFiles = {}; // filePath → filename
+  let contextFiles = {};
+  let currentEs = null;
 
   function updateContextBar() {
     const bar = document.getElementById('context-bar');
@@ -223,6 +227,7 @@
   }
 
   async function resumeSession(sessionId) {
+    if (currentEs) { currentEs.close(); currentEs = null; }
     const res = await fetch(`/session/${sessionId}`);
     if (!res.ok) { appendMessage('error', `✗ Failed to load session (HTTP ${res.status})`); return; }
     const { session, messages, bug } = await res.json();
@@ -273,67 +278,121 @@
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function makeAddToChatBtn(filePath, attName, initiallyInChat) {
-    const btn = document.createElement('button');
-    function setState(inChat) {
-      btn.textContent = inChat ? 'In chat ✕' : '+ Add to chat';
-      btn.className = 'add-to-chat-btn' + (inChat ? ' in-chat' : '');
-      btn.onclick = async () => {
-        await toggleFileInChat(filePath, attName, !inChat);
-        setState(!inChat);
-      };
+  let openMenu = null;
+  document.addEventListener('click', (e) => {
+    if (openMenu && !openMenu.contains(e.target)) {
+      openMenu.remove();
+      openMenu = null;
     }
-    setState(initiallyInChat);
-    return btn;
-  }
+  });
 
   function makeAttachmentBtn(att, selectedFiles = []) {
+    const sizeLabel = att.size ? ` · ${formatSize(att.size)}` : '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'att-menu-wrapper';
+
     const btn = document.createElement('button');
     btn.className = 'attachment-btn';
-    const sizeLabel = att.size ? ` · ${formatSize(att.size)}` : '';
+    wrapper.appendChild(btn);
 
-    // Restore downloaded+in-chat state if this file was already in context
-    const existingPath = selectedFiles.find(fp => fp.endsWith('/' + att.name));
-    if (existingPath) {
-      btn.textContent = `✅ ${att.name}${sizeLabel}`;
-      btn.classList.add('downloaded');
-      btn.disabled = true;
-      const addBtn = makeAddToChatBtn(existingPath, att.name, true);
-      btn.insertAdjacentElement('afterend', addBtn);
-      return btn;
+    // filePath is known after download or restored from selectedFiles on resume
+    let filePath = selectedFiles.find(fp => fp.endsWith('/' + att.name)) ?? null;
+    let isDownloaded = !!filePath;
+    let isInChat = !!filePath;
+
+    function applyState() {
+      btn.classList.remove('downloaded', 'in-chat');
+      if (!isDownloaded) {
+        btn.textContent = `⬇ ${att.name}${sizeLabel}`;
+      } else if (isInChat) {
+        btn.textContent = `📎 ${att.name}${sizeLabel}`;
+        btn.classList.add('in-chat');
+      } else {
+        btn.textContent = `✅ ${att.name}${sizeLabel}`;
+        btn.classList.add('downloaded');
+      }
     }
 
-    btn.textContent = `⬇ ${att.name}${sizeLabel}`;
-    btn.onclick = async () => {
-      btn.textContent = `⏬ ${att.name}${sizeLabel}`;
-      btn.disabled = true;
-      const attRes = await fetch(`/session/${currentSessionId}/attachment/${att.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attName: att.name }),
-      });
-      if (!attRes.ok) {
-        const attBody = await attRes.json().catch(() => ({}));
-        appendMessage('error', `✗ Download failed: ${attBody.error ?? attRes.statusText} (HTTP ${attRes.status})`);
-        btn.textContent = `⬇ ${att.name}${sizeLabel}`;
-        btn.disabled = false;
-        return;
+    function openPopover() {
+      if (openMenu) { openMenu.remove(); openMenu = null; }
+      const menu = document.createElement('div');
+      menu.className = 'att-menu';
+
+      if (!isDownloaded) {
+        const dlItem = document.createElement('button');
+        dlItem.className = 'att-menu-item';
+        dlItem.textContent = '⬇ Download to workspace';
+        dlItem.onclick = async (e) => {
+          e.stopPropagation();
+          menu.remove(); openMenu = null;
+          btn.textContent = `⏬ ${att.name}${sizeLabel}`;
+          btn.disabled = true;
+          const res = await fetch(`/session/${currentSessionId}/attachment/${att.id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attName: att.name }),
+          });
+          btn.disabled = false;
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            appendMessage('error', `✗ Download failed: ${body.error ?? res.statusText} (HTTP ${res.status})`);
+            applyState();
+            return;
+          }
+          filePath = (await res.json()).filePath;
+          isDownloaded = true;
+          applyState();
+          document.getElementById('question-input').disabled = false;
+          document.getElementById('send-btn').disabled = false;
+        };
+        menu.appendChild(dlItem);
+      } else {
+        if (!isInChat) {
+          const addItem = document.createElement('button');
+          addItem.className = 'att-menu-item';
+          addItem.textContent = '📎 Add to chat';
+          addItem.onclick = async (e) => {
+            e.stopPropagation();
+            menu.remove(); openMenu = null;
+            await toggleFileInChat(filePath, att.name, true);
+            isInChat = true;
+            applyState();
+          };
+          menu.appendChild(addItem);
+        } else {
+          const rmItem = document.createElement('button');
+          rmItem.className = 'att-menu-item danger';
+          rmItem.textContent = '✕ Remove from chat';
+          rmItem.onclick = async (e) => {
+            e.stopPropagation();
+            menu.remove(); openMenu = null;
+            await toggleFileInChat(filePath, att.name, false);
+            isInChat = false;
+            applyState();
+          };
+          menu.appendChild(rmItem);
+        }
+        const saveItem = document.createElement('a');
+        saveItem.className = 'att-menu-item';
+        saveItem.href = `/session/${currentSessionId}/attachment/download?name=${encodeURIComponent(att.name)}`;
+        saveItem.download = att.name;
+        saveItem.textContent = '💾 Save to device';
+        saveItem.onclick = (e) => { e.stopPropagation(); menu.remove(); openMenu = null; };
+        menu.appendChild(saveItem);
       }
-      const { filePath } = await attRes.json();
-      btn.textContent = `✅ ${att.name}${sizeLabel}`;
-      btn.classList.add('downloaded');
-      const dl = document.createElement('a');
-      dl.href = `/session/${currentSessionId}/attachment/download?name=${encodeURIComponent(att.name)}`;
-      dl.download = att.name;
-      dl.className = 'attachment-btn dl-link';
-      dl.textContent = '⬇ save';
-      const addBtn = makeAddToChatBtn(filePath, att.name, false);
-      btn.insertAdjacentElement('afterend', dl);
-      dl.insertAdjacentElement('afterend', addBtn);
-      document.getElementById('question-input').disabled = false;
-      document.getElementById('send-btn').disabled = false;
+
+      wrapper.appendChild(menu);
+      openMenu = menu;
+    }
+
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (openMenu === wrapper.querySelector('.att-menu')) { openMenu.remove(); openMenu = null; return; }
+      openPopover();
     };
-    return btn;
+
+    applyState();
+    return wrapper;
   }
 
   document.getElementById('send-btn').onclick = sendQuestion;
@@ -355,8 +414,12 @@
     appendMessage('user', question);
     const assistantEl = appendMessage('assistant', '', true);
 
+    if (currentEs) { currentEs.close(); currentEs = null; }
+
     const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}`;
     const es = new EventSource(url);
+    currentEs = es;
+    let isDone = false;
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
@@ -368,19 +431,21 @@
       } else if (data.type === 'error') {
         appendMessage('error', '✗ ' + data.content);
         assistantEl.remove();
-        es.close();
+        es.close(); currentEs = null;
         document.getElementById('send-btn').disabled = false;
       } else if (data.type === 'done') {
+        isDone = true;
         assistantEl.classList.remove('streaming');
-        es.close();
+        es.close(); currentEs = null;
         document.getElementById('send-btn').disabled = false;
       }
     };
 
     es.onerror = () => {
+      if (isDone) return;
       appendMessage('error', '✗ SSE connection lost — check server logs');
       assistantEl.remove();
-      es.close();
+      es.close(); currentEs = null;
       document.getElementById('send-btn').disabled = false;
     };
   }
