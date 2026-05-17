@@ -51,7 +51,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
   return {
     providerId: (llmCfg.provider === "openai" || llmCfg.provider === "openai-compatible" ? "openai-native" : llmCfg.provider) as any,
     modelId: llmCfg.model,
-    apiKey: llmCfg.apiKey ?? "",
+    apiKey: llmCfg.apiKey || "none",
     baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
     cwd: input.workspacePath,
     workspaceRoot: input.workspacePath,
