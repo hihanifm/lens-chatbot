@@ -44,6 +44,11 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
 }
 
 export class ClineCoreAgentRunner implements AgentRunner {
+  async abort(clineSessionId: string): Promise<void> {
+    const cline = await getCline();
+    await cline.abort(clineSessionId);
+  }
+
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const skills = await loadAgentSkills();
     const llmCfg = settings.getLlmConfig();

@@ -137,6 +137,8 @@
     #send-btn { background: #6366f1; color: white; border: none; border-radius: 12px; padding: 10px 22px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; white-space: nowrap; }
     #send-btn:disabled { background: #c7d2fe; cursor: default; }
     #send-btn:hover:not(:disabled) { background: #4f46e5; }
+    #abort-btn { display: none; background: #ef4444; color: white; border: none; border-radius: 12px; padding: 10px 22px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; white-space: nowrap; }
+    #abort-btn:hover { background: #dc2626; }
 
     /* Settings */
     #settings-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #9ca3af; padding: 4px 8px; border-radius: 8px; transition: background 0.15s, color 0.15s; line-height: 1; }
@@ -220,6 +222,7 @@
     <div id="input-row">
       <textarea id="question-input" placeholder="Ask a question about the log..." disabled></textarea>
       <button id="send-btn" disabled>Send</button>
+      <button id="abort-btn">Stop</button>
     </div>
   </div>
 </div>
@@ -743,6 +746,7 @@
 
     input.value = '';
     document.getElementById('send-btn').disabled = true;
+    document.getElementById('abort-btn').style.display = 'block';
 
     appendMessage('user', question);
     const assistantEl = appendMessage('assistant', '', true);
@@ -754,6 +758,11 @@
     const es = new EventSource(url);
     currentEs = es;
     let isDone = false;
+
+    const finishAnalysis = () => {
+      document.getElementById('send-btn').disabled = false;
+      document.getElementById('abort-btn').style.display = 'none';
+    };
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
@@ -767,7 +776,7 @@
         appendMessage('error', '✗ ' + data.content);
         removeMsgRow(assistantEl);
         es.close(); currentEs = null;
-        document.getElementById('send-btn').disabled = false;
+        finishAnalysis();
       } else if (data.type === 'done') {
         isDone = true;
         assistantEl.classList.remove('streaming');
@@ -775,7 +784,7 @@
         if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
         finishEngineeringLog();
         es.close(); currentEs = null;
-        document.getElementById('send-btn').disabled = false;
+        finishAnalysis();
       }
     };
 
@@ -785,7 +794,15 @@
       appendMessage('error', '✗ SSE connection lost — check server logs');
       removeMsgRow(assistantEl);
       es.close(); currentEs = null;
-      document.getElementById('send-btn').disabled = false;
+      finishAnalysis();
+    };
+
+    document.getElementById('abort-btn').onclick = async () => {
+      es.close(); currentEs = null;
+      finishEngineeringLog();
+      finishAnalysis();
+      removeMsgRow(assistantEl);
+      await fetch(`/session/${currentSessionId}/abort`, { method: 'POST' });
     };
   }
 
