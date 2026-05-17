@@ -80,7 +80,13 @@ install-node:
 		echo "3/3  local tarball ($(NODE_22_TARBALL)) ..."; \
 		if [ -f "$(NODE_22_TARBALL)" ]; then \
 			sudo tar -xJf "$(NODE_22_TARBALL)" -C /usr/local --strip-components=1 \
-				&& echo "" && echo "Done. node $$(node --version) installed from tarball." \
+				&& echo "" \
+				&& echo "Done. /usr/local/bin/node $$(/usr/local/bin/node --version) installed from tarball." \
+				&& echo "" \
+				&& echo "IMPORTANT: run these two commands to activate Node 22 in this shell:" \
+				&& echo "  hash -r" \
+				&& echo "  export PATH=/usr/local/bin:\$$PATH" \
+				&& echo "Or simply open a new terminal — Node 22 will be picked up automatically." \
 				&& exit 0; \
 		fi; \
 		echo "     No tarball found in current directory."; \
