@@ -33,12 +33,12 @@ help:
 	@echo "  make clean              Remove containers/volumes; prune images"
 
 dev:
-	mkdir -p ./data/dev
-	PORT=$${PORT:-38001} DATA_DIR=./data/dev npm run dev >> ./data/dev/dev.log 2>&1 &
+	mkdir -p ./data/local
+	PORT=$${PORT:-38001} DATA_DIR=./data/local npm run dev >> ./data/local/dev.log 2>&1 &
 	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
-	tail -f ./data/dev/dev.log
+	tail -f ./data/local/dev.log
 
 dev-stop:
 	@pkill -f "tsx src/index.ts" && echo "Stopped." || echo "Not running."
