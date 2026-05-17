@@ -22,9 +22,10 @@ make prod-up         # build + start prod stack (port 38000)
 npm run test:e2e         # Playwright e2e suite (spins up real Express + MockBugTracker + StubAgentRunner)
 npm run test:e2e:ui      # same, with Playwright UI
 npm run test:e2e:live    # live suite against real Ollama (see playwright.live.config.ts)
+npx playwright test -g "test name pattern"  # run a single e2e test by name
 ```
 
-Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=llama3.1:8b`.
+Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=llama3.1:8b`. `ADMIN_PIN` (optional): if set on first startup, hashed with scrypt and stored in SQLite; ignored on subsequent restarts — required to change LLM settings via the API. `NODE_OPTIONS=--experimental-sqlite` is required for `node:sqlite` (Node 22); set automatically by Docker and `npm run dev`.
 
 ## Architecture
 
@@ -34,12 +35,13 @@ src/index.ts             ← entry point: wires MockBugTracker + ClineSdkAgentRu
 src/app.ts               ← Express app factory (createApp), all routes, SSE streaming
 src/db.ts                ← SQLite via node:sqlite (built-in, no native addon)
 src/logger.ts            ← thin console wrapper with timestamps + levels
+src/broadcast.ts         ← SSE presence room (addClient/removeClient/broadcast), 25s ping keepalive
 src/services/
   bugTracker.ts          ← BugTracker interface + MockBugTracker + InternalBugTracker stub
   attachmentService.ts   ← workspace creation, file download, bug_summary.md write
 src/agent/
   agentRunner.ts         ← AgentRunner interface + AgentEvent types
-  clineSdkRunner.ts      ← ClineSdkAgentRunner (@cline/sdk, OpenAI-compatible)
+  clineCoreAgentRunner.ts ← ClineCoreAgentRunner (@cline/sdk ClineCore, session-aware)
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
   environment.md         ← agent environment context (tools, workspace layout) — read by agent every task
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
@@ -56,7 +58,7 @@ fixtures/                ← static fixture files for tests
 
 **BugTracker is an interface.** `MockBugTracker` returns hardcoded data. `InternalBugTracker` stub exists in `bugTracker.ts` — implement the two methods and swap in `index.ts`.
 
-**Agent is stateless per call.** No in-memory session resumption. Each `/analyze` call rebuilds full context from the `messages` table (`messages.buildSummary()`). SQLite is the source of truth.
+**Agent sessions persist across turns.** `cline_session_id` is stored in SQLite and passed back on follow-up turns so `ClineCoreAgentRunner` calls `cline.send()` instead of `cline.start()`, preserving ClineCore's native context. If the session is no longer found (e.g. after Docker restart), the runner falls back to `cline.start()` automatically.
 
 **Workspace layout** per bug:
 ```
@@ -68,7 +70,7 @@ DATA_DIR/workspaces/BUG-ID/
 ```
 `DATA_DIR` defaults to `/app/data` in Docker, CWD locally.
 
-**SSE streaming**: `/session/:id/analyze?question=...` is a GET that streams `text/event-stream`. Each event is `data: {type, content}\n\n`. Types: `status`, `text`, `done`, `error`.
+**SSE streaming**: `/session/:id/analyze?question=...` is a GET that streams `text/event-stream`. Each event is `data: {type, content}\n\n`. Types: `status`, `text`, `done`, `error`. **`/session/:id/listen`** (GET, SSE) is a passive observer stream — same analysis events broadcast via `broadcast.ts`, plus presence events: `presence:snapshot`, `presence:join`, `presence:leave`.
 
 ## Skills system
 
@@ -89,7 +91,7 @@ Reserve backend code for things the LLM cannot do: I/O, persistence, streaming, 
 
 ## Transparency principle — show everything to the user
 
-This tool is for engineers. Surface all agent lifecycle events to the UI — more is better. Every meaningful internal state change should appear as a `status` event in the SSE stream and render inline in the chat. In `clineSdkRunner.ts`, the default `else` branch already emits any unknown Cline SDK event as a `· event.type` status line. Preserve this behaviour. When adding new routes or error paths:
+This tool is for engineers. Surface all agent lifecycle events to the UI — more is better. Every meaningful internal state change should appear as a `status` event in the SSE stream and render inline in the chat. In `clineCoreAgentRunner.ts`, the default `else` branch already emits any unknown Cline SDK event as a `· event.type` status line. Preserve this behaviour. When adding new routes or error paths:
 - HTTP errors → return `{ error: "descriptive message" }` with correct status code
 - Frontend fetch calls → always check `res.ok` and call `appendMessage('error', ...)` on failure
 - New agent event types → emit as `status` first, refine later if needed
