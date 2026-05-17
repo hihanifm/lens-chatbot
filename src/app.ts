@@ -412,10 +412,53 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     broadcast(req.params.id, { type: "analyzing", mode: "lucky" }, undefined);
 
-    log.info("lucky:start", { sessionId: req.params.id, files: session.selected_files });
+    // Auto-download top-level bug attachments (not comment attachments — those can be 300+ MB)
+    let bugJson: any = null;
+    try {
+      bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+    } catch { /* no bug.json — proceed with existing selected_files */ }
+
+    if (bugJson) {
+      for (const att of bugJson.attachments ?? []) {
+        const attPath = path.join(session.workspace_path, "attachments", att.name);
+        let downloaded = true;
+        try { await fs.access(attPath); } catch {
+          try {
+            res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Downloading ${att.name}...` })}\n\n`);
+            await downloadAttachment(tracker, session.bug_id, att.id, att.name, session.workspace_path);
+          } catch (err: any) {
+            res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Skipping ${att.name}: ${err.message}` })}\n\n`);
+            downloaded = false;
+          }
+        }
+        if (!downloaded) continue;
+        if (att.name.endsWith(".zip")) {
+          const extractBaseDir = path.join(session.workspace_path, "attachments", path.basename(att.name, ".zip"));
+          try {
+            const entries = await listZipContents(attPath, extractBaseDir);
+            for (const entry of entries) {
+              if (!entry.extracted) {
+                try {
+                  res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Extracting ${entry.innerPath}...` })}\n\n`);
+                  sessions.addFile(req.params.id, await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
+                } catch { /* skip bad entry */ }
+              } else if (entry.filePath) {
+                sessions.addFile(req.params.id, entry.filePath);
+              }
+            }
+          } catch { /* skip unreadable zip */ }
+        } else {
+          sessions.addFile(req.params.id, attPath);
+        }
+      }
+      res.write(`data: ${JSON.stringify({ type: "status", content: "[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed." })}\n\n`);
+    }
+
+    const updatedSession = sessions.get(req.params.id)!;
+    log.info("lucky:start", { sessionId: req.params.id, files: updatedSession.selected_files });
 
     try {
-      for await (const event of runLucky(runner, session)) {
+      for await (const event of runLucky(runner, updatedSession)) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
         broadcast(req.params.id, event, undefined);
         if (event.type === "done" || event.type === "error") break;
