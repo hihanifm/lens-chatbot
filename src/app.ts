@@ -3,7 +3,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
-import { getOrCreateWorkspace, downloadAttachment, saveBugSummary, listZipContents, extractZipEntry } from "./services/attachmentService.js";
+import { getOrCreateWorkspace, downloadAttachment, saveBugSummary, listZipContents, extractZipEntry, saveAdHocFiles } from "./services/attachmentService.js";
+import multer from "multer";
 import { buildVirtualTree } from "./services/workspaceExplorer.js";
 import type { AgentRunner } from "./agent/agentRunner.js";
 import { sessions, messages, users, settings } from "./db.js";
@@ -38,6 +39,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createApp(tracker: BugTracker, runner: AgentRunner): express.Application {
   const app = express();
   app.use(express.json());
+
+  const MAX_UPLOAD_BYTES = parseInt(process.env.UPLOAD_SIZE_LIMIT_MB ?? "50") * 1024 * 1024;
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
+
   app.use((req, _res, next) => {
     log.info(`${req.method} ${req.path}`, Object.keys(req.query).length ? { query: req.query } : undefined);
     next();
@@ -67,6 +72,58 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const user = users.getById(req.params.id);
     if (!user) return res.status(404).json({ error: "not found" });
     res.json(user);
+  });
+
+  app.post("/session/adhoc", async (req, res) => {
+    const { bugId: rawId, title, description } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+
+    const bugId = (rawId?.trim()) || `ADHOC-${Date.now()}`;
+    const now = new Date().toISOString();
+
+    const bug = {
+      id: bugId,
+      title,
+      description: description ?? "",
+      author: "user",
+      owner: "",
+      state: "adhoc",
+      module: "adhoc",
+      created_at: now,
+      updated_at: now,
+      attachments: [],
+      comments: [],
+    };
+
+    // No dedup: each ad hoc creation is intentionally a fresh session.
+    log.info("session:adhoc:create", { bugId });
+    const workspacePath = await getOrCreateWorkspace(bugId);
+    await saveBugSummary(workspacePath, bug);
+    const session = sessions.create(bugId, workspacePath);
+    log.info("session:adhoc:created", { sessionId: session.id, workspace: workspacePath });
+    res.json({ session, bug });
+  });
+
+  app.post("/session/:id/upload", upload.array("files", 20), async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    if (!session.workspace_path) return res.status(400).json({ error: "no workspace" });
+
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) return res.status(400).json({ error: "no files uploaded" });
+
+    const commentLabel = (req.body.commentLabel as string | undefined)?.trim();
+    const commentBody = (req.body.commentBody as string | undefined)?.trim();
+    const comment = commentLabel ? { label: commentLabel, body: commentBody ?? "" } : undefined;
+
+    try {
+      const result = await saveAdHocFiles(session.workspace_path, files, comment);
+      log.info("session:upload:done", { sessionId: session.id, count: files.length });
+      res.json(result);
+    } catch (err: any) {
+      log.error("session:upload:error", { err: err.message });
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.post("/session", async (req, res) => {
@@ -515,6 +572,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     settings.setAdminPinHash(await hashPin(String(newPin)));
     log.info("settings:pin-changed");
     res.json({ ok: true });
+  });
+
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      const mb = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
+      return res.status(413).json({ error: `File too large — max ${mb} MB. Please zip your files.` });
+    }
+    res.status(500).json({ error: err.message ?? "Internal error" });
   });
 
   return app;

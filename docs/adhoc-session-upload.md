@@ -50,6 +50,7 @@ export async function saveAdHocFiles(
   }
 
   const bugJsonPath = path.join(workspacePath, "bug.json");
+  // no concurrency guard needed: single-user tool
   const bug = JSON.parse(await fs.readFile(bugJsonPath, "utf8"));
 
   const attEntries = files.map((f) => ({
@@ -124,9 +125,10 @@ app.post("/session/adhoc", async (req, res) => {
     comments: [],
   };
 
+  // No dedup: each ad hoc creation is intentionally a fresh session.
   log.info("session:adhoc:create", { bugId });
   const workspacePath = await getOrCreateWorkspace(bugId);
-  await saveBugSummary(workspacePath, bug as any);
+  await saveBugSummary(workspacePath, bug);
   const session = sessions.create(bugId, workspacePath);
   log.info("session:adhoc:created", { sessionId: session.id, workspace: workspacePath });
   res.json({ session, bug });
@@ -201,7 +203,7 @@ Replace with:
 </div>
 
 <!-- ad hoc mode -->
-<div id="adhoc-mode" style="display:none; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+  <div id="adhoc-mode" style="gap:8px; align-items:center; flex-wrap:wrap;">
   <input id="adhoc-id-input" type="text" placeholder="Custom ID (optional)" style="width:160px;" />
   <input id="adhoc-title-input" type="text" placeholder="Issue title (required)" style="flex:1; min-width:180px;" />
   <input id="adhoc-desc-input" type="text" placeholder="Description (optional)" style="flex:1; min-width:180px;" />
@@ -264,8 +266,8 @@ Find the `<style>` block and add at the end (before `</style>`):
 #adhoc-mode input { padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-family: inherit; }
 .attachment-upload-label { padding: 7px 14px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
 
-/* explorer upload panel */
-#explorer-upload-panel { padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
+/* explorer upload panel — hidden by default; shown only for ad hoc sessions */
+#explorer-upload-panel { display: none; padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
 #explorer-upload-panel input[type=text] { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px; font-family: inherit; }
 #upload-submit-btn { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
 #upload-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -274,6 +276,14 @@ Find the `<style>` block and add at the end (before `</style>`):
 ### 4d — JavaScript: tab switching
 
 Find the `document.getElementById('load-bug-btn').onclick` handler (around line 706) and add **before** it:
+
+> **Note:** Add `let isAdhocSession = false;` near the other top-level `let` declarations (e.g. near `let currentSessionId`). The upload panel is only shown for ad hoc sessions.
+>
+> Also add these two lines at the **top** of the existing `load-bug-btn` onclick handler (before the `fetch` call):
+> ```javascript
+> isAdhocSession = false;
+> setUploadPanelVisible(false);
+> ```
 
 ```javascript
 // Tab switching: Load Bug ↔ Ad Hoc
@@ -289,6 +299,10 @@ document.getElementById('tab-adhoc').onclick = () => {
   document.getElementById('tab-adhoc').classList.add('tab-active');
   document.getElementById('tab-tracker').classList.remove('tab-active');
 };
+
+function setUploadPanelVisible(visible) {
+  document.getElementById('explorer-upload-panel').style.display = visible ? '' : 'none';
+}
 
 // Ad hoc file picker: show count
 document.getElementById('adhoc-files-input').onchange = (e) => {
@@ -317,6 +331,8 @@ document.getElementById('adhoc-create-btn').onclick = async () => {
 
   const { session, bug } = body;
   currentSessionId = session.id;
+  isAdhocSession = true;
+  setUploadPanelVisible(true);
   addSeenSession(session.id);
   contextFiles = {};
   updateContextBar();
@@ -411,6 +427,7 @@ Manual checklist:
 - [ ] Upload with comment label → appears as a named comment section in Files drawer
 - [ ] Add file to context → question input enables, analysis runs normally
 - [ ] Upload a file > 50 MB → error message shown: "File too large — max 50 MB. Please zip your files."
+- [ ] Load a tracker bug → upload panel in Files drawer is hidden
 - [ ] Switch back to "Load Bug" tab → normal tracker flow still works
 - [ ] `npm run test:e2e` → all existing tests pass
 

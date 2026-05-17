@@ -223,6 +223,34 @@
     .s-btn-secondary:hover { background: #e5e7eb; }
     .s-error { color: #dc2626; font-size: 12px; margin-top: 6px; min-height: 18px; }
     .s-success { color: #059669; font-size: 12px; margin-top: 6px; min-height: 18px; }
+
+    /* session mode tabs */
+    #session-mode-tabs { display: flex; gap: 4px; }
+    .tab-btn { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    .tab-btn.tab-active { background: #2563eb; color: white; border-color: #2563eb; }
+    #adhoc-page { display: none; position: fixed; inset: 0; background: #f8fafc; z-index: 150; align-items: center; justify-content: center; }
+    #adhoc-page.open { display: flex; }
+    #adhoc-card { background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 36px 40px; width: 480px; max-width: 95vw; display: flex; flex-direction: column; gap: 16px; }
+    #adhoc-card h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; color: #111827; }
+    #adhoc-card label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 500; color: #374151; }
+    .adhoc-label-hint { font-weight: 400; color: #9ca3af; }
+    #adhoc-card input[type=text], #adhoc-card textarea { padding: 8px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit; color: #111827; outline: none; transition: border-color 0.15s; resize: vertical; }
+    #adhoc-card input[type=text]:focus, #adhoc-card textarea:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+    #adhoc-drop-zone { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1.5px dashed #d1d5db; border-radius: 8px; font-size: 13px; color: #6b7280; }
+    #adhoc-drop-zone input[type=file] { font-size: 13px; font-family: inherit; }
+    #adhoc-card-actions { display: flex; gap: 10px; margin-top: 4px; }
+    #adhoc-create-btn { background: #6366f1; color: white; border: none; border-radius: 8px; padding: 9px 20px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; }
+    #adhoc-create-btn:hover { background: #4f46e5; }
+    #adhoc-create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #adhoc-cancel-btn { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; padding: 9px 20px; cursor: pointer; font-size: 14px; font-family: inherit; transition: background 0.15s; }
+    #adhoc-cancel-btn:hover { background: #e5e7eb; }
+    #adhoc-error { margin: 0; font-size: 13px; color: #dc2626; min-height: 18px; }
+
+    /* explorer upload panel — hidden by default; shown only for ad hoc sessions */
+    #explorer-upload-panel { display: none; padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
+    #explorer-upload-panel input[type=text] { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px; font-family: inherit; }
+    #upload-submit-btn { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    #upload-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -257,8 +285,17 @@
 
 <div id="main">
   <div id="header">
-    <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
-    <button id="load-bug-btn">Load Bug</button>
+    <div id="session-mode-tabs">
+      <button id="tab-tracker" class="tab-btn tab-active">Load Bug</button>
+      <button id="tab-adhoc" class="tab-btn">Ad Hoc</button>
+    </div>
+
+    <!-- tracker mode (default) -->
+    <div id="tracker-mode">
+      <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
+      <button id="load-bug-btn">Load Bug</button>
+    </div>
+
     <button id="explorer-btn" title="Workspace Files" style="margin-left:auto;">🗂 Files</button>
   </div>
   <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
@@ -312,12 +349,51 @@
   </div>
 </div>
 
+<div id="adhoc-page">
+  <div id="adhoc-card">
+    <h2>New Ad Hoc Session</h2>
+    <label>Custom ID <span class="adhoc-label-hint">(optional)</span>
+      <input id="adhoc-id-input" type="text" placeholder="e.g. MY-BUG-42" />
+    </label>
+    <label>Issue title <span class="adhoc-label-hint">(required)</span>
+      <input id="adhoc-title-input" type="text" placeholder="Brief description of the issue" />
+    </label>
+    <label>Description <span class="adhoc-label-hint">(optional)</span>
+      <textarea id="adhoc-desc-input" rows="4" placeholder="Paste stack trace, steps to reproduce, etc."></textarea>
+    </label>
+    <label>Log files <span class="adhoc-label-hint">(optional — more can be added later)</span>
+      <div id="adhoc-drop-zone">
+        <input id="adhoc-files-input" type="file" multiple />
+        <span id="adhoc-file-count"></span>
+      </div>
+    </label>
+    <div id="adhoc-card-actions">
+      <button id="adhoc-create-btn">Create Session</button>
+      <button id="adhoc-cancel-btn" type="button">Cancel</button>
+    </div>
+    <p id="adhoc-error"></p>
+  </div>
+</div>
+
 <div id="explorer-drawer">
   <div id="explorer-header">
     <span>Workspace Files</span>
     <button id="explorer-close">✕</button>
   </div>
   <div id="explorer-body"></div>
+  <div id="explorer-upload-panel">
+    <div style="font-size:12px; font-weight:600; color:#374151; margin-bottom:6px;">⬆ Upload Files</div>
+    <input id="upload-label-input" type="text" placeholder="Comment label (optional)" style="width:100%; margin-bottom:6px; box-sizing:border-box;" />
+    <input id="upload-body-input" type="text" placeholder="Note (optional)" style="width:100%; margin-bottom:6px; box-sizing:border-box;" />
+    <label style="display:inline-block; margin-bottom:6px; cursor:pointer; font-size:13px; color:#2563eb;">
+      📁 Choose files
+      <input id="upload-files-input" type="file" multiple style="display:none;" />
+    </label>
+    <span id="upload-file-count" style="font-size:12px; color:#6b7280; margin-left:6px;"></span>
+    <br/>
+    <button id="upload-submit-btn" style="margin-top:6px;">Upload</button>
+    <span id="upload-status" style="font-size:12px; margin-left:8px;"></span>
+  </div>
 </div>
 
 <div id="wiki-overlay">
@@ -417,6 +493,7 @@
 
 <script type="module">
   let currentSessionId = null;
+  let isAdhocSession = false;
   const SEEN_KEY = 'warroom_seen_sessions';
 
   function isResolved(state) {
@@ -703,7 +780,95 @@
     if (explorerOpen) refreshExplorerTree();
   }
 
+  function openAdhocPage() {
+    document.getElementById('adhoc-page').classList.add('open');
+    document.getElementById('tab-adhoc').classList.add('tab-active');
+    document.getElementById('tab-tracker').classList.remove('tab-active');
+    document.getElementById('adhoc-error').textContent = '';
+  }
+
+  function closeAdhocPage() {
+    document.getElementById('adhoc-page').classList.remove('open');
+    document.getElementById('tab-tracker').classList.add('tab-active');
+    document.getElementById('tab-adhoc').classList.remove('tab-active');
+  }
+
+  // Tab switching: Load Bug ↔ Ad Hoc
+  document.getElementById('tab-tracker').onclick = closeAdhocPage;
+  document.getElementById('tab-adhoc').onclick = openAdhocPage;
+  document.getElementById('adhoc-cancel-btn').onclick = closeAdhocPage;
+
+  function setUploadPanelVisible(visible) {
+    document.getElementById('explorer-upload-panel').style.display = visible ? '' : 'none';
+  }
+
+  // Ad hoc file picker: show count
+  document.getElementById('adhoc-files-input').onchange = (e) => {
+    const n = e.target.files.length;
+    document.getElementById('adhoc-file-count').textContent = n ? `${n} file${n > 1 ? 's' : ''} selected` : '';
+  };
+
+  // Ad hoc create session
+  document.getElementById('adhoc-create-btn').onclick = async () => {
+    const title = document.getElementById('adhoc-title-input').value.trim();
+    const errEl = document.getElementById('adhoc-error');
+    if (!title) { errEl.textContent = 'Issue title is required.'; return; }
+    errEl.textContent = '';
+
+    const btn = document.getElementById('adhoc-create-btn');
+    btn.disabled = true;
+
+    const bugId = document.getElementById('adhoc-id-input').value.trim() || undefined;
+    const description = document.getElementById('adhoc-desc-input').value.trim();
+
+    const res = await fetch('/session/adhoc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bugId, title, description }),
+    });
+    const body = await res.json();
+    btn.disabled = false;
+    if (!res.ok) {
+      errEl.textContent = `Failed to create session: ${body.error ?? res.statusText}`;
+      return;
+    }
+
+    closeAdhocPage();
+    const { session, bug } = body;
+    currentSessionId = session.id;
+    isAdhocSession = true;
+    setUploadPanelVisible(true);
+    addSeenSession(session.id);
+    contextFiles = {};
+    updateContextBar();
+    renderBugPanel(bug, []);
+    document.getElementById('chat').innerHTML = '';
+    document.getElementById('question-input').disabled = true;
+    document.getElementById('send-btn').disabled = true;
+    document.getElementById('session-menu-wrap').style.display = 'block';
+    connectListen(session.id);
+    loadSessions();
+
+    // Upload files if any were selected
+    const files = document.getElementById('adhoc-files-input').files;
+    if (files.length > 0) {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const upRes = await fetch(`/session/${session.id}/upload`, { method: 'POST', body: fd });
+      const upBody = await upRes.json();
+      if (!upRes.ok) {
+        const msg = upRes.status === 413
+          ? upBody.error
+          : `Upload failed: ${upBody.error ?? upRes.statusText}`;
+        appendMessage('error', `✗ ${msg}`);
+      }
+      if (explorerOpen) refreshExplorerTree();
+    }
+  };
+
   document.getElementById('load-bug-btn').onclick = async () => {
+    isAdhocSession = false;
+    setUploadPanelVisible(false);
     const bugId = document.getElementById('bug-id-input').value.trim();
     if (!bugId) return;
 
@@ -1352,6 +1517,49 @@
     if (!res.ok) return;
     renderVirtualTree(await res.json());
   }
+
+  // Explorer upload panel
+  document.getElementById('upload-files-input').onchange = (e) => {
+    const n = e.target.files.length;
+    document.getElementById('upload-file-count').textContent = n ? `${n} file${n > 1 ? 's' : ''} selected` : '';
+  };
+
+  document.getElementById('upload-submit-btn').onclick = async () => {
+    if (!currentSessionId) return;
+    const files = document.getElementById('upload-files-input').files;
+    if (!files.length) { alert('Select at least one file'); return; }
+
+    const label = document.getElementById('upload-label-input').value.trim();
+    const body = document.getElementById('upload-body-input').value.trim();
+
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    if (label) fd.append('commentLabel', label);
+    if (body) fd.append('commentBody', body);
+
+    const btn = document.getElementById('upload-submit-btn');
+    const status = document.getElementById('upload-status');
+    btn.disabled = true;
+    status.textContent = 'Uploading…';
+
+    const res = await fetch(`/session/${currentSessionId}/upload`, { method: 'POST', body: fd });
+    const resBody = await res.json();
+
+    btn.disabled = false;
+    if (!res.ok) {
+      const msg = res.status === 413 ? resBody.error : `Upload failed: ${resBody.error ?? res.statusText}`;
+      status.textContent = `✗ ${msg}`;
+      appendMessage('error', `✗ ${msg}`);
+      return;
+    }
+
+    status.textContent = `✓ ${resBody.filePaths.length} file(s) uploaded`;
+    document.getElementById('upload-files-input').value = '';
+    document.getElementById('upload-file-count').textContent = '';
+    document.getElementById('upload-label-input').value = '';
+    document.getElementById('upload-body-input').value = '';
+    refreshExplorerTree();
+  };
 
   function renderVirtualTree(tree) {
     const body = document.getElementById('explorer-body');

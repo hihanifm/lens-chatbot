@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
 import unzipper from "unzipper";
 import type { BugTracker, BugDetails } from "./bugTracker.js";
 import { log } from "../logger.js";
@@ -83,4 +84,52 @@ export async function saveBugSummary(
     path.join(workspacePath, "bug_summary.md"),
     `# ${bug.title}\n\n**ID:** ${bug.id}\n\n${bug.description}\n`
   );
+}
+
+export interface AdHocUploadResult {
+  filePaths: string[];
+  commentId?: string;
+}
+
+export async function saveAdHocFiles(
+  workspacePath: string,
+  files: Array<{ originalname: string; buffer: Buffer }>,
+  comment?: { label: string; body: string }
+): Promise<AdHocUploadResult> {
+  const filePaths: string[] = [];
+
+  for (const file of files) {
+    const dest = path.join(workspacePath, "attachments", file.originalname);
+    await fs.writeFile(dest, file.buffer);
+    log.info("adhoc:file-saved", { dest, bytes: file.buffer.length });
+    filePaths.push(dest);
+  }
+
+  const bugJsonPath = path.join(workspacePath, "bug.json");
+  // no concurrency guard needed: single-user tool
+  const bug = JSON.parse(await fs.readFile(bugJsonPath, "utf8"));
+
+  const attEntries = files.map((f) => ({
+    id: randomUUID(),
+    name: f.originalname,
+    size: f.buffer.length,
+  }));
+
+  let commentId: string | undefined;
+
+  if (comment) {
+    commentId = randomUUID();
+    bug.comments.push({
+      id: commentId,
+      author: "user",
+      body: comment.label + (comment.body ? `\n\n${comment.body}` : ""),
+      created_at: new Date().toISOString(),
+      attachments: attEntries,
+    });
+  } else {
+    bug.attachments.push(...attEntries);
+  }
+
+  await fs.writeFile(bugJsonPath, JSON.stringify(bug, null, 2));
+  return { filePaths, commentId };
 }
