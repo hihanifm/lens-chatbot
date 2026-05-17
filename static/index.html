@@ -326,6 +326,15 @@
 
 <script type="module">
   let currentSessionId = null;
+  const SEEN_KEY = 'warroom_seen_sessions';
+  function getSeenIds() {
+    try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); } catch { return []; }
+  }
+  function addSeenSession(id) {
+    const ids = getSeenIds().filter(x => x !== id);
+    ids.unshift(id);
+    localStorage.setItem(SEEN_KEY, JSON.stringify(ids));
+  }
   let contextFiles = {};
   let currentEs = null;
   let currentListenEs = null;
@@ -455,7 +464,9 @@
   }
 
   async function loadSessions() {
-    const res = await fetch('/sessions');
+    const ids = getSeenIds();
+    if (!ids.length) { document.getElementById('session-list').innerHTML = ''; return; }
+    const res = await fetch(`/sessions?ids=${ids.join(',')}`);
     const list = await res.json();
     const ul = document.getElementById('session-list');
     ul.innerHTML = '';
@@ -573,6 +584,7 @@
     if (!res.ok) { appendMessage('error', `✗ Failed to load session (HTTP ${res.status})`); return; }
     const { session, messages, bug, downloaded_files } = await res.json();
     currentSessionId = sessionId;
+    addSeenSession(sessionId);
 
     contextFiles = {};
     for (const fp of session.selected_files ?? []) contextFiles[fp] = fp.split('/').pop();
@@ -607,6 +619,7 @@
     }
     const { session, bug } = body;
     currentSessionId = session.id;
+    addSeenSession(session.id);
     contextFiles = {};
     for (const fp of session.selected_files ?? []) contextFiles[fp] = fp.split('/').pop();
     updateContextBar();

@@ -89,8 +89,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.json({ session, bug });
   });
 
-  app.get("/sessions", (_req, res) => {
-    res.json(sessions.list());
+  app.get("/sessions", (req, res) => {
+    const ids = (req.query.ids as string | undefined)?.split(",").filter(Boolean) ?? [];
+    res.json(sessions.listByIds(ids));
   });
 
   app.get("/session/:id", async (req, res) => {

@@ -110,6 +110,14 @@ export const sessions = {
     );
   },
 
+  listByIds(ids: string[]): Session[] {
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    return (db.prepare(`SELECT * FROM sessions WHERE id IN (${placeholders}) ORDER BY created_at DESC`).all(...ids) as any[]).map(
+      (r) => ({ ...r, selected_files: JSON.parse(r.selected_files) })
+    );
+  },
+
   addFile(id: string, filePath: string): void {
     const session = sessions.get(id);
     if (!session) return;
