@@ -8,19 +8,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; color: #111827; }
-    .card { background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 40px 36px; width: 100%; max-width: 380px; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f0f6ff; min-height: 100vh; display: flex; align-items: center; justify-content: center; color: #111827; }
+    .card { background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 40px 36px; width: 100%; max-width: 380px; border-top: 4px solid #002366; }
     .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
-    .brand-icon { font-size: 26px; }
-    .brand-name { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; color: #0f1117; }
+    .brand-icon { font-size: 11px; font-weight: 800; letter-spacing: 0.5px; width: 36px; height: 36px; border-radius: 8px; background: #002366; color: white; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .brand-name { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; color: #002366; }
     .brand-sub { font-size: 11px; color: #6b7280; font-weight: 400; letter-spacing: 1px; text-transform: uppercase; margin-top: 1px; }
     h1 { font-size: 16px; font-weight: 600; color: #374151; margin-bottom: 20px; }
     label { display: block; font-size: 13px; font-weight: 500; color: #4b5563; margin-bottom: 5px; margin-top: 14px; }
     input { width: 100%; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 9px 13px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.15s; color: #111827; }
-    input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.10); }
-    button[type=submit] { margin-top: 22px; width: 100%; background: #6366f1; color: white; border: none; border-radius: 8px; padding: 11px; font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; }
-    button[type=submit]:hover { background: #4f46e5; }
-    button[type=submit]:disabled { background: #c7d2fe; cursor: default; }
+    input:focus { border-color: #0062cc; box-shadow: 0 0 0 3px rgba(0,98,204,0.12); }
+    button[type=submit] { margin-top: 22px; width: 100%; background: #002366; color: white; border: none; border-radius: 8px; padding: 11px; font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; }
+    button[type=submit]:hover { background: #0062cc; }
+    button[type=submit]:disabled { background: #7ab3e0; cursor: default; }
     #error-msg { margin-top: 14px; background: #fff5f5; border: 1px solid #fecaca; color: #dc2626; border-radius: 8px; padding: 9px 13px; font-size: 13px; display: none; }
     .hint { margin-top: 14px; font-size: 12px; color: #9ca3af; text-align: center; line-height: 1.5; }
   </style>
@@ -28,7 +28,7 @@
 <body>
 <div class="card">
   <div class="brand">
-    <span class="brand-icon">⚔️</span>
+    <span class="brand-icon">WR</span>
     <div>
       <div class="brand-name">WarRoom</div>
       <div class="brand-sub">Bug Analysis</div>
