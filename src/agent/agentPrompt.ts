@@ -1,7 +1,7 @@
 import path from "node:path";
 import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 
-const AGENTS_MD = path.resolve(import.meta.dirname, "../../agents.md");
+const AGENTS_MD = path.resolve(import.meta.dirname, "./environment.md");
 
 export const SYSTEM_PROMPT = `You are a bug analysis assistant for engineers.
 You have access to a workspace containing bug details, logs, and attachments.
@@ -15,7 +15,9 @@ Respond directly to what the user is asking:
 - Conversational follow-ups -> answer naturally without repeating the full structure.
 
 Always ground your answer in the workspace files. If the answer is not in the files,
-say so clearly.`;
+say so clearly.
+
+IMPORTANT: Before answering any question, you MUST read every file listed under "Selected files to analyze" using your file reading tools. Never answer from memory or make assumptions about file contents.`;
 
 export async function loadAgentSkills(): Promise<LoadedSkill[]> {
   const skillsDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);

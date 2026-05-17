@@ -137,6 +137,27 @@
     #send-btn { background: #6366f1; color: white; border: none; border-radius: 12px; padding: 10px 22px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; white-space: nowrap; }
     #send-btn:disabled { background: #c7d2fe; cursor: default; }
     #send-btn:hover:not(:disabled) { background: #4f46e5; }
+
+    /* Settings */
+    #settings-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #9ca3af; padding: 4px 8px; border-radius: 8px; transition: background 0.15s, color 0.15s; line-height: 1; }
+    #settings-btn:hover { background: #f3f4f6; color: #374151; }
+    #settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: center; justify-content: center; }
+    #settings-overlay.open { display: flex; }
+    #settings-modal { background: white; border-radius: 14px; padding: 28px; width: 440px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+    #settings-modal h2 { font-size: 17px; font-weight: 700; color: #111827; margin-bottom: 20px; }
+    .s-group { margin-bottom: 14px; }
+    .s-label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 5px; display: block; }
+    .s-input { width: 100%; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 14px; font-family: inherit; outline: none; color: #111827; transition: border-color 0.15s; }
+    .s-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+    .s-divider { border: none; border-top: 1px solid #f3f4f6; margin: 20px 0; }
+    .s-section { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; margin-bottom: 14px; }
+    .s-btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+    .s-btn-primary { background: #6366f1; color: white; border: none; border-radius: 8px; padding: 9px 20px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; }
+    .s-btn-primary:hover { background: #4f46e5; }
+    .s-btn-secondary { background: #f3f4f6; color: #374151; border: none; border-radius: 8px; padding: 9px 16px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; }
+    .s-btn-secondary:hover { background: #e5e7eb; }
+    .s-error { color: #dc2626; font-size: 12px; margin-top: 6px; min-height: 18px; }
+    .s-success { color: #059669; font-size: 12px; margin-top: 6px; min-height: 18px; }
   </style>
 </head>
 <body>
@@ -158,6 +179,7 @@
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
     <span id="user-badge" style="margin-left:auto; font-size:13px; color:#6b7280; display:flex; align-items:center; gap:10px;"></span>
+    <button id="settings-btn" title="Settings">⚙</button>
   </div>
   <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
     <span style="font-weight:600;">Also here:</span>
@@ -198,6 +220,66 @@
     <div id="input-row">
       <textarea id="question-input" placeholder="Ask a question about the log..." disabled></textarea>
       <button id="send-btn" disabled>Send</button>
+    </div>
+  </div>
+</div>
+
+<div id="settings-overlay">
+  <div id="settings-modal">
+    <h2>⚙ Settings</h2>
+
+    <div class="s-section">LLM Provider</div>
+    <div class="s-group">
+      <label class="s-label" for="s-provider">Provider</label>
+      <select id="s-provider" class="s-input">
+        <option value="ollama">Ollama</option>
+        <option value="openai">OpenAI</option>
+        <option value="openai-compatible">OpenAI-compatible (custom endpoint)</option>
+      </select>
+    </div>
+    <div class="s-group">
+      <label class="s-label" for="s-model">Model</label>
+      <input id="s-model" class="s-input" type="text" placeholder="e.g. llama3.1:8b" />
+    </div>
+    <div class="s-group" id="s-baseurl-group">
+      <label class="s-label" for="s-baseurl">Base URL</label>
+      <input id="s-baseurl" class="s-input" type="text" placeholder="http://host.docker.internal:11434/v1" />
+    </div>
+    <div class="s-group" id="s-apikey-group">
+      <label class="s-label" for="s-apikey">API Key</label>
+      <input id="s-apikey" class="s-input" type="password" placeholder="sk-..." autocomplete="off" />
+    </div>
+
+    <div id="s-pin-row" class="s-group" style="display:none;">
+      <label class="s-label" for="s-pin">Admin PIN</label>
+      <input id="s-pin" class="s-input" type="password" placeholder="Enter admin PIN to save" autocomplete="off" />
+    </div>
+    <div id="s-llm-error" class="s-error"></div>
+
+    <div class="s-btn-row">
+      <button class="s-btn-secondary" id="s-cancel-btn">Cancel</button>
+      <button class="s-btn-primary" id="s-save-btn">Save</button>
+    </div>
+
+    <hr class="s-divider" />
+
+    <div class="s-section">Change Admin PIN</div>
+    <div class="s-group">
+      <label class="s-label" for="s-cur-pin">Current PIN</label>
+      <input id="s-cur-pin" class="s-input" type="password" autocomplete="off" />
+    </div>
+    <div class="s-group">
+      <label class="s-label" for="s-new-pin">New PIN</label>
+      <input id="s-new-pin" class="s-input" type="password" autocomplete="off" />
+    </div>
+    <div class="s-group">
+      <label class="s-label" for="s-confirm-pin">Confirm New PIN</label>
+      <input id="s-confirm-pin" class="s-input" type="password" autocomplete="off" />
+    </div>
+    <div id="s-pin-error" class="s-error"></div>
+    <div id="s-pin-success" class="s-success"></div>
+    <div class="s-btn-row">
+      <button class="s-btn-primary" id="s-change-pin-btn">Update PIN</button>
     </div>
   </div>
 </div>
@@ -844,6 +926,126 @@
     row.scrollIntoView({ behavior: 'smooth', block: 'end' });
     return el;
   }
+
+  // Settings modal
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const sProvider = document.getElementById('s-provider');
+  const sModel = document.getElementById('s-model');
+  const sBaseurl = document.getElementById('s-baseurl');
+  const sApikey = document.getElementById('s-apikey');
+  const sBaseurlGroup = document.getElementById('s-baseurl-group');
+  const sApikeyGroup = document.getElementById('s-apikey-group');
+  const sPinRow = document.getElementById('s-pin-row');
+  const sPin = document.getElementById('s-pin');
+  const sLlmError = document.getElementById('s-llm-error');
+  const sPinError = document.getElementById('s-pin-error');
+  const sPinSuccess = document.getElementById('s-pin-success');
+  let settingsPinShown = false;
+
+  function updateSettingsFields() {
+    const p = sProvider.value;
+    sBaseurlGroup.style.display = (p === 'openai') ? 'none' : 'block';
+    sApikeyGroup.style.display = (p === 'ollama') ? 'none' : 'block';
+  }
+
+  sProvider.addEventListener('change', updateSettingsFields);
+
+  async function openSettings() {
+    sLlmError.textContent = '';
+    sPinError.textContent = '';
+    sPinSuccess.textContent = '';
+    settingsPinShown = false;
+    sPinRow.style.display = 'none';
+    sPin.value = '';
+    document.getElementById('s-cur-pin').value = '';
+    document.getElementById('s-new-pin').value = '';
+    document.getElementById('s-confirm-pin').value = '';
+
+    try {
+      const res = await fetch('/settings/llm');
+      if (res.ok) {
+        const cfg = await res.json();
+        sProvider.value = cfg.provider || 'ollama';
+        sModel.value = cfg.model || '';
+        sBaseurl.value = cfg.baseUrl || '';
+        sApikey.value = '';
+        sApikey.placeholder = cfg.apiKey ? cfg.apiKey : 'sk-...';
+      }
+    } catch {}
+    updateSettingsFields();
+    settingsOverlay.classList.add('open');
+  }
+
+  function closeSettings() {
+    settingsOverlay.classList.remove('open');
+  }
+
+  document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.getElementById('s-cancel-btn').addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+
+  document.getElementById('s-save-btn').addEventListener('click', async () => {
+    sLlmError.textContent = '';
+    if (!settingsPinShown) {
+      settingsPinShown = true;
+      sPinRow.style.display = 'block';
+      sPin.focus();
+      return;
+    }
+    const pin = sPin.value.trim();
+    if (!pin) { sLlmError.textContent = 'Enter your admin PIN to save.'; return; }
+
+    const apiKeyVal = sApikey.value.trim();
+    const body = {
+      pin,
+      provider: sProvider.value,
+      model: sModel.value.trim(),
+      baseUrl: sBaseurl.value.trim() || undefined,
+      apiKey: apiKeyVal || undefined,
+    };
+
+    const res = await fetch('/settings/llm', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      sLlmError.textContent = data.error || 'Save failed.';
+      return;
+    }
+    closeSettings();
+    const toast = document.createElement('div');
+    toast.textContent = 'Settings saved';
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#111827;color:white;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2000;opacity:1;transition:opacity 0.4s;';
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);
+  });
+
+  document.getElementById('s-change-pin-btn').addEventListener('click', async () => {
+    sPinError.textContent = '';
+    sPinSuccess.textContent = '';
+    const currentPin = document.getElementById('s-cur-pin').value;
+    const newPin = document.getElementById('s-new-pin').value;
+    const confirmPin = document.getElementById('s-confirm-pin').value;
+    if (!currentPin || !newPin) { sPinError.textContent = 'All PIN fields are required.'; return; }
+    if (newPin !== confirmPin) { sPinError.textContent = 'New PINs do not match.'; return; }
+
+    const res = await fetch('/settings/admin/pin', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPin, newPin }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      sPinError.textContent = data.error || 'Failed to change PIN.';
+      return;
+    }
+    sPinSuccess.textContent = 'PIN updated successfully.';
+    document.getElementById('s-cur-pin').value = '';
+    document.getElementById('s-new-pin').value = '';
+    document.getElementById('s-confirm-pin').value = '';
+  });
 
   loadSessions();
 </script>

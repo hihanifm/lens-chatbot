@@ -41,7 +41,7 @@ src/agent/
   agentRunner.ts         ← AgentRunner interface + AgentEvent types
   clineSdkRunner.ts      ← ClineSdkAgentRunner (@cline/sdk, OpenAI-compatible)
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
-agents.md                ← agent environment context (tools, workspace layout) — read by agent every task
+  environment.md         ← agent environment context (tools, workspace layout) — read by agent every task
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
 e2e/
   smoke.spec.ts          ← Playwright tests: load bug, download attachment, analyze stream

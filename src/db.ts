@@ -30,6 +30,11 @@ db.exec(`
     content    TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 try {
@@ -152,3 +157,36 @@ export const messages = {
 };
 
 export default db;
+
+export interface LlmConfig {
+  provider: "ollama" | "openai" | "openai-compatible";
+  model: string;
+  baseUrl?: string;
+  apiKey?: string;
+}
+
+export const settings = {
+  getLlmConfig(): LlmConfig {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'llm'").get() as any;
+    if (row) return JSON.parse(row.value) as LlmConfig;
+    return {
+      provider: (process.env.LLM_PROVIDER ?? "ollama") as LlmConfig["provider"],
+      model: process.env.LLM_MODEL ?? "llama3.1:8b",
+      baseUrl: process.env.LLM_BASE_URL,
+      apiKey: process.env.LLM_API_KEY,
+    };
+  },
+
+  setLlmConfig(cfg: LlmConfig): void {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('llm', ?)").run(JSON.stringify(cfg));
+  },
+
+  getAdminPinHash(): string | null {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'admin_pin_hash'").get() as any;
+    return row?.value ?? null;
+  },
+
+  setAdminPinHash(hash: string): void {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_pin_hash', ?)").run(hash);
+  },
+};

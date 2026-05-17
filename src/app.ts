@@ -1,15 +1,35 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createHash, randomUUID } from "crypto";
+import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
 import { getOrCreateWorkspace, downloadAttachment, saveBugSummary } from "./services/attachmentService.js";
 import type { AgentRunner } from "./agent/agentRunner.js";
-import { sessions, messages, users } from "./db.js";
+import { sessions, messages, users, settings } from "./db.js";
+import type { LlmConfig } from "./db.js";
 import { addClient, removeClient, broadcast } from "./broadcast.js";
 import { log } from "./logger.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+
+export async function hashPin(pin: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const hash = await new Promise<string>((resolve, reject) => {
+    scrypt(pin, salt, 32, (err, key) => (err ? reject(err) : resolve(key.toString("hex"))));
+  });
+  return `${salt}:${hash}`;
+}
+
+async function verifyPin(pin: string, stored: string): Promise<boolean> {
+  const [salt, expected] = stored.split(":");
+  if (!salt || !expected) return false;
+  const actual = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(pin, salt, 32, (err, key) => (err ? reject(err) : resolve(key)));
+  });
+  const expectedBuf = Buffer.from(expected, "hex");
+  if (actual.length !== expectedBuf.length) return false;
+  return timingSafeEqual(actual, expectedBuf);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -232,6 +252,48 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       broadcast(req.params.id, payload, clientId);
       res.end();
     }
+  });
+
+  app.get("/settings/llm", (_req, res) => {
+    const cfg = settings.getLlmConfig();
+    const out = { ...cfg } as any;
+    if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
+    res.json(out);
+  });
+
+  app.put("/settings/llm", async (req, res) => {
+    const { pin, provider, model, baseUrl, apiKey } = req.body;
+    if (!pin) return res.status(400).json({ error: "pin required" });
+    if (!provider || !model) return res.status(400).json({ error: "provider and model required" });
+
+    const stored = settings.getAdminPinHash();
+    if (!stored) return res.status(503).json({ error: "Admin PIN not configured — set ADMIN_PIN in .env" });
+    if (!(await verifyPin(String(pin), stored))) return res.status(401).json({ error: "Invalid PIN" });
+
+    if (provider === "openai" && !apiKey) return res.status(400).json({ error: "apiKey required for OpenAI" });
+    if ((provider === "openai-compatible" || provider === "ollama") && !baseUrl)
+      return res.status(400).json({ error: "baseUrl required" });
+
+    const cfg: LlmConfig = { provider, model, baseUrl, apiKey };
+    settings.setLlmConfig(cfg);
+    log.info("settings:llm-updated", { provider, model });
+
+    const out = { ...cfg } as any;
+    if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
+    res.json(out);
+  });
+
+  app.put("/settings/admin/pin", async (req, res) => {
+    const { currentPin, newPin } = req.body;
+    if (!currentPin || !newPin) return res.status(400).json({ error: "currentPin and newPin required" });
+
+    const stored = settings.getAdminPinHash();
+    if (!stored) return res.status(503).json({ error: "Admin PIN not configured — set ADMIN_PIN in .env" });
+    if (!(await verifyPin(String(currentPin), stored))) return res.status(401).json({ error: "Invalid PIN" });
+
+    settings.setAdminPinHash(await hashPin(String(newPin)));
+    log.info("settings:pin-changed");
+    res.json({ ok: true });
   });
 
   return app;
