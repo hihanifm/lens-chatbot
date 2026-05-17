@@ -67,12 +67,14 @@ install-node:
 		echo ""; \
 		echo "2/3  apt + NodeSource ..."; \
 		if command -v apt-get >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then \
-			curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - \
+			curl -fsSL -o /tmp/_ns22.sh https://deb.nodesource.com/setup_22.x \
+				&& sudo -E bash /tmp/_ns22.sh \
 				&& sudo apt-get install -y nodejs \
+				&& node --version 2>/dev/null | grep -qE '^v(2[2-9]|[3-9][0-9])' \
 				&& echo "" && echo "Done. node $$(node --version) installed." \
 				&& exit 0; \
 		fi; \
-		echo "     apt unavailable or failed (no internet / proxy?)."; \
+		echo "     apt unavailable or failed (no internet / proxy — Ubuntu repos cap at Node 18)."; \
 		echo ""; \
 		echo "3/3  local tarball ($(NODE_22_TARBALL)) ..."; \
 		if [ -f "$(NODE_22_TARBALL)" ]; then \
