@@ -3,7 +3,6 @@
 #   make dock               Run in Docker dev container (port 38001)
 #   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
-export PATH    := /usr/local/bin:$(PATH)
 OS             := $(shell uname -s)
 NODE_22_VER    := 22.15.0
 NODE_22_TARBALL := node-v$(NODE_22_VER)-linux-x64.tar.xz
@@ -78,16 +77,16 @@ install-node:
 		fi; \
 		echo "     apt unavailable or failed (proxy / Ubuntu repos cap at Node 18)."; \
 		echo ""; \
-		echo "3/3  local tarball ($(NODE_22_TARBALL)) ..."; \
+		echo "3/3  local tarball → nvm ($(NODE_22_TARBALL)) ..."; \
 		if [ -f "$(NODE_22_TARBALL)" ]; then \
-			sudo tar -xJf "$(NODE_22_TARBALL)" -C /usr/local --strip-components=1 \
+			NVM_DIR="$$HOME/.nvm"; \
+			mkdir -p "$$NVM_DIR/versions/node/v$(NODE_22_VER)"; \
+			tar -xJf "$(NODE_22_TARBALL)" --strip-components=1 -C "$$NVM_DIR/versions/node/v$(NODE_22_VER)" \
 				&& echo "" \
-				&& echo "Done. /usr/local/bin/node $$(/usr/local/bin/node --version) installed from tarball." \
+				&& echo "Done. Installed Node $(NODE_22_VER) into $$NVM_DIR/versions/node/v$(NODE_22_VER)" \
 				&& echo "" \
-				&& echo "IMPORTANT: run these two commands to activate Node 22 in this shell:" \
-				&& echo "  hash -r" \
-				&& echo "  export PATH=/usr/local/bin:\$$PATH" \
-				&& echo "Or simply open a new terminal — Node 22 will be picked up automatically." \
+				&& echo "Activate with:  nvm use 22" \
+				&& echo "Or open a new terminal — .nvmrc will auto-switch." \
 				&& exit 0; \
 		fi; \
 		echo "     No tarball found in current directory."; \
@@ -116,8 +115,9 @@ setup: check-node
 dev: check-node
 	@pkill -f "tsx src/index.ts" 2>/dev/null && echo "Stopped previous process." || true
 	mkdir -p ./data/local
-	PORT=$${PORT:-38001} DATA_DIR=./data/local LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
-		NODE_OPTIONS=--experimental-sqlite node node_modules/.bin/tsx src/index.ts >> ./data/local/dev.log 2>&1 &
+	( [ -s "$$HOME/.nvm/nvm.sh" ] && . "$$HOME/.nvm/nvm.sh" && nvm use --silent 2>/dev/null || true; \
+	  PORT=$${PORT:-38001} DATA_DIR=./data/local LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
+	  NODE_OPTIONS=--experimental-sqlite node node_modules/.bin/tsx src/index.ts ) >> ./data/local/dev.log 2>&1 &
 	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
