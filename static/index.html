@@ -140,7 +140,7 @@
 
     /* Input */
     #input-area { background: white; padding: 14px 24px; box-shadow: 0 -1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 8px; }
-    #input-row { display: flex; gap: 10px; align-items: flex-end; }
+    #input-row { display: flex; gap: 10px; align-items: flex-end; position: relative; }
     #context-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     #context-bar:empty { display: none; }
     .context-label { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -170,6 +170,12 @@
     .session-menu-item:hover { background: #f9fafb; }
     .session-menu-item.danger { color: #dc2626; }
     .session-menu-item.danger:hover { background: #fff5f5; }
+    #skill-picker { display: none; position: absolute; bottom: calc(100% + 6px); left: 0; background: white; border: 1.5px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); min-width: 240px; max-height: 220px; overflow-y: auto; z-index: 100; }
+    #skill-picker.open { display: block; }
+    .skill-item { padding: 9px 13px; cursor: pointer; transition: background 0.12s; }
+    .skill-item:hover { background: #f3f4f6; }
+    .skill-name { font-weight: 600; font-size: 13px; color: #111827; }
+    .skill-desc { font-size: 12px; color: #6b7280; margin-top: 1px; }
     #reset-confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: center; justify-content: center; }
     #reset-confirm-overlay.open { display: flex; }
     #reset-confirm-modal { background: white; border-radius: 14px; padding: 28px; width: 400px; max-width: 92vw; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
@@ -327,6 +333,7 @@
   <div id="input-area">
     <div id="context-bar"></div>
     <div id="input-row">
+      <div id="skill-picker"></div>
       <textarea id="question-input" placeholder="Ask a question about the log..." disabled></textarea>
       <button id="send-btn" disabled>Send</button>
       <button id="abort-btn">Stop</button>
@@ -1033,6 +1040,78 @@
   document.getElementById('question-input').addEventListener('focus', () => setBugInfoExpanded(false));
   document.getElementById('question-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+  });
+
+  // ── Skill picker ───────────────────────────────────────────────────────────────
+
+  let skillsData = [];
+  fetch('/skills').then(r => r.ok ? r.json() : []).then(d => { skillsData = d; }).catch(() => {});
+
+  function renderSkillPicker(skills) {
+    const el = document.getElementById('skill-picker');
+    el.innerHTML = '';
+    if (!skills.length) { closeSkillPicker(); return; }
+    skills.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'skill-item';
+      item.innerHTML = `<div class="skill-name">${s.name}</div><div class="skill-desc">${s.description}</div>`;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        insertSkill(s.name);
+      });
+      el.appendChild(item);
+    });
+    el.classList.add('open');
+  }
+
+  function closeSkillPicker() {
+    document.getElementById('skill-picker').classList.remove('open');
+  }
+
+  function insertSkill(name) {
+    const qi = document.getElementById('question-input');
+    const pos = qi.selectionStart;
+    const val = qi.value;
+    const before = val.slice(0, pos);
+    const after = val.slice(pos);
+    const wordStart = before.search(/\S+$/);
+    qi.value = (wordStart === -1 ? '' : before.slice(0, wordStart)) + name + after;
+    const newPos = (wordStart === -1 ? 0 : wordStart) + name.length;
+    qi.setSelectionRange(newPos, newPos);
+    closeSkillPicker();
+    qi.focus();
+  }
+
+  document.getElementById('question-input').addEventListener('input', () => {
+    const qi = document.getElementById('question-input');
+    const pos = qi.selectionStart;
+    const before = qi.value.slice(0, pos);
+    const wordStart = before.search(/\S+$/);
+    const word = wordStart === -1 ? '' : before.slice(wordStart);
+    if (word.startsWith('/')) {
+      const q = word.slice(1).toLowerCase();
+      const matches = skillsData.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q) ||
+        (s.triggers || []).some(t => t.toLowerCase().includes(q))
+      );
+      renderSkillPicker(matches);
+    } else {
+      closeSkillPicker();
+    }
+  });
+
+  document.getElementById('question-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('skill-picker').classList.contains('open')) {
+      closeSkillPicker();
+      e.stopPropagation();
+    }
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    const picker = document.getElementById('skill-picker');
+    const qi = document.getElementById('question-input');
+    if (!picker.contains(e.target) && e.target !== qi) closeSkillPicker();
   });
 
   async function sendQuestion() {

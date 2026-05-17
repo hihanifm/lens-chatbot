@@ -11,9 +11,12 @@ import { sessions, messages, users, settings } from "./db.js";
 import type { LlmConfig } from "./db.js";
 import { addClient, removeClient, broadcast } from "./broadcast.js";
 import { createWikiEntry, listWikiEntries, readWikiEntry, buildWikiSynthesisPrompt } from "./services/wikiService.js";
+import { loadAgentSkills } from "./agent/agentPrompt.js";
 import { log } from "./logger.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+
+let skillsCache: { name: string; description: string; triggers: string[] }[] | null = null;
 
 export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -475,6 +478,22 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     } catch (err: any) {
       log.error("wiki:write-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       res.status(500).json({ error: `Failed to write wiki entry: ${err.message}` });
+    }
+  });
+
+  app.get("/skills", async (_req, res) => {
+    try {
+      if (!skillsCache) {
+        const skills = await loadAgentSkills();
+        skillsCache = skills.map(({ name, description, frontmatter }) => ({
+          name,
+          description: description ?? "",
+          triggers: Array.isArray(frontmatter?.triggers) ? (frontmatter.triggers as string[]) : [],
+        }));
+      }
+      res.json(skillsCache);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
