@@ -14,7 +14,11 @@ A web chatbot for engineers to debug bugs. User enters a bug ID → backend fetc
 
 ```bash
 npm run dev          # run locally via tsx (no Docker)
-make build && make up  # build Docker image + start dev stack (port 38001)
+npm run build        # compile TypeScript → dist/ (runs tsc)
+npx tsc --noEmit     # type-check only, no output
+
+make build && make up  # build Docker image (not TypeScript) + start dev stack (port 38001)
+make rebuild           # full --no-cache Docker rebuild + up (after dependency changes)
 make restart         # down + up without rebuild
 make logs            # tail dev container logs
 make prod-up         # build + start prod stack (port 38000)
@@ -30,7 +34,7 @@ Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_
 ## Architecture
 
 ```
-static/index.html        ← single-page UI, plain JS, SSE consumer
+static/index.html        ← single-page UI, plain JS, SSE consumer; includes file explorer drawer
 src/index.ts             ← entry point: wires MockBugTracker + ClineSdkAgentRunner, calls createApp()
 src/app.ts               ← Express app factory (createApp), all routes, SSE streaming
 src/db.ts                ← SQLite via node:sqlite (built-in, no native addon)
@@ -39,12 +43,16 @@ src/broadcast.ts         ← SSE presence room (addClient/removeClient/broadcast
 src/services/
   bugTracker.ts          ← BugTracker interface + MockBugTracker + InternalBugTracker stub
   attachmentService.ts   ← workspace creation, file download, bug_summary.md write
+  workspaceExplorer.ts   ← builds VirtualTree (AttachmentNodes + CommentSections) for file explorer
+  wikiService.ts         ← create/list/read troubleshooting wiki entries; buildWikiSynthesisPrompt
 src/agent/
   agentRunner.ts         ← AgentRunner interface + AgentEvent types
+  agentPrompt.ts         ← builds agent prompt string; accepts fileComments + skills
   clineCoreAgentRunner.ts ← ClineCoreAgentRunner (@cline/sdk ClineCore, session-aware)
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
   environment.md         ← agent environment context (tools, workspace layout) — read by agent every task
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
+wiki/                    ← two-level knowledge base: index.md → <module>/index.md → dated entries
 e2e/
   smoke.spec.ts          ← Playwright tests: load bug, download attachment, analyze stream
   server.ts              ← test server (MockBugTracker + StubAgentRunner, port 3099)
@@ -71,6 +79,51 @@ DATA_DIR/workspaces/BUG-ID/
 `DATA_DIR` defaults to `/app/data` in Docker, CWD locally.
 
 **SSE streaming**: `/session/:id/analyze?question=...` is a GET that streams `text/event-stream`. Each event is `data: {type, content}\n\n`. Types: `status`, `text`, `done`, `error`. **`/session/:id/listen`** (GET, SSE) is a passive observer stream — same analysis events broadcast via `broadcast.ts`, plus presence events: `presence:snapshot`, `presence:join`, `presence:leave`.
+
+## File explorer
+
+A 🗂 Files drawer in the UI lets users browse all workspace files grouped by the bug comment that uploaded them, and toggle individual files into or out of the agent context.
+
+**Zip behavior**: zips are no longer auto-extracted on download. The zip file is saved to disk; contents are listed lazily when the user expands the zip node, and individual entries are extracted only when the user clicks `[Extract & Add]`.
+
+**Comment context**: when a file that came from a bug comment is added to context, `buildFileCommentMap()` in `clineCoreAgentRunner.ts` maps the file path to its comment body. `agentPrompt.ts` renders an inline `Comment:` line beside that file in the prompt so the agent sees the relevant comment without the user having to copy it.
+
+File explorer endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /session/:id/workspace/files` | Returns `VirtualTree` JSON — `bugAttachments` + per-comment `CommentSection[]` |
+| `GET /session/:id/zip-contents?zipPath=…` | Reads zip central directory (no extraction); returns `ZipEntry[]` with `extracted` flag |
+| `POST /session/:id/extract-file` | Extracts one entry from a zip; adds the resulting path to session files |
+
+All three endpoints validate that resolved paths stay within `session.workspace_path` and return 403 on traversal attempts.
+
+## Wiki system
+
+After a bug investigation the agent (or user) can save a structured wiki entry for future reference. Entries are stored in `WIKI_DIR` in a two-level layout:
+
+```
+WIKI_DIR/
+  index.md                          ← root index: one section per module (tags, entry count)
+  SCHEMA.md                         ← reading guide (written on first use)
+  log.md                            ← append-only ingest log
+  <module-slug>/
+    index.md                        ← module catalog: one line per entry with one-sentence summary
+    YYYYMMDD-BUGID-slug.md          ← full entry: Problem · Root Cause · Evidence · Resolution · Key Log Patterns
+```
+
+`WIKI_DIR` defaults to `DATA_DIR/wiki`. Set it to a shared Docker volume for team-wide knowledge.
+
+`wikiService.ts` exports: `createWikiEntry`, `listWikiEntries`, `readWikiEntry`, `buildWikiSynthesisPrompt`.
+
+Wiki endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /session/:id/wiki` | Agent posts synthesized entry; calls `createWikiEntry` and returns the saved path |
+| `GET /wiki` | Lists all entries across modules (sorted by date) |
+| `GET /wiki/:module` | Reads the module's `index.md` |
+| `GET /wiki/:module/:filename` | Reads one full entry file |
 
 ## Skills system
 
@@ -103,6 +156,7 @@ This tool is for engineers. Surface all agent lifecycle events to the UI — mor
 - Base image: `public.ecr.aws/docker/library/node:22-bookworm-slim` (ECR mirror, no Docker Hub dependency)
 - Runtimes available in both stages: `python3`, `jq`, `ripgrep` — agents can shell out to all of these
 - Proxy: `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` passed as build args; `host.docker.internal` in `NO_PROXY` by default
+- `WIKI_DIR`: defaults to `DATA_DIR/wiki`; mount a named volume here in Docker for a team-shared knowledge base
 
 ## Swapping implementations
 
@@ -112,4 +166,5 @@ This tool is for engineers. Surface all agent lifecycle events to the UI — mor
 | Agent runner | `src/index.ts:9` | `new ClineCliAgentRunner()` |
 | LLM model | `.env` → `LLM_MODEL` | any Ollama model name |
 | Skills dirs | `.env` → `SKILLS_DIR` | colon-separated paths |
+| Wiki dir | `.env` → `WIKI_DIR` | shared volume path for team-wide wiki |
 | Ports | `.env` → `DEV_PORT` / `PROD_PORT` | override compose defaults |
