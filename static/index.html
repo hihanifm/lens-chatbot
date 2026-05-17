@@ -1760,6 +1760,23 @@
         body.appendChild(empty);
       }
     }
+
+    if (tree.internalFiles && tree.internalFiles.length > 0) {
+      const internalsHeader = document.createElement('div');
+      internalsHeader.className = 'exp-section-header';
+      internalsHeader.textContent = 'Workspace Internals';
+      body.appendChild(internalsHeader);
+      for (const f of tree.internalFiles) {
+        const wrapper = document.createElement('div');
+        const fileRow = makeFileRow(f.filePath, f.name, null);
+        const desc = document.createElement('div');
+        desc.style.cssText = 'padding:0 20px 4px 20px;font-size:11px;color:#6b7280;';
+        desc.textContent = f.description;
+        wrapper.appendChild(fileRow);
+        wrapper.appendChild(desc);
+        body.appendChild(wrapper);
+      }
+    }
   }
 
   function makeAttNode(node, commentBody) {

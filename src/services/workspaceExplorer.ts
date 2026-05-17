@@ -23,9 +23,16 @@ export interface CommentSection {
   nodes: AttachmentNode[];
 }
 
+export interface InternalFileNode {
+  name: string;
+  filePath: string;
+  description: string;
+}
+
 export interface VirtualTree {
   bugAttachments: AttachmentNode[];
   comments: CommentSection[];
+  internalFiles: InternalFileNode[];
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -59,7 +66,7 @@ export async function buildVirtualTree(workspacePath: string): Promise<VirtualTr
     const raw = await fs.readFile(path.join(workspacePath, "bug.json"), "utf8");
     bug = JSON.parse(raw);
   } catch {
-    return { bugAttachments: [], comments: [] };
+    return { bugAttachments: [], comments: [], internalFiles: [] };
   }
 
   const bugAttachments: AttachmentNode[] = await Promise.all(
@@ -76,5 +83,34 @@ export async function buildVirtualTree(workspacePath: string): Promise<VirtualTr
     }))
   );
 
-  return { bugAttachments, comments };
+  const internalFiles: InternalFileNode[] = [];
+
+  const fixedFiles: Array<{ name: string; description: string }> = [
+    { name: "bug.json", description: "Raw data fetched from the bug tracker" },
+    { name: "bug_summary.md", description: "Formatted summary injected into the agent's prompt" },
+  ];
+  for (const f of fixedFiles) {
+    const filePath = path.join(workspacePath, f.name);
+    if (await fileExists(filePath)) {
+      internalFiles.push({ name: f.name, filePath, description: f.description });
+    }
+  }
+
+  const agentNotesDir = path.join(workspacePath, "agent_notes");
+  try {
+    const entries = await fs.readdir(agentNotesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        internalFiles.push({
+          name: entry.name,
+          filePath: path.join(agentNotesDir, entry.name),
+          description: "Agent response saved for future reference",
+        });
+      }
+    }
+  } catch {
+    // agent_notes/ doesn't exist yet — fine
+  }
+
+  return { bugAttachments, comments, internalFiles };
 }
