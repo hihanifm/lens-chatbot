@@ -7,3 +7,4 @@ wiki/
 e2e/.data/
 e2e/.live-data/
 test-results/
+*.tar.xz
