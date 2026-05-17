@@ -3,6 +3,7 @@
 #   make dock               Run in Docker dev container (port 38001)
 #   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
+SHELL          := /bin/bash
 OS             := $(shell uname -s)
 NODE_22_VER    := 22.15.0
 NODE_22_TARBALL := node-v$(NODE_22_VER)-linux-x64.tar.xz
@@ -115,10 +116,13 @@ setup: check-node
 
 dev: check-node
 	@pkill -f "tsx src/index.ts" 2>/dev/null && echo "Stopped previous process." || true
-	mkdir -p ./data/local
-	( [ -s "$$HOME/.nvm/nvm.sh" ] && . "$$HOME/.nvm/nvm.sh" && nvm use --silent 2>/dev/null || true; \
-	  PORT=$${PORT:-38001} DATA_DIR=./data/local LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
-	  NODE_OPTIONS=--experimental-sqlite node node_modules/.bin/tsx src/index.ts ) >> ./data/local/dev.log 2>&1 &
+	@mkdir -p ./data/local
+	@source "$$HOME/.nvm/nvm.sh" 2>/dev/null; nvm use --silent 2>/dev/null; \
+	 nohup env PORT=$${PORT:-38001} DATA_DIR=./data/local \
+	   LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
+	   NODE_OPTIONS=--experimental-sqlite \
+	   node node_modules/.bin/tsx src/index.ts \
+	   >> ./data/local/dev.log 2>&1 &
 	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
