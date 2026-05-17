@@ -8,7 +8,7 @@
 
 help:
 	@echo "Dev modes:                                                   Ports: dev=38001"
-	@echo "  make dev                Run as plain Node (no Docker) — any host path works for skills"
+	@echo "  make dev                Run as plain Node on port 38001 (no Docker) — any host path works for skills"
 	@echo "  make dock               Run in Docker dev container (port 38001)"
 	@echo "  make dock-rebuild       Full --no-cache rebuild + up"
 	@echo "  make build && make up   Build image + start (up is alias for dock)"
@@ -31,7 +31,7 @@ help:
 	@echo "  make clean              Remove containers/volumes; prune images"
 
 dev:
-	npm run dev
+	PORT=$${PORT:-38001} DATA_DIR=./data/dev npm run dev
 
 dock:
 	docker compose --profile dev up -d
