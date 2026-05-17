@@ -127,6 +127,15 @@ export class ClineCoreAgentRunner implements AgentRunner {
               push({ type: "status", content: `tool done: ${agentEvent.toolCall?.toolName ?? "unknown"}` });
             } else if (agentEvent.type === "status-notice" && agentEvent.message) {
               push({ type: "status", content: agentEvent.message });
+            } else if (agentEvent.type === "usage") {
+              const parts = [`tokens ↑${agentEvent.totalInputTokens} ↓${agentEvent.totalOutputTokens}`];
+              if (agentEvent.totalCost != null) parts.push(`cost $${agentEvent.totalCost.toFixed(4)}`);
+              if (agentEvent.cacheReadTokens) parts.push(`cache-hit ${agentEvent.cacheReadTokens}`);
+              push({ type: "status", content: parts.join(" | ") });
+            } else if (agentEvent.type === "done" && agentEvent.reason !== "completed") {
+              push({ type: "status", content: `⚠ agent stopped: ${agentEvent.reason} (${agentEvent.iterations} iterations)` });
+            } else if (agentEvent.type === "notice") {
+              push({ type: "status", content: `notice [${agentEvent.noticeType}]: ${agentEvent.message}` });
             }
           } else if (event.type === "hook" && event.payload.toolName) {
             push({ type: "status", content: `${event.payload.hookEventName}: ${event.payload.toolName}` });
