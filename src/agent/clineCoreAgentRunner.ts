@@ -1,7 +1,7 @@
 import { ClineCore, DefaultToolNames, SessionSource } from "@cline/sdk";
 import type { CoreSessionEvent } from "@cline/sdk";
 import type { AgentEvent, AgentRunner } from "./agentRunner.js";
-import { buildPrompt, loadAgentSkills, getWikiRootIndexPath, SYSTEM_PROMPT } from "./agentPrompt.js";
+import { buildPrompt, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
 import fs from "fs/promises";
@@ -56,7 +56,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     cwd: input.workspacePath,
     workspaceRoot: input.workspacePath,
     mode: "plan" as const,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: "", // empty → ClineCore uses its own DEFAULT_CLINE_SYSTEM_PROMPT
     maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 12),
     enableTools: true,
     enableSpawnAgent: false,
@@ -118,7 +118,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
-    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports });
+    const prompt = await buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports });
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {

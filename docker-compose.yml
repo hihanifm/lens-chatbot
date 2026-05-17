@@ -22,6 +22,7 @@ services:
       - ./data/dev:/app/data
       - ./wiki:/app/wiki
       - ${USER_SKILLS_DIR:-./user-skills}:/mnt/user-skills
+      - ${PROMPTS_DIR:-./src/prompts}:/app/prompts
     env_file:
       - path: .env.example
         required: true
@@ -31,6 +32,7 @@ services:
       PORT: "3000"
       DATA_DIR: /app/data
       WIKI_DIR: /app/wiki
+      PROMPTS_DIR: /app/prompts
       PUBLIC_URL: "http://localhost:${DEV_PORT:-38001}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -52,6 +54,7 @@ services:
       - ./data/prod:/app/data
       - ./wiki:/app/wiki
       - ${USER_SKILLS_DIR:-./user-skills}:/mnt/user-skills
+      - ${PROMPTS_DIR:-./src/prompts}:/app/prompts
     env_file:
       - path: .env.example
         required: true
@@ -61,6 +64,7 @@ services:
       PORT: "3000"
       DATA_DIR: /app/data
       WIKI_DIR: /app/wiki
+      PROMPTS_DIR: /app/prompts
       PUBLIC_URL: "http://localhost:${PROD_PORT:-38000}"
     restart: unless-stopped
     extra_hosts:

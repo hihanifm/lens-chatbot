@@ -3,24 +3,9 @@ import path from "node:path";
 import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 import { getWikiRoot } from "../services/wikiService.js";
 import { settings } from "../db.js";
+import { loadPrompt } from "../prompts/promptLoader.js";
 
 const AGENTS_MD = path.resolve(import.meta.dirname, "./environment.md");
-
-export const SYSTEM_PROMPT = `You are a bug analysis assistant for engineers.
-You have access to a workspace containing bug details, logs, and attachments.
-Use only files in this workspace. Do not modify files. Do not invent facts.
-
-Respond directly to what the user is asking:
-- Simple questions (priority, assignee, status) -> answer concisely in 1-2 sentences.
-- Requests for analysis or root cause -> read the relevant files, cite exact log lines
-  or snippets, and structure your answer as: observed facts, likely root cause,
-  evidence, next debugging steps, and confidence level.
-- Conversational follow-ups -> answer naturally without repeating the full structure.
-
-Always ground your answer in the workspace files. If the answer is not in the files,
-say so clearly.
-
-IMPORTANT: Before answering any question, you MUST read every file listed under "Selected files to analyze" using your file reading tools. Never answer from memory or make assumptions about file contents.`;
 
 export async function loadAgentSkills(): Promise<LoadedSkill[]> {
   const skillsDirs = settings.getSkillsDirs();
@@ -37,7 +22,7 @@ export async function getWikiRootIndexPath(): Promise<string | null> {
   }
 }
 
-export function buildPrompt(input: {
+export async function buildPrompt(input: {
   workspacePath: string;
   files: string[];
   question: string;
@@ -45,7 +30,8 @@ export function buildPrompt(input: {
   wikiRootIndex: string | null;
   fileComments?: Record<string, string>;
   priorReports?: string[];
-}): string {
+}): Promise<string> {
+  const taskContext = await loadPrompt("task");
   const fileList = input.files.length
     ? input.files.map((f) => {
         const comment = input.fileComments?.[f];
@@ -70,6 +56,8 @@ export function buildPrompt(input: {
       `Read the most recent report first — reuse its root cause and evidence rather than re-deriving from scratch if the same files are present.\n\n`
     : "";
   return [
+    taskContext,
+    ``,
     `Read ${AGENTS_MD} for environment context and available tools.`,
     ``,
     `WORKSPACE=${input.workspacePath}`,

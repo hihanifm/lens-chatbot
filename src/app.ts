@@ -430,7 +430,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     } catch { /* no bug.json — proceed with existing selected_files */ }
 
     if (bugJson) {
-      for (const att of bugJson.attachments ?? []) {
+      const maxLuckyAttachments = Number(process.env.MAX_LUCKY_ATTACHMENTS ?? 20);
+      const allAttachments: any[] = bugJson.attachments ?? [];
+      if (allAttachments.length > maxLuckyAttachments) {
+        res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] ${allAttachments.length} attachments found — processing first ${maxLuckyAttachments} (set MAX_LUCKY_ATTACHMENTS to override).` })}\n\n`);
+      }
+      for (const att of allAttachments.slice(0, maxLuckyAttachments)) {
         const attPath = path.join(session.workspace_path, "attachments", att.name);
         let downloaded = true;
         try { await fs.access(attPath); } catch {
@@ -549,7 +554,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           model: llmCfg.model,
           stream: false,
           temperature: 0.3,
-          messages: [{ role: "user", content: buildWikiSynthesisPrompt(transcript, bugComments, session.bug_id, rawModule) }],
+          messages: [{ role: "user", content: await buildWikiSynthesisPrompt(transcript, bugComments, session.bug_id, rawModule) }],
         }),
       });
     } catch (err: any) {

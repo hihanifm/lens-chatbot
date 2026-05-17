@@ -41,6 +41,7 @@ Key env vars:
 | `LOG_LEVEL` | `info` | Server verbosity: `debug\|info\|warn\|error` |
 | `SKILLS_DIR` | `/app/skills` | Colon-separated skill directories (extra dirs also configurable via Settings UI) |
 | `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
+| `PROMPTS_DIR` | `src/prompts` (bundled) | Directory of `.md` prompt files (`task.md`, `lucky.md`, `wiki-synthesis.md`); mount as a volume to edit prompts at runtime without rebuild |
 | `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
 
 Additional make targets:
