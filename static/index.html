@@ -652,16 +652,26 @@
     es.onerror = () => { /* connection closed — ignore, server cleans up */ };
   }
 
+  const CTX_INITIAL = 5;
+  const CTX_MAX = 25;
+
   function updateContextBar() {
     const bar = document.getElementById('context-bar');
     bar.innerHTML = '';
     const entries = Object.entries(contextFiles);
-    if (!entries.length) return;
+    if (!entries.length) { bar.dataset.expanded = '0'; return; }
+
+    const expanded = bar.dataset.expanded === '1';
+    const visibleCount = expanded ? CTX_MAX : CTX_INITIAL;
+    const visible = entries.slice(0, visibleCount);
+    const total = entries.length;
+
     const label = document.createElement('span');
     label.className = 'context-label';
     label.textContent = 'Context:';
     bar.appendChild(label);
-    for (const [filePath, name] of entries) {
+
+    for (const [filePath, name] of visible) {
       const chip = document.createElement('span');
       chip.className = 'context-chip';
       chip.textContent = `📎 ${name}`;
@@ -672,6 +682,20 @@
       chip.appendChild(rm);
       bar.appendChild(chip);
     }
+
+    if (!expanded && total > CTX_INITIAL) {
+      const more = document.createElement('button');
+      more.className = 'context-clear-all';
+      more.textContent = `+${total - CTX_INITIAL} more`;
+      more.onclick = () => { bar.dataset.expanded = '1'; updateContextBar(); };
+      bar.appendChild(more);
+    } else if (total > CTX_MAX) {
+      const note = document.createElement('span');
+      note.className = 'context-label';
+      note.textContent = `${CTX_MAX} of ${total} shown`;
+      bar.appendChild(note);
+    }
+
     const clearAll = document.createElement('button');
     clearAll.className = 'context-clear-all';
     clearAll.textContent = 'Remove all';
