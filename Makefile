@@ -3,14 +3,17 @@
 #   make dock               Run in Docker dev container (port 38001)
 #   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
-.PHONY: help dev dev-logs dev-stop dock dock-rebuild up down build rebuild logs restart ps \
+.PHONY: help dev dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
         prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live
 
 help:
 	@echo "Dev modes:                                                   Ports: dev=38001"
 	@echo "  make dev                Run as plain Node on port 38001 (background, logs → data/dev/dev.log)"
+	@echo "  make dev-ps             Show plain Node dev process status"
 	@echo "  make dev-logs           Tail plain Node dev logs"
 	@echo "  make dev-stop           Stop plain Node dev process"
+	@echo "  make dev-clean          Wipe data/local (DB + workspaces)"
+	@echo "  make dock-clean         Wipe data/dev (DB + workspaces)"
 	@echo "  make dock               Run in Docker dev container (port 38001)"
 	@echo "  make dock-rebuild       Full --no-cache rebuild + up"
 	@echo "  make build && make up   Build image + start (up is alias for dock)"
@@ -40,8 +43,19 @@ dev:
 dev-logs:
 	tail -f ./data/local/dev.log
 
+dev-ps:
+	@pgrep -fl "tsx src/index.ts" || echo "Not running."
+
 dev-stop:
 	@pkill -f "tsx src/index.ts" && echo "Stopped." || echo "Not running."
+
+dev-clean:
+	rm -rf ./data/local
+	@echo "Cleared data/local (make dev data)"
+
+dock-clean:
+	rm -rf ./data/dev
+	@echo "Cleared data/dev (make dock data)"
 
 dock:
 	docker compose --profile dev up -d
