@@ -789,6 +789,7 @@
 
     document.getElementById('question-input').disabled = false;
     document.getElementById('send-btn').disabled = false;
+    document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(sessionId);
     loadSessions();
@@ -902,7 +903,7 @@
     const hasContext = (session.selected_files ?? []).length > 0;
     document.getElementById('question-input').disabled = !hasContext;
     document.getElementById('send-btn').disabled = !hasContext;
-    document.getElementById('lucky-btn').disabled = !hasContext;
+    document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(session.id);
     loadSessions();
