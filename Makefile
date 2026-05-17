@@ -59,22 +59,23 @@ install-node:
 	@( \
 		echo "1/3  nvm ..."; \
 		if [ -s "$$HOME/.nvm/nvm.sh" ]; then \
-			. "$$HOME/.nvm/nvm.sh" && nvm install $(NODE_22_VER) && nvm use $(NODE_22_VER) \
+			NVM_CURL_FLAGS=-k . "$$HOME/.nvm/nvm.sh" \
+				&& NVM_CURL_FLAGS=-k nvm install $(NODE_22_VER) && nvm use $(NODE_22_VER) \
 				&& echo "" && echo "Done. Open a new shell or run: . ~/.nvm/nvm.sh && nvm use $(NODE_22_VER)" \
 				&& exit 0; \
 		fi; \
-		echo "     nvm not found or install failed (no internet?)."; \
+		echo "     nvm not found or install failed (no internet / proxy?)."; \
 		echo ""; \
 		echo "2/3  apt + NodeSource ..."; \
 		if command -v apt-get >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then \
-			curl -fsSL -o /tmp/_ns22.sh https://deb.nodesource.com/setup_22.x \
+			curl -fsSLk -o /tmp/_ns22.sh https://deb.nodesource.com/setup_22.x \
 				&& sudo -E bash /tmp/_ns22.sh \
 				&& sudo apt-get install -y nodejs \
 				&& node --version 2>/dev/null | grep -qE '^v(2[2-9]|[3-9][0-9])' \
 				&& echo "" && echo "Done. node $$(node --version) installed." \
 				&& exit 0; \
 		fi; \
-		echo "     apt unavailable or failed (no internet / proxy — Ubuntu repos cap at Node 18)."; \
+		echo "     apt unavailable or failed (proxy / Ubuntu repos cap at Node 18)."; \
 		echo ""; \
 		echo "3/3  local tarball ($(NODE_22_TARBALL)) ..."; \
 		if [ -f "$(NODE_22_TARBALL)" ]; then \
