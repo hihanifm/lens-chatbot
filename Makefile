@@ -115,23 +115,27 @@ setup: check-node
 	@echo "Setup complete. Run: make dev"
 
 dev: check-node
-	@pkill -f "src/index.ts" 2>/dev/null || true
 	@mkdir -p ./data/local
+	@[ -f ./data/local/dev.pid ] && kill $$(cat ./data/local/dev.pid) 2>/dev/null && echo "Stopped previous process." || true
 	@nohup env PORT=$${PORT:-38001} DATA_DIR=./data/local \
 	  LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
 	  NODE_OPTIONS=--experimental-sqlite \
 	  node node_modules/.bin/tsx src/index.ts \
-	  >> ./data/local/dev.log 2>&1 &
-	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
+	  >> ./data/local/dev.log 2>&1 & echo $$! > ./data/local/dev.pid
+	@echo "Started on http://localhost:38001 (pid=$$(cat ./data/local/dev.pid)) — logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
 	tail -f ./data/local/dev.log
 
 dev-ps:
-	@pgrep -fl "src/index.ts" || echo "Not running."
+	@[ -f ./data/local/dev.pid ] && ps -p $$(cat ./data/local/dev.pid) 2>/dev/null || echo "Not running."
 
 dev-stop:
-	@pkill -f "src/index.ts" && echo "Stopped." || echo "Not running."
+	@[ -f ./data/local/dev.pid ] \
+	  && kill $$(cat ./data/local/dev.pid) 2>/dev/null \
+	  && rm -f ./data/local/dev.pid \
+	  && echo "Stopped." \
+	  || echo "Not running."
 
 dev-clean:
 	rm -rf ./data/local
