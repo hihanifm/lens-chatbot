@@ -3,11 +3,14 @@
 #   make dock               Run in Docker dev container (port 38001)
 #   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
-.PHONY: help dev dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
+OS := $(shell uname -s)
+
+.PHONY: help setup check-node dev dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
         prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live
 
 help:
 	@echo "Dev modes:                                                   Ports: dev=38001"
+	@echo "  make setup              Install deps + create .env (run once after clone)"
 	@echo "  make dev                Run as plain Node on port 38001 (background, logs → data/dev/dev.log)"
 	@echo "  make dev-ps             Show plain Node dev process status"
 	@echo "  make dev-logs           Tail plain Node dev logs"
@@ -35,7 +38,24 @@ help:
 	@echo "Maintenance:"
 	@echo "  make clean              Remove containers/volumes; prune images"
 
-dev:
+check-node:
+	@node --version 2>/dev/null | grep -qE '^v(2[2-9]|[3-9][0-9])' || { \
+		echo "ERROR: Node 22+ required (found $$(node --version 2>/dev/null || echo none))"; \
+		if [ "$(OS)" = "Darwin" ]; then \
+			echo "  macOS:  brew install node   OR   nvm install 22 && nvm use 22"; \
+		else \
+			echo "  Linux:  nvm install 22 && nvm use 22   OR   https://nodejs.org/en/download"; \
+		fi; \
+		exit 1; \
+	}
+
+setup: check-node
+	@[ -f .env ] || (cp .env.example .env && echo "Created .env from .env.example — edit it before running")
+	npm install
+	@echo ""
+	@echo "Setup complete. Run: make dev"
+
+dev: check-node
 	@pkill -f "tsx src/index.ts" 2>/dev/null && echo "Stopped previous process." || true
 	mkdir -p ./data/local
 	PORT=$${PORT:-38001} DATA_DIR=./data/local LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} npm run dev >> ./data/local/dev.log 2>&1 &

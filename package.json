@@ -3,7 +3,8 @@
   "version": "0.8.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "predev": "node -e \"if(+process.versions.node.split('.')[0]<22){console.error('ERROR: Node 22+ required (found '+process.version+')');process.exit(1)}\"",
+    "dev": "NODE_OPTIONS=--experimental-sqlite tsx src/index.ts",
     "build": "tsc",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
