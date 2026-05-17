@@ -520,7 +520,7 @@
 
   document.getElementById('bug-refresh-btn').addEventListener('click', refreshBugFromTracker);
 
-  function renderBugPanel(bug, selectedFiles = []) {
+  function renderBugPanel(bug, selectedFiles = [], downloadedFiles = []) {
     document.getElementById('bug-title').textContent = bug.title;
     document.getElementById('bug-meta-summary').innerHTML = `
       <span><span class="label">Author</span>${bug.author}</span>
@@ -536,7 +536,7 @@
 
     const attDiv = document.getElementById('attachments');
     attDiv.innerHTML = '';
-    for (const att of bug.attachments ?? []) attDiv.appendChild(makeAttachmentBtn(att, selectedFiles));
+    for (const att of bug.attachments ?? []) attDiv.appendChild(makeAttachmentBtn(att, selectedFiles, downloadedFiles));
 
     const commentsDiv = document.getElementById('comments');
     commentsDiv.innerHTML = '';
@@ -557,7 +557,7 @@
         `;
         if (c.attachments?.length) {
           const attContainer = el.querySelector('.comment-attachments');
-          for (const a of c.attachments) attContainer.appendChild(makeAttachmentBtn(a, selectedFiles));
+          for (const a of c.attachments) attContainer.appendChild(makeAttachmentBtn(a, selectedFiles, downloadedFiles));
         }
         commentsDiv.appendChild(el);
       }
@@ -571,14 +571,14 @@
     if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
     const res = await fetch(`/session/${sessionId}`);
     if (!res.ok) { appendMessage('error', `✗ Failed to load session (HTTP ${res.status})`); return; }
-    const { session, messages, bug } = await res.json();
+    const { session, messages, bug, downloaded_files } = await res.json();
     currentSessionId = sessionId;
 
     contextFiles = {};
     for (const fp of session.selected_files ?? []) contextFiles[fp] = fp.split('/').pop();
     updateContextBar();
 
-    if (bug) renderBugPanel(bug, session.selected_files ?? []);
+    if (bug) renderBugPanel(bug, session.selected_files ?? [], downloaded_files ?? []);
 
     const chat = document.getElementById('chat');
     chat.innerHTML = '';
@@ -635,7 +635,7 @@
     }
   });
 
-  function makeAttachmentBtn(att, selectedFiles = []) {
+  function makeAttachmentBtn(att, selectedFiles = [], downloadedFiles = []) {
     const sizeLabel = att.size ? ` · ${formatSize(att.size)}` : '';
     const wrapper = document.createElement('div');
     wrapper.className = 'att-menu-wrapper';
@@ -644,10 +644,12 @@
     btn.className = 'attachment-btn';
     wrapper.appendChild(btn);
 
-    // filePath is known after download or restored from selectedFiles on resume
-    let filePath = selectedFiles.find(fp => fp.endsWith('/' + att.name)) ?? null;
+    // filePath: prefer selected_files (already in context), fall back to downloaded_files
+    let filePath = selectedFiles.find(fp => fp.endsWith('/' + att.name))
+      ?? downloadedFiles.find(fp => fp.endsWith('/' + att.name))
+      ?? null;
     let isDownloaded = !!filePath;
-    let isInChat = !!filePath;
+    let isInChat = selectedFiles.some(fp => fp.endsWith('/' + att.name));
     let extractedFiles = []; // populated for zips after download
 
     function applyState() {
@@ -698,22 +700,11 @@
           }
           const dlBody = await res.json();
           filePath = dlBody.filePath;
+          extractedFiles = dlBody.extractedFiles ?? [];
           isDownloaded = true;
+          isInChat = false;
           registerCallback();
-          if (dlBody.extractedFiles?.length) {
-            // zip: auto-add extracted files to context, mark button as in-chat
-            extractedFiles = dlBody.extractedFiles;
-            for (const ef of extractedFiles) contextFiles[ef] = ef.split('/').pop();
-            updateContextBar();
-            isInChat = true;
-          } else {
-            contextFiles[filePath] = att.name;
-            updateContextBar();
-            isInChat = true;
-          }
           applyState();
-          document.getElementById('question-input').disabled = false;
-          document.getElementById('send-btn').disabled = false;
         };
         menu.appendChild(dlItem);
       } else {

@@ -97,13 +97,24 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
     let bug = null;
+    const fs = await import("fs/promises");
     try {
-      const raw = await import("fs/promises").then(fs => fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+      const raw = await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8");
       bug = JSON.parse(raw);
     } catch {
       // bug.json missing or unreadable — omit gracefully
     }
-    res.json({ session, messages: messages.list(req.params.id), bug });
+    let downloaded_files: string[] = [];
+    try {
+      const attDir = path.join(session.workspace_path, "attachments");
+      const entries = await fs.readdir(attDir, { recursive: true, withFileTypes: true });
+      downloaded_files = entries
+        .filter(e => e.isFile())
+        .map(e => path.join(e.parentPath ?? (e as any).path ?? attDir, e.name));
+    } catch {
+      // attachments dir may not exist yet
+    }
+    res.json({ session, messages: messages.list(req.params.id), bug, downloaded_files });
   });
 
   app.post("/session/:id/refresh-bug", async (req, res) => {
@@ -152,11 +163,6 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       session.workspace_path
     );
     log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length });
-    if (extractedFiles.length > 0) {
-      for (const ef of extractedFiles) sessions.addFile(req.params.id, ef);
-    } else {
-      sessions.addFile(req.params.id, filePath);
-    }
     res.json({ filePath, extractedFiles });
   });
 
