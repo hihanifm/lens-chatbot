@@ -17,7 +17,7 @@ export async function getOrCreateWorkspace(bugId: string): Promise<string> {
   return workspacePath;
 }
 
-async function walkFiles(dir: string): Promise<string[]> {
+export async function walkFiles(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const results: string[] = [];
   for (const e of entries) {

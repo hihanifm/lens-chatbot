@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
 import { getOrCreateWorkspace, downloadAttachment, saveBugSummary } from "./services/attachmentService.js";
+import { buildVirtualTree } from "./services/workspaceExplorer.js";
 import type { AgentRunner } from "./agent/agentRunner.js";
 import { sessions, messages, users, settings } from "./db.js";
 import type { LlmConfig } from "./db.js";
@@ -134,6 +135,13 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     }
   });
 
+  app.get("/session/:id/workspace/files", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const tree = await buildVirtualTree(session.workspace_path);
+    res.json(tree);
+  });
+
   app.get("/session/:id/attachment/download", (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
@@ -172,8 +180,11 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!session) return res.status(404).json({ error: "session not found" });
     const { filePath, selected } = req.body;
     if (!filePath) return res.status(400).json({ error: "filePath required" });
-    if (selected) sessions.addFile(req.params.id, filePath);
-    else sessions.removeFile(req.params.id, filePath);
+    const resolved = path.resolve(String(filePath));
+    if (!resolved.startsWith(session.workspace_path + path.sep))
+      return res.status(403).json({ error: "path outside workspace" });
+    if (selected) sessions.addFile(req.params.id, resolved);
+    else sessions.removeFile(req.params.id, resolved);
     res.json({ ok: true });
   });
 

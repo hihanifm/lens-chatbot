@@ -4,6 +4,34 @@ import type { AgentEvent, AgentRunner } from "./agentRunner.js";
 import { buildPrompt, loadAgentSkills, SYSTEM_PROMPT } from "./agentPrompt.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
+import fs from "fs/promises";
+import path from "path";
+
+async function buildFileCommentMap(
+  workspacePath: string,
+  files: string[]
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  let bug: any;
+  try {
+    const raw = await fs.readFile(path.join(workspacePath, "bug.json"), "utf8");
+    bug = JSON.parse(raw);
+  } catch {
+    return map;
+  }
+  for (const comment of bug.comments ?? []) {
+    for (const att of comment.attachments ?? []) {
+      const flatSuffix = `/${att.name}`;
+      const zipBase = `/${path.basename(att.name, ".zip")}/`;
+      for (const f of files) {
+        if (f.endsWith(flatSuffix) || f.includes(zipBase)) {
+          map[f] = comment.body;
+        }
+      }
+    }
+  }
+  return map;
+}
 
 function resultText(result: any): string {
   return result?.text ?? result?.outputText ?? result?.result?.text ?? result?.result?.outputText ?? "";
@@ -56,6 +84,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const skills = await loadAgentSkills();
+    const fileComments = await buildFileCommentMap(input.workspacePath, input.files);
     const llmCfg = settings.getLlmConfig();
     const queue: AgentEvent[] = [];
     const wakeup = { fn: null as (() => void) | null };
@@ -77,7 +106,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
-    const prompt = buildPrompt({ ...input, skills });
+    const prompt = buildPrompt({ ...input, fileComments, skills });
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {

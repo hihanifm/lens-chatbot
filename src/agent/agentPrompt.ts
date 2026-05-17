@@ -29,9 +29,13 @@ export function buildPrompt(input: {
   files: string[];
   question: string;
   skills: LoadedSkill[];
+  fileComments?: Record<string, string>;
 }): string {
   const fileList = input.files.length
-    ? input.files.map((f) => `- ${f}`).join("\n")
+    ? input.files.map((f) => {
+        const comment = input.fileComments?.[f];
+        return comment ? `- ${f}\n  Comment: "${comment}"` : `- ${f}`;
+      }).join("\n")
     : "(none selected)";
   const skillsHint = input.skills.length > 0
     ? `Available skills - read the relevant ones before starting:\n${input.skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n")}\n\n`

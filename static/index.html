@@ -158,6 +158,34 @@
     /* Settings */
     #settings-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #9ca3af; padding: 4px 8px; border-radius: 8px; transition: background 0.15s, color 0.15s; line-height: 1; }
     #settings-btn:hover { background: #f3f4f6; color: #374151; }
+
+    /* Explorer button */
+    #explorer-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; font-size: 13px; color: #6b7280; padding: 4px 10px; border-radius: 8px; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+    #explorer-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+    #explorer-btn.active { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+
+    /* Explorer drawer */
+    #explorer-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 300px; background: #1a1d27; color: #e5e7eb; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.2s ease; z-index: 200; box-shadow: -4px 0 20px rgba(0,0,0,0.25); }
+    #explorer-drawer.open { transform: translateX(0); }
+    #explorer-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #2d3143; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; flex-shrink: 0; }
+    #explorer-header button { background: none; border: none; cursor: pointer; color: #6b7280; font-size: 14px; padding: 2px 6px; }
+    #explorer-header button:hover { color: #e5e7eb; }
+    #explorer-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+    .exp-section-header { padding: 10px 14px 4px; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; }
+    .exp-comment-header { padding: 8px 14px; border-top: 1px solid #2d3143; margin-top: 4px; }
+    .exp-comment-author { font-size: 12px; font-weight: 600; color: #a5b4fc; }
+    .exp-comment-body { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .exp-file-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 14px 5px 20px; font-size: 12px; cursor: default; }
+    .exp-file-row:hover { background: #252836; }
+    .exp-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .exp-file-name.not-downloaded { color: #4b5563; font-style: italic; cursor: pointer; }
+    .exp-file-name.in-context { color: #818cf8; }
+    .exp-add-btn { flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #374151; background: none; color: #9ca3af; cursor: pointer; font-family: inherit; }
+    .exp-add-btn:hover { border-color: #6366f1; color: #818cf8; }
+    .exp-add-btn.in-context { border-color: #6366f1; color: #818cf8; background: #1e1b4b; }
+    .exp-zip-row { display: flex; align-items: center; gap: 6px; padding: 5px 14px; font-size: 12px; cursor: pointer; color: #9ca3af; }
+    .exp-zip-row:hover { background: #252836; }
+    .exp-zip-toggle { font-size: 10px; }
     #settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: center; justify-content: center; }
     #settings-overlay.open { display: flex; }
     #settings-modal { background: white; border-radius: 14px; padding: 28px; width: 440px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
@@ -196,6 +224,7 @@
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
     <span id="user-badge" style="margin-left:auto; font-size:13px; color:#6b7280; display:flex; align-items:center; gap:10px;"></span>
+    <button id="explorer-btn" title="Workspace Files">🗂 Files</button>
     <button id="settings-btn" title="Settings">⚙</button>
   </div>
   <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
@@ -246,6 +275,14 @@
       </div>
     </div>
   </div>
+</div>
+
+<div id="explorer-drawer">
+  <div id="explorer-header">
+    <span>Workspace Files</span>
+    <button id="explorer-close">✕</button>
+  </div>
+  <div id="explorer-body"></div>
 </div>
 
 <div id="reset-confirm-overlay">
@@ -601,6 +638,7 @@
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(sessionId);
     loadSessions();
+    if (explorerOpen) refreshExplorerTree();
   }
 
   document.getElementById('load-bug-btn').onclick = async () => {
@@ -631,6 +669,7 @@
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(session.id);
     loadSessions();
+    if (explorerOpen) refreshExplorerTree();
   };
 
   function formatSize(bytes) {
@@ -718,6 +757,7 @@
           isInChat = false;
           registerCallback();
           applyState();
+          if (explorerOpen) refreshExplorerTree();
         };
         menu.appendChild(dlItem);
       } else {
@@ -1172,6 +1212,138 @@
     document.getElementById('s-new-pin').value = '';
     document.getElementById('s-confirm-pin').value = '';
   });
+
+  // ── Explorer ──────────────────────────────────────────────────────
+  let explorerOpen = false;
+
+  document.getElementById('explorer-btn').addEventListener('click', () => toggleExplorer());
+  document.getElementById('explorer-close').addEventListener('click', () => toggleExplorer(false));
+
+  function toggleExplorer(force) {
+    explorerOpen = force !== undefined ? force : !explorerOpen;
+    document.getElementById('explorer-drawer').classList.toggle('open', explorerOpen);
+    document.getElementById('explorer-btn').classList.toggle('active', explorerOpen);
+    if (explorerOpen && currentSessionId) refreshExplorerTree();
+  }
+
+  async function refreshExplorerTree() {
+    if (!currentSessionId) return;
+    const res = await fetch(`/session/${currentSessionId}/workspace/files`);
+    if (!res.ok) return;
+    renderVirtualTree(await res.json());
+  }
+
+  function renderVirtualTree(tree) {
+    const body = document.getElementById('explorer-body');
+    body.innerHTML = '';
+
+    const bugHeader = document.createElement('div');
+    bugHeader.className = 'exp-section-header';
+    bugHeader.textContent = 'Bug Attachments';
+    body.appendChild(bugHeader);
+    for (const node of tree.bugAttachments) body.appendChild(makeAttNode(node, null));
+
+    for (const section of tree.comments) {
+      const commentEl = document.createElement('div');
+      commentEl.className = 'exp-comment-header';
+      const truncated = section.body.length > 80 ? section.body.slice(0, 80) + '…' : section.body;
+      commentEl.innerHTML = `
+        <div class="exp-comment-author">${escHtml(section.author)} · ${fmtDate(section.created_at)}</div>
+        <div class="exp-comment-body" title="${escHtml(section.body)}">"${escHtml(truncated)}"</div>
+      `;
+      body.appendChild(commentEl);
+      for (const node of section.nodes) body.appendChild(makeAttNode(node, section.body));
+      if (!section.nodes.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:4px 20px;font-size:11px;color:#374151;';
+        empty.textContent = 'no attachments';
+        body.appendChild(empty);
+      }
+    }
+  }
+
+  function makeAttNode(node, commentBody) {
+    if (node.isZip && node.downloaded) {
+      const wrapper = document.createElement('div');
+      const zipRow = document.createElement('div');
+      zipRow.className = 'exp-zip-row';
+      let expanded = false;
+      const toggle = document.createElement('span');
+      toggle.className = 'exp-zip-toggle';
+      toggle.textContent = '▶';
+      zipRow.appendChild(toggle);
+      const label = document.createElement('span');
+      label.textContent = `📦 ${node.name}`;
+      zipRow.appendChild(label);
+      const childContainer = document.createElement('div');
+      childContainer.style.display = 'none';
+      for (const child of (node.children ?? [])) {
+        childContainer.appendChild(makeFileRow(child.filePath, child.name, commentBody));
+      }
+      zipRow.addEventListener('click', () => {
+        expanded = !expanded;
+        toggle.textContent = expanded ? '▼' : '▶';
+        childContainer.style.display = expanded ? 'block' : 'none';
+      });
+      wrapper.appendChild(zipRow);
+      wrapper.appendChild(childContainer);
+      return wrapper;
+    }
+
+    if (!node.downloaded) {
+      const row = document.createElement('div');
+      row.className = 'exp-file-row';
+      const name = document.createElement('span');
+      name.className = 'exp-file-name not-downloaded';
+      name.textContent = `⬇ ${node.name}`;
+      name.title = 'Click to download';
+      row.appendChild(name);
+      row.addEventListener('click', async () => {
+        name.textContent = `⏬ ${node.name}`;
+        const res = await fetch(`/session/${currentSessionId}/attachment/${node.attId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attName: node.name }),
+        });
+        if (res.ok) refreshExplorerTree();
+        else name.textContent = `⚠ ${node.name}`;
+      });
+      return row;
+    }
+
+    return makeFileRow(node.filePath, node.name, commentBody);
+  }
+
+  function makeFileRow(filePath, name, commentBody) {
+    const row = document.createElement('div');
+    row.className = 'exp-file-row';
+    const nameEl = document.createElement('span');
+    nameEl.className = `exp-file-name${contextFiles[filePath] ? ' in-context' : ''}`;
+    nameEl.textContent = name;
+    nameEl.title = filePath;
+    const btn = document.createElement('button');
+    btn.className = `exp-add-btn${contextFiles[filePath] ? ' in-context' : ''}`;
+    btn.textContent = contextFiles[filePath] ? '✓' : '+ Add';
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const adding = !contextFiles[filePath];
+      await toggleFileInChat(filePath, name, adding);
+      nameEl.classList.toggle('in-context', adding);
+      btn.classList.toggle('in-context', adding);
+      btn.textContent = adding ? '✓' : '+ Add';
+    });
+    row.appendChild(nameEl);
+    row.appendChild(btn);
+    return row;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
 
   loadSessions();
 </script>
