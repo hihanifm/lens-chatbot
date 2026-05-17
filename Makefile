@@ -1,13 +1,17 @@
 # Quick reference:
-#   make build && make up   Build image + start dev stack
+#   make dev                Run as plain Node (no Docker)
+#   make dock               Run in Docker dev container (port 38001)
+#   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
-#   make logs               Tail dev logs
-.PHONY: help up down build rebuild logs restart ps \
+.PHONY: help dev dock dock-rebuild up down build rebuild logs restart ps \
         prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live
 
 help:
-	@echo "Dev (default):                                               Ports: dev=38001"
-	@echo "  make build && make up   Build image + start dev stack"
+	@echo "Dev modes:                                                   Ports: dev=38001"
+	@echo "  make dev                Run as plain Node (no Docker) — any host path works for skills"
+	@echo "  make dock               Run in Docker dev container (port 38001)"
+	@echo "  make dock-rebuild       Full --no-cache rebuild + up"
+	@echo "  make build && make up   Build image + start (up is alias for dock)"
 	@echo "  make rebuild            Full --no-cache rebuild + up"
 	@echo "  make restart            down + up without rebuild"
 	@echo "  make logs               Tail dev logs"
@@ -25,6 +29,16 @@ help:
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean              Remove containers/volumes; prune images"
+
+dev:
+	npm run dev
+
+dock:
+	docker compose --profile dev up -d
+
+dock-rebuild:
+	docker compose --profile dev build --no-cache
+	docker compose --profile dev up -d
 
 up:
 	docker compose --profile dev up -d

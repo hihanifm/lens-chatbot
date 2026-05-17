@@ -468,6 +468,19 @@
 
     <hr class="s-divider" />
 
+    <div class="s-section">Skills Directories</div>
+    <div class="s-group">
+      <label class="s-label" for="s-skills-dirs">Extra directories (one per line)</label>
+      <textarea id="s-skills-dirs" class="s-input" rows="3" style="resize:vertical; font-family:monospace; font-size:12px;"
+        placeholder="/mnt/user-skills&#10;/mnt/team-skills&#10;(env SKILLS_DIR dirs always included)"></textarea>
+    </div>
+    <div id="s-skills-error" class="s-error"></div>
+    <div class="s-btn-row">
+      <button class="s-btn-primary" id="s-skills-save-btn">Save Skills</button>
+    </div>
+
+    <hr class="s-divider" />
+
     <div class="s-section">Change Admin PIN</div>
     <div class="s-group">
       <label class="s-label" for="s-cur-pin">Current PIN</label>
@@ -1468,6 +1481,7 @@
     sLlmError.textContent = '';
     sPinError.textContent = '';
     sPinSuccess.textContent = '';
+    document.getElementById('s-skills-error').textContent = '';
     settingsPinShown = false;
     sPinRow.style.display = 'none';
     sPin.value = '';
@@ -1486,6 +1500,15 @@
         sApikey.placeholder = cfg.apiKey ? cfg.apiKey : 'sk-...';
       }
     } catch {}
+
+    try {
+      const res = await fetch('/settings/skills');
+      if (res.ok) {
+        const { dirs } = await res.json();
+        document.getElementById('s-skills-dirs').value = dirs.join('\n');
+      }
+    } catch {}
+
     updateSettingsFields();
     settingsOverlay.classList.add('open');
   }
@@ -1532,6 +1555,38 @@
     loadLlmBadge();
     const toast = document.createElement('div');
     toast.textContent = 'Settings saved';
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#111827;color:white;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2000;opacity:1;transition:opacity 0.4s;';
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);
+  });
+
+  document.getElementById('s-skills-save-btn').addEventListener('click', async () => {
+    document.getElementById('s-skills-error').textContent = '';
+    if (!settingsPinShown) {
+      settingsPinShown = true;
+      sPinRow.style.display = 'block';
+      sPin.focus();
+      return;
+    }
+    const pin = sPin.value.trim();
+    if (!pin) { document.getElementById('s-skills-error').textContent = 'Enter your admin PIN to save.'; return; }
+
+    const dirs = document.getElementById('s-skills-dirs').value
+      .split('\n').map(d => d.trim()).filter(Boolean);
+
+    const res = await fetch('/settings/skills', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, dirs }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('s-skills-error').textContent = data.error || 'Save failed.';
+      return;
+    }
+    closeSettings();
+    const toast = document.createElement('div');
+    toast.textContent = 'Skills directories saved';
     toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#111827;color:white;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2000;opacity:1;transition:opacity 0.4s;';
     document.body.appendChild(toast);
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);

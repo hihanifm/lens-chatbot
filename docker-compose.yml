@@ -21,6 +21,7 @@ services:
       - ./static:/app/static:ro
       - ./data/dev:/app/data
       - ./wiki:/app/wiki
+      - ${USER_SKILLS_DIR:-./user-skills}:/mnt/user-skills
     env_file:
       - path: .env.example
         required: true
@@ -50,6 +51,7 @@ services:
     volumes:
       - ./data/prod:/app/data
       - ./wiki:/app/wiki
+      - ${USER_SKILLS_DIR:-./user-skills}:/mnt/user-skills
     env_file:
       - path: .env.example
         required: true

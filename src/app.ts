@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "node:fs/promises";
 import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
@@ -586,6 +587,35 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const out = { ...cfg } as any;
     if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
     res.json(out);
+  });
+
+  app.get("/settings/skills", (_req, res) => {
+    res.json({ dirs: settings.getExtraSkillsDirs() });
+  });
+
+  app.put("/settings/skills", async (req, res) => {
+    const { pin, dirs } = req.body;
+    if (!pin) return res.status(400).json({ error: "pin required" });
+    if (!Array.isArray(dirs) || dirs.some((d) => typeof d !== "string"))
+      return res.status(400).json({ error: "dirs must be an array of strings" });
+    if (dirs.some((d) => !d.startsWith("/")))
+      return res.status(400).json({ error: "all dirs must be absolute paths" });
+
+    const stored = settings.getAdminPinHash();
+    if (!stored) return res.status(503).json({ error: "Admin PIN not configured — set ADMIN_PIN in .env" });
+    if (!(await verifyPin(String(pin), stored))) return res.status(401).json({ error: "Invalid PIN" });
+
+    for (const dir of dirs) {
+      try {
+        await fs.stat(dir);
+      } catch {
+        return res.status(400).json({ error: `directory not found: ${dir}` });
+      }
+    }
+
+    settings.setSkillsDirs(dirs);
+    skillsCache = null;
+    res.json({ dirs });
   });
 
   app.put("/settings/admin/pin", async (req, res) => {

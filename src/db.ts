@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "crypto";
+import { log } from "./logger.js";
 
 const DB_PATH = process.env.DATA_DIR
   ? `${process.env.DATA_DIR}/lens-chatbot.db`
@@ -208,5 +209,21 @@ export const settings = {
 
   setAdminPinHash(hash: string): void {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_pin_hash', ?)").run(hash);
+  },
+
+  getExtraSkillsDirs(): string[] {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'skills_dirs'").get() as { value: string } | undefined;
+    return row ? (JSON.parse(row.value) as string[]) : [];
+  },
+
+  getSkillsDirs(): string[] {
+    const envDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);
+    const extraDirs = settings.getExtraSkillsDirs();
+    return [...new Set([...envDirs, ...extraDirs])];
+  },
+
+  setSkillsDirs(dirs: string[]): void {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('skills_dirs', ?)").run(JSON.stringify(dirs));
+    log.info("settings:skills-dirs-updated", { dirs });
   },
 };

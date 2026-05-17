@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 import { getWikiRoot } from "../services/wikiService.js";
+import { settings } from "../db.js";
 
 const AGENTS_MD = path.resolve(import.meta.dirname, "./environment.md");
 
@@ -22,7 +23,7 @@ say so clearly.
 IMPORTANT: Before answering any question, you MUST read every file listed under "Selected files to analyze" using your file reading tools. Never answer from memory or make assumptions about file contents.`;
 
 export async function loadAgentSkills(): Promise<LoadedSkill[]> {
-  const skillsDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);
+  const skillsDirs = settings.getSkillsDirs();
   return loadSkills(skillsDirs);
 }
 
