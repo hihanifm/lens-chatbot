@@ -199,6 +199,20 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     }
   });
 
+  app.post("/session/:id/stop", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    if (!session.cline_session_id) return res.status(400).json({ error: "no active agent session" });
+    try {
+      await runner.stop(session.cline_session_id);
+      sessions.clearClineSessionId(req.params.id);
+      log.info("agent:stopped", { sessionId: req.params.id });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/session/:id/analyze", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });

@@ -1,6 +1,9 @@
 import type { AgentEvent, AgentRunner } from "../src/agent/agentRunner.js";
 
 export class StubAgentRunner implements AgentRunner {
+  async abort(_clineSessionId: string): Promise<void> {}
+  async stop(_clineSessionId: string): Promise<void> {}
+
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     if (/\bls\b|list.{0,10}files/i.test(input.question)) {
       yield { type: "text", content: input.workspacePath };

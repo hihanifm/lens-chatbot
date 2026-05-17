@@ -134,6 +134,10 @@ export const sessions = {
     db.prepare("UPDATE sessions SET cline_session_id = ? WHERE id = ?").run(clineSessionId, id);
   },
 
+  clearClineSessionId(id: string): void {
+    db.prepare("UPDATE sessions SET cline_session_id = NULL WHERE id = ?").run(id);
+  },
+
   findActiveByBugId(bugId: string): Session | undefined {
     const row = db
       .prepare("SELECT * FROM sessions WHERE bug_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1")

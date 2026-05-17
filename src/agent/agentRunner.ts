@@ -11,4 +11,5 @@ export interface AgentRunner {
     clineSessionId?: string;
   }): AsyncIterable<AgentEvent>;
   abort(clineSessionId: string): Promise<void>;
+  stop(clineSessionId: string): Promise<void>;
 }
