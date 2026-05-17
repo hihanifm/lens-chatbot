@@ -115,24 +115,23 @@ setup: check-node
 	@echo "Setup complete. Run: make dev"
 
 dev: check-node
-	@pkill -f "tsx src/index.ts" 2>/dev/null && echo "Stopped previous process." || true
+	@pkill -f "src/index.ts" 2>/dev/null || true
 	@mkdir -p ./data/local
-	@source "$$HOME/.nvm/nvm.sh" 2>/dev/null; nvm use --silent 2>/dev/null; \
-	 nohup env PORT=$${PORT:-38001} DATA_DIR=./data/local \
-	   LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
-	   NODE_OPTIONS=--experimental-sqlite \
-	   node node_modules/.bin/tsx src/index.ts \
-	   >> ./data/local/dev.log 2>&1 &
+	@nohup env PORT=$${PORT:-38001} DATA_DIR=./data/local \
+	  LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
+	  NODE_OPTIONS=--experimental-sqlite \
+	  node node_modules/.bin/tsx src/index.ts \
+	  >> ./data/local/dev.log 2>&1 &
 	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
 	tail -f ./data/local/dev.log
 
 dev-ps:
-	@pgrep -fl "tsx src/index.ts" || echo "Not running."
+	@pgrep -fl "src/index.ts" || echo "Not running."
 
 dev-stop:
-	@pkill -f "tsx src/index.ts" && echo "Stopped." || echo "Not running."
+	@pkill -f "src/index.ts" && echo "Stopped." || echo "Not running."
 
 dev-clean:
 	rm -rf ./data/local
