@@ -2077,21 +2077,22 @@
   loadSessions();
 
   // Sidebar collapse
-  (function() {
-    const sidebar = document.getElementById('sidebar');
-    const btn = document.getElementById('sidebar-collapse-btn');
-    function applyCollapsed(collapsed) {
-      sidebar.classList.toggle('collapsed', collapsed);
-      btn.textContent = collapsed ? '›' : '‹';
-      btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
-    }
-    applyCollapsed(localStorage.getItem('sidebar_collapsed') === '1');
-    btn.addEventListener('click', () => {
-      const next = !sidebar.classList.contains('collapsed');
-      localStorage.setItem('sidebar_collapsed', next ? '1' : '0');
-      applyCollapsed(next);
-    });
-  })();
+  const sidebar = document.getElementById('sidebar');
+  const sidebarCollapseBtn = document.getElementById('sidebar-collapse-btn');
+  function setSidebarCollapsed(collapsed) {
+    sidebar.classList.toggle('collapsed', collapsed);
+    sidebarCollapseBtn.textContent = collapsed ? '›' : '‹';
+    sidebarCollapseBtn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0');
+  }
+  setSidebarCollapsed(localStorage.getItem('sidebar_collapsed') === '1');
+  sidebarCollapseBtn.addEventListener('click', () => {
+    setSidebarCollapsed(!sidebar.classList.contains('collapsed'));
+  });
+
+  document.getElementById('question-input').addEventListener('focus', () => {
+    if (!sidebar.classList.contains('collapsed')) setSidebarCollapsed(true);
+  });
 </script>
 </body>
 </html>
