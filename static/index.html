@@ -60,6 +60,14 @@
     #bug-refresh-btn:hover:not(:disabled) { background: #f0fdf4; border-color: #86efac; color: #15803d; }
     #bug-refresh-btn:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
     #bug-refresh-btn:disabled { opacity: 0.65; cursor: wait; }
+    #wiki-session-btn { display: none; align-items: center; gap: 5px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; cursor: pointer; color: #15803d; font-size: 12px; font-weight: 600; font-family: inherit; transition: background 0.15s, border-color 0.15s, opacity 0.15s; }
+    #wiki-session-btn:hover:not(:disabled) { background: #dcfce7; border-color: #4ade80; }
+    #wiki-session-btn:disabled { opacity: 0.65; cursor: default; }
+    #wiki-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: center; justify-content: center; }
+    #wiki-overlay.open { display: flex; }
+    #wiki-modal { background: white; border-radius: 14px; padding: 28px; width: 420px; max-width: 92vw; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+    #wiki-modal h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 16px; }
+    #wiki-error { color: #dc2626; font-size: 12px; min-height: 18px; margin-top: 4px; }
     .bug-info-toggle-icon { font-size: 11px; line-height: 1; opacity: 0.85; }
     .bug-info-toggle-label { white-space: nowrap; }
     #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 8px; line-height: 1.4; }
@@ -242,7 +250,7 @@
     </div>
     <div id="sidebar-footer-actions">
       <span id="sidebar-llm-badge"></span>
-      <span id="sidebar-version">v0.1.0</span>
+      <span id="sidebar-version">v0.2.0</span>
     </div>
   </div>
 </div>
@@ -265,6 +273,7 @@
         <div class="bug-meta" id="bug-meta-summary"></div>
       </div>
       <div class="bug-info-actions">
+        <button id="wiki-session-btn" type="button" title="Save troubleshooting insights to the wiki">📖 Add to wiki</button>
         <button id="bug-refresh-btn" type="button" title="Refresh status and comments from the bug tracker">↻ Refresh</button>
         <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" aria-label="Collapse bug details">
           <span class="bug-info-toggle-icon" aria-hidden="true">▼</span>
@@ -309,6 +318,25 @@
     <button id="explorer-close">✕</button>
   </div>
   <div id="explorer-body"></div>
+</div>
+
+<div id="wiki-overlay">
+  <div id="wiki-modal">
+    <h3>📖 Save to troubleshooting wiki</h3>
+    <div class="s-group">
+      <label class="s-label" for="wiki-module">Component / Module</label>
+      <input id="wiki-module" class="s-input" type="text" placeholder="e.g. IMS, Radio, Scheduler" autocomplete="off" />
+    </div>
+    <div class="s-group">
+      <label class="s-label" for="wiki-title">Title <span style="font-weight:400;color:#9ca3af">(optional — LLM will suggest one)</span></label>
+      <input id="wiki-title" class="s-input" type="text" placeholder="e.g. IMS registration failure after handover" autocomplete="off" />
+    </div>
+    <div id="wiki-error"></div>
+    <div class="s-btn-row">
+      <button class="s-btn-secondary" id="wiki-cancel-btn">Cancel</button>
+      <button class="s-btn-primary" id="wiki-save-btn">Save</button>
+    </div>
+  </div>
 </div>
 
 <div id="reset-confirm-overlay">
@@ -390,6 +418,10 @@
 <script type="module">
   let currentSessionId = null;
   const SEEN_KEY = 'warroom_seen_sessions';
+
+  function isResolved(state) {
+    return ['resolved', 'fixed', 'closed', 'done'].includes((state ?? '').toLowerCase());
+  }
   function getSeenIds() {
     try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); } catch { return []; }
   }
@@ -636,6 +668,13 @@
       commentsTitle.style.display = 'none';
     }
     document.getElementById('bug-info').style.display = 'block';
+
+    // Show wiki button only when bug is resolved
+    const wikiBtn = document.getElementById('wiki-session-btn');
+    wikiBtn.style.display = isResolved(bug.state) ? 'inline-flex' : 'none';
+    wikiBtn.disabled = false;
+    wikiBtn.textContent = '📖 Add to wiki';
+    document.getElementById('wiki-module').value = bug.module ?? '';
   }
 
   async function resumeSession(sessionId) {
@@ -940,6 +979,62 @@
       const body = await res.json().catch(() => ({}));
       appendMessage('error', '✗ Reset failed: ' + (body.error ?? res.statusText));
     }
+  });
+
+  // ── Wiki modal ────────────────────────────────────────────────────────────────
+
+  document.getElementById('wiki-session-btn').addEventListener('click', () => {
+    document.getElementById('wiki-error').textContent = '';
+    document.getElementById('wiki-save-btn').disabled = false;
+    document.getElementById('wiki-save-btn').textContent = 'Save';
+    document.getElementById('wiki-overlay').classList.add('open');
+    document.getElementById('wiki-module').focus();
+  });
+
+  document.getElementById('wiki-cancel-btn').addEventListener('click', () => {
+    document.getElementById('wiki-overlay').classList.remove('open');
+  });
+
+  document.getElementById('wiki-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('wiki-overlay'))
+      document.getElementById('wiki-overlay').classList.remove('open');
+  });
+
+  document.getElementById('wiki-save-btn').addEventListener('click', async () => {
+    const module = document.getElementById('wiki-module').value.trim();
+    const title = document.getElementById('wiki-title').value.trim();
+    const errEl = document.getElementById('wiki-error');
+    if (!module) { errEl.textContent = 'Module is required.'; return; }
+    if (!currentSessionId) { errEl.textContent = 'No active session.'; return; }
+
+    const saveBtn = document.getElementById('wiki-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    errEl.textContent = '';
+
+    const res = await fetch(`/session/${currentSessionId}/wiki`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ module, title: title || undefined }),
+    });
+    const body = await res.json().catch(() => ({}));
+
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+
+    if (!res.ok) {
+      errEl.textContent = body.error ?? `Failed (HTTP ${res.status})`;
+      return;
+    }
+
+    document.getElementById('wiki-overlay').classList.remove('open');
+
+    const entryTitle = body.entry?.title ?? module;
+    appendMessage('status', `· Wiki entry saved: ${entryTitle}`);
+
+    const wikiBtn = document.getElementById('wiki-session-btn');
+    wikiBtn.disabled = true;
+    wikiBtn.textContent = '✓ Saved to wiki';
   });
 
   function removeMsgRow(bubbleEl) {

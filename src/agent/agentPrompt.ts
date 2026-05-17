@@ -1,5 +1,7 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
+import { getWikiRoot } from "../services/wikiService.js";
 
 const AGENTS_MD = path.resolve(import.meta.dirname, "./environment.md");
 
@@ -24,11 +26,22 @@ export async function loadAgentSkills(): Promise<LoadedSkill[]> {
   return loadSkills(skillsDirs);
 }
 
+export async function getWikiRootIndexPath(): Promise<string | null> {
+  const indexPath = path.join(getWikiRoot(), "index.md");
+  try {
+    await fs.access(indexPath);
+    return indexPath;
+  } catch {
+    return null;
+  }
+}
+
 export function buildPrompt(input: {
   workspacePath: string;
   files: string[];
   question: string;
   skills: LoadedSkill[];
+  wikiRootIndex: string | null;
   fileComments?: Record<string, string>;
 }): string {
   const fileList = input.files.length
@@ -40,6 +53,15 @@ export function buildPrompt(input: {
   const skillsHint = input.skills.length > 0
     ? `Available skills - read the relevant ones before starting:\n${input.skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n")}\n\n`
     : "";
+  const wikiHint = input.wikiRootIndex
+    ? `IMPORTANT: Before starting analysis, you MUST read the troubleshooting wiki index:\n` +
+      `  ${input.wikiRootIndex}\n` +
+      `Navigate in order:\n` +
+      `  1. Read the root index above — find which module(s) match this bug\n` +
+      `  2. Read <module>/index.md — pick the 1–2 entries most relevant to this bug\n` +
+      `  3. Read those entry files — use their root cause and log patterns to shortcut investigation\n` +
+      `Do not skip this step. Confirmed resolutions from past bugs are more reliable than re-deriving from scratch.\n\n`
+    : "";
   return [
     `Read ${AGENTS_MD} for environment context and available tools.`,
     ``,
@@ -50,6 +72,7 @@ export function buildPrompt(input: {
     `If the user asks to list files or explore the workspace, inspect WORKSPACE with tools instead of answering from memory.`,
     ``,
     skillsHint,
+    wikiHint,
     `New question:\n${input.question}`,
   ].join("\n");
 }

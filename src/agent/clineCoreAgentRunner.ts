@@ -1,7 +1,7 @@
 import { ClineCore, DefaultToolNames, SessionSource } from "@cline/sdk";
 import type { CoreSessionEvent } from "@cline/sdk";
 import type { AgentEvent, AgentRunner } from "./agentRunner.js";
-import { buildPrompt, loadAgentSkills, SYSTEM_PROMPT } from "./agentPrompt.js";
+import { buildPrompt, loadAgentSkills, getWikiRootIndexPath, SYSTEM_PROMPT } from "./agentPrompt.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
 import fs from "fs/promises";
@@ -84,6 +84,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const skills = await loadAgentSkills();
+    const wikiRootIndex = await getWikiRootIndexPath();
     const fileComments = await buildFileCommentMap(input.workspacePath, input.files);
     const llmCfg = settings.getLlmConfig();
     const queue: AgentEvent[] = [];
@@ -106,7 +107,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
-    const prompt = buildPrompt({ ...input, fileComments, skills });
+    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex });
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {

@@ -9,6 +9,7 @@ import type { AgentRunner } from "./agent/agentRunner.js";
 import { sessions, messages, users, settings } from "./db.js";
 import type { LlmConfig } from "./db.js";
 import { addClient, removeClient, broadcast } from "./broadcast.js";
+import { createWikiEntry, listWikiEntries, readWikiEntry, buildWikiSynthesisPrompt } from "./services/wikiService.js";
 import { log } from "./logger.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -299,6 +300,121 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       res.end();
     }
   });
+
+  // ── Wiki routes ──────────────────────────────────────────────────────────────
+
+  app.post("/session/:id/wiki", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+
+    const rawModule = String(req.body.module ?? "").trim();
+    if (!rawModule) return res.status(400).json({ error: "module required" });
+    const rawTitle = String(req.body.title ?? "").trim();
+
+    const transcript = messages.buildSummary(req.params.id);
+    if (!transcript) return res.status(400).json({ error: "no messages to synthesize" });
+
+    // Load bug comments from workspace
+    let bugComments = "";
+    try {
+      const { readFile } = await import("fs/promises");
+      const bugJson = JSON.parse(await readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+      bugComments = (bugJson.comments ?? [])
+        .map((c: any) => `${c.author} [${c.created_at}]: ${c.body}`)
+        .join("\n");
+    } catch { /* bug.json missing or unreadable — continue without comments */ }
+
+    const llmCfg = settings.getLlmConfig();
+    const baseUrl = llmCfg.provider === "openai"
+      ? "https://api.openai.com/v1"
+      : (llmCfg.baseUrl ?? "");
+    if (!baseUrl) return res.status(400).json({ error: "LLM baseUrl not configured" });
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (llmCfg.apiKey) headers["Authorization"] = `Bearer ${llmCfg.apiKey}`;
+
+    let llmRes: Response;
+    try {
+      llmRes = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: llmCfg.model,
+          stream: false,
+          temperature: 0.3,
+          messages: [{ role: "user", content: buildWikiSynthesisPrompt(transcript, bugComments, session.bug_id, rawModule) }],
+        }),
+      });
+    } catch (err: any) {
+      log.error("wiki:llm-unreachable", { error: err.message });
+      return res.status(502).json({ error: `LLM unreachable: ${err.message}` });
+    }
+
+    if (!llmRes.ok) {
+      const txt = await llmRes.text().catch(() => "");
+      log.error("wiki:llm-error", { status: llmRes.status, body: txt.slice(0, 200) });
+      return res.status(502).json({ error: `LLM returned ${llmRes.status}` });
+    }
+
+    const data = await llmRes.json() as any;
+    const llmOutput: string = data.choices?.[0]?.message?.content ?? "";
+    if (!llmOutput.trim()) return res.status(502).json({ error: "LLM returned empty response" });
+
+    // Extract title from first H1 if user didn't supply one
+    const titleFromLlm = llmOutput.match(/^#\s+(.+)/m)?.[1]?.trim() ?? `Bug ${session.bug_id}`;
+    const title = rawTitle || titleFromLlm;
+
+    // Extract tags from frontmatter in LLM output
+    const tagsRaw = llmOutput.match(/^tags:\s*(.+)/m)?.[1] ?? "";
+    const tags = tagsRaw.split(",").map((t: string) => t.trim()).filter(Boolean);
+
+    // Extract summary line (last line of LLM output)
+    const oneLiner = llmOutput.match(/^summary:\s*(.+)/m)?.[1]?.trim() ?? title;
+
+    try {
+      const entry = await createWikiEntry({ module: rawModule, title, bugId: session.bug_id, tags, body: llmOutput, oneLiner });
+      log.info("wiki:created", { path: entry.path, module: entry.moduleSlug, bugId: session.bug_id });
+      res.json({ entry });
+    } catch (err: any) {
+      log.error("wiki:write-error", { error: err.message });
+      res.status(500).json({ error: `Failed to write wiki entry: ${err.message}` });
+    }
+  });
+
+  app.get("/wiki", async (_req, res) => {
+    try {
+      const entries = await listWikiEntries();
+      res.json({ entries });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/wiki/:module", async (req, res) => {
+    try {
+      const all = await listWikiEntries();
+      const filtered = all.filter((e) => e.moduleSlug === req.params.module);
+      if (!filtered.length) return res.status(404).json({ error: "module not found" });
+      res.json({ entries: filtered });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/wiki/:module/:filename", async (req, res) => {
+    const { module: moduleSlug, filename } = req.params;
+    if (!filename.endsWith(".md")) return res.status(400).json({ error: "filename must end in .md" });
+    try {
+      const content = await readWikiEntry(moduleSlug, filename);
+      res.json({ entry: { moduleSlug, filename, content } });
+    } catch (err: any) {
+      if (err.code === "ENOENT") return res.status(404).json({ error: "entry not found" });
+      if (err.code === "EACCES") return res.status(404).json({ error: "not found" });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Settings routes ───────────────────────────────────────────────────────────
 
   app.post("/settings/llm/models", async (req, res) => {
     const { provider, baseUrl, apiKey } = req.body;
