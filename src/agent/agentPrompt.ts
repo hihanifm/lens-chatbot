@@ -3,7 +3,6 @@ import path from "node:path";
 import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 import { getWikiRoot } from "../services/wikiService.js";
 import { settings } from "../db.js";
-import { loadPrompt } from "../prompts/promptLoader.js";
 
 const AGENTS_MD = path.resolve(import.meta.dirname, "./environment.md");
 
@@ -22,16 +21,16 @@ export async function getWikiRootIndexPath(): Promise<string | null> {
   }
 }
 
-export async function buildPrompt(input: {
+export function buildPrompt(input: {
   workspacePath: string;
   files: string[];
   question: string;
   skills: LoadedSkill[];
   wikiRootIndex: string | null;
+  taskContext: string;
   fileComments?: Record<string, string>;
   priorReports?: string[];
-}): Promise<string> {
-  const taskContext = await loadPrompt("task");
+}): string {
   const fileList = input.files.length
     ? input.files.map((f) => {
         const comment = input.fileComments?.[f];
@@ -56,7 +55,7 @@ export async function buildPrompt(input: {
       `Read the most recent report first — reuse its root cause and evidence rather than re-deriving from scratch if the same files are present.\n\n`
     : "";
   return [
-    taskContext,
+    input.taskContext,
     ``,
     `Read ${AGENTS_MD} for environment context and available tools.`,
     ``,
