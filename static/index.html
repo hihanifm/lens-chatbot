@@ -146,6 +146,8 @@
     .context-label { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
     .context-chip { display: inline-flex; align-items: center; gap: 4px; background: #eef2ff; border: 1px solid #a5b4fc; border-radius: 999px; padding: 3px 10px 3px 8px; font-size: 12px; color: #4338ca; font-weight: 500; }
     .context-chip-remove { background: none; border: none; cursor: pointer; color: #818cf8; font-size: 12px; padding: 0; line-height: 1; margin-left: 2px; font-family: inherit; }
+    .context-clear-all { background: none; border: 1px solid #e5e7eb; border-radius: 999px; cursor: pointer; color: #9ca3af; font-size: 11px; padding: 2px 8px; line-height: 1.4; font-family: inherit; margin-left: 4px; }
+    .context-clear-all:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
     .attachment-btn.in-chat { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; box-shadow: none; transform: none; cursor: pointer; font-weight: 600; }
     .att-menu { position: absolute; z-index: 100; background: white; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); padding: 4px; min-width: 160px; margin-top: 4px; }
     .att-menu-item { display: block; width: 100%; text-align: left; background: none; border: none; padding: 8px 12px; font-size: 13px; font-family: inherit; color: #374151; cursor: pointer; border-radius: 6px; white-space: nowrap; }
@@ -529,7 +531,7 @@
   let currentListenEs = null;
   let currentEngLog = null;
   let currentUser = null;
-  const myClientId = crypto.randomUUID();
+  const myClientId = (crypto.randomUUID?.() ) ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
 
   // remote streaming bubbles keyed by clientId
   const remoteStreams = new Map();
@@ -629,6 +631,27 @@
       chip.appendChild(rm);
       bar.appendChild(chip);
     }
+    const clearAll = document.createElement('button');
+    clearAll.className = 'context-clear-all';
+    clearAll.textContent = 'Remove all';
+    clearAll.onclick = removeAllContext;
+    bar.appendChild(clearAll);
+  }
+
+  async function removeAllContext() {
+    const paths = Object.keys(contextFiles);
+    await Promise.all(paths.map(fp =>
+      fetch(`/session/${currentSessionId}/files`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: fp, selected: false }),
+      })
+    ));
+    for (const fp of paths) {
+      attachmentStateCallbacks.get(fp)?.setInChat(false);
+    }
+    contextFiles = {};
+    updateContextBar();
   }
 
   // Registry so chip removals can sync attachment button state
