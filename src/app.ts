@@ -468,14 +468,37 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const updatedSession = sessions.get(req.params.id)!;
     log.info("lucky:start", { sessionId: req.params.id, files: updatedSession.selected_files });
 
+    messages.add(req.params.id, "user", "[Lucky] Automated root cause analysis");
+    let fullResponse = "";
+
     try {
       for await (const event of runLucky(runner, updatedSession)) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
         broadcast(req.params.id, event, undefined);
-        if (event.type === "done" || event.type === "error") break;
+        if (event.type === "text") {
+          fullResponse += event.content;
+        } else if (event.type === "done") {
+          log.info("lucky:done", { sessionId: req.params.id, responseLen: fullResponse.length });
+          if (fullResponse) {
+            const reportName = `lucky-${new Date().toISOString().replace(/[:.]/g, "-")}.md`;
+            const reportPath = path.join(updatedSession.workspace_path, "agent_notes", reportName);
+            try {
+              await fs.writeFile(reportPath, fullResponse);
+              log.info("lucky:report-saved", { reportPath });
+            } catch (writeErr: any) {
+              log.error("lucky:report-write-error", { reportPath, error: writeErr.message });
+            }
+          }
+          messages.add(req.params.id, "assistant", fullResponse || "[Lucky analysis produced no output]");
+          break;
+        } else if (event.type === "error") {
+          messages.add(req.params.id, "assistant", `[Analysis error: ${event.content}]`);
+          break;
+        }
       }
     } catch (err: any) {
       log.error("lucky:exception", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
+      messages.add(req.params.id, "assistant", `[Analysis error: ${err.message}]`);
       const payload = { type: "error", content: err.message };
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     }

@@ -44,6 +44,7 @@ export function buildPrompt(input: {
   skills: LoadedSkill[];
   wikiRootIndex: string | null;
   fileComments?: Record<string, string>;
+  priorReports?: string[];
 }): string {
   const fileList = input.files.length
     ? input.files.map((f) => {
@@ -63,6 +64,11 @@ export function buildPrompt(input: {
       `  3. Read those entry files — use their root cause and log patterns to shortcut investigation\n` +
       `Do not skip this step. Confirmed resolutions from past bugs are more reliable than re-deriving from scratch.\n\n`
     : "";
+  const priorReportsHint = (input.priorReports?.length)
+    ? `Prior analysis reports for this bug (most recent first):\n` +
+      input.priorReports.map((p) => `  ${p}`).join("\n") + "\n" +
+      `Read the most recent report first — reuse its root cause and evidence rather than re-deriving from scratch if the same files are present.\n\n`
+    : "";
   return [
     `Read ${AGENTS_MD} for environment context and available tools.`,
     ``,
@@ -74,6 +80,7 @@ export function buildPrompt(input: {
     ``,
     skillsHint,
     wikiHint,
+    priorReportsHint,
     `New question:\n${input.question}`,
   ].join("\n");
 }

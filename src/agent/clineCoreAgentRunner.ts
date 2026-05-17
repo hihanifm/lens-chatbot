@@ -87,6 +87,16 @@ export class ClineCoreAgentRunner implements AgentRunner {
     const skills = await loadAgentSkills();
     const wikiRootIndex = await getWikiRootIndexPath();
     const fileComments = await buildFileCommentMap(input.workspacePath, input.files);
+    const agentNotesDir = path.join(input.workspacePath, "agent_notes");
+    let priorReports: string[] = [];
+    try {
+      const entries = await fs.readdir(agentNotesDir);
+      priorReports = entries
+        .filter((e) => e.endsWith(".md"))
+        .sort()
+        .reverse()
+        .map((e) => path.join(agentNotesDir, e));
+    } catch { /* agent_notes/ missing — fine */ }
     const llmCfg = settings.getLlmConfig();
     const queue: AgentEvent[] = [];
     const wakeup = { fn: null as (() => void) | null };
@@ -108,7 +118,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
-    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex });
+    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports });
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {
