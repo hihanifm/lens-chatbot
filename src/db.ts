@@ -40,6 +40,9 @@ db.exec(`
 try {
   db.exec(`ALTER TABLE messages ADD COLUMN user_name TEXT DEFAULT 'User'`);
 } catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN cline_session_id TEXT`);
+} catch { /* column already exists */ }
 
 export interface User {
   id: string;
@@ -71,6 +74,7 @@ export interface Session {
   bug_id: string;
   workspace_path: string;
   selected_files: string[];
+  cline_session_id?: string;
   status: string;
   created_at: string;
 }
@@ -124,6 +128,10 @@ export const sessions = {
       JSON.stringify(files),
       id
     );
+  },
+
+  setClineSessionId(id: string, clineSessionId: string): void {
+    db.prepare("UPDATE sessions SET cline_session_id = ? WHERE id = ?").run(clineSessionId, id);
   },
 
   findActiveByBugId(bugId: string): Session | undefined {

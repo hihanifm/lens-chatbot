@@ -1,5 +1,5 @@
 export interface AgentEvent {
-  type: "text" | "done" | "error" | "status";
+  type: "text" | "done" | "error" | "status" | "session_id";
   content: string;
 }
 
@@ -8,6 +8,6 @@ export interface AgentRunner {
     workspacePath: string;
     files: string[];
     question: string;
-    conversationSummary?: string;
+    clineSessionId?: string;
   }): AsyncIterable<AgentEvent>;
 }

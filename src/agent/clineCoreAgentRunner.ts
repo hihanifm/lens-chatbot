@@ -9,12 +9,46 @@ function resultText(result: any): string {
   return result?.text ?? result?.outputText ?? result?.result?.text ?? result?.result?.outputText ?? "";
 }
 
+let clineInstance: ClineCore | null = null;
+
+async function getCline(): Promise<ClineCore> {
+  if (!clineInstance) {
+    clineInstance = await ClineCore.create({ backendMode: "local", clientName: "lens-chatbot" });
+  }
+  return clineInstance;
+}
+
+function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>) {
+  return {
+    providerId: (llmCfg.provider === "openai-compatible" ? "openai" : llmCfg.provider) as any,
+    modelId: llmCfg.model,
+    apiKey: llmCfg.apiKey ?? "",
+    baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
+    cwd: input.workspacePath,
+    workspaceRoot: input.workspacePath,
+    mode: "plan" as const,
+    systemPrompt: SYSTEM_PROMPT,
+    maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 12),
+    enableTools: true,
+    enableSpawnAgent: false,
+    enableAgentTeams: false,
+    disableMcpSettingsTools: true,
+    checkpoint: { enabled: false },
+    toolPolicies: {
+      [DefaultToolNames.APPLY_PATCH]: { enabled: false },
+      [DefaultToolNames.EDITOR]: { enabled: false },
+      [DefaultToolNames.FETCH_WEB_CONTENT]: { enabled: false },
+      [DefaultToolNames.SUBMIT_AND_EXIT]: { enabled: false },
+    },
+  };
+}
+
 export class ClineCoreAgentRunner implements AgentRunner {
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const skills = await loadAgentSkills();
     const llmCfg = settings.getLlmConfig();
     const queue: AgentEvent[] = [];
-    let notify: (() => void) | null = null;
+    const wakeup = { fn: null as (() => void) | null };
     let done = false;
     let errored = false;
     let streamedText = "";
@@ -22,90 +56,104 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
     const push = (event: AgentEvent) => {
       queue.push(event);
-      notify?.();
+      wakeup.fn?.();
     };
 
-    const cline = await ClineCore.create({ backendMode: "local", clientName: "lens-chatbot" });
-    const unsubscribe = cline.subscribe((event: CoreSessionEvent) => {
-      if (event.type === "agent_event") {
-        const agentEvent: any = event.payload.event;
-        if (agentEvent.type === "assistant-text-delta" && agentEvent.text) {
-          streamedText += agentEvent.text;
-          push({ type: "text", content: agentEvent.text });
-        } else if (agentEvent.type === "tool-started") {
-          push({ type: "status", content: `tool: ${agentEvent.toolCall?.toolName ?? "started"}` });
-        } else if (agentEvent.type === "tool-finished") {
-          push({ type: "status", content: `tool done: ${agentEvent.toolCall?.toolName ?? "unknown"}` });
-        } else if (agentEvent.type === "status-notice" && agentEvent.message) {
-          push({ type: "status", content: agentEvent.message });
-        }
-      } else if (event.type === "hook" && event.payload.toolName) {
-        push({ type: "status", content: `${event.payload.hookEventName}: ${event.payload.toolName}` });
-      } else if (event.type === "status") {
-        push({ type: "status", content: event.payload.status });
-      } else if (event.type === "ended") {
-        push({ type: "status", content: `done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s` });
-      }
-    });
+    const cline = await getCline();
 
-    log.info("agent:start", { runtime: "cline-core", model: llmCfg.model, files: input.files.length, skills: skills.length, question: input.question.slice(0, 60) });
+    log.info("agent:start", { runtime: "cline-core", model: llmCfg.model, files: input.files.length, skills: skills.length, question: input.question.slice(0, 60), reuse: !!input.clineSessionId });
     push({ type: "status", content: `provider: ${llmCfg.provider} | model: ${llmCfg.model} | runtime: cline-core | files: ${input.files.length}` });
     if (skills.length > 0) {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
     const prompt = buildPrompt({ ...input, skills });
-    const runPromise = cline.start({
-      source: SessionSource.API,
-      interactive: false,
-      prompt,
-      config: {
-        providerId: (llmCfg.provider === "openai-compatible" ? "openai" : llmCfg.provider) as any,
-        modelId: llmCfg.model,
-        apiKey: llmCfg.apiKey ?? "",
-        baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
-        cwd: input.workspacePath,
-        workspaceRoot: input.workspacePath,
-        mode: "plan",
-        systemPrompt: SYSTEM_PROMPT,
-        maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 12),
-        enableTools: true,
-        enableSpawnAgent: false,
-        enableAgentTeams: false,
-        disableMcpSettingsTools: true,
-        checkpoint: { enabled: false },
-        toolPolicies: {
-          [DefaultToolNames.APPLY_PATCH]: { enabled: false },
-          [DefaultToolNames.EDITOR]: { enabled: false },
-          [DefaultToolNames.FETCH_WEB_CONTENT]: { enabled: false },
-          [DefaultToolNames.SUBMIT_AND_EXIT]: { enabled: false },
-        },
-      },
-    }).then((startResult: any) => {
-      const text = resultText(startResult.result);
-      if (text && !streamedText.includes(text)) {
-        push({ type: "text", content: text });
+    let clineSessionId = input.clineSessionId;
+
+    const runPromise = (async () => {
+      const setupSubscription = (sessionId: string): (() => void) => {
+        return cline.subscribe((event: CoreSessionEvent) => {
+          if (event.type === "agent_event") {
+            const agentEvent: any = event.payload.event;
+            if (agentEvent.type === "assistant-text-delta" && agentEvent.text) {
+              streamedText += agentEvent.text;
+              push({ type: "text", content: agentEvent.text });
+            } else if (agentEvent.type === "tool-started") {
+              push({ type: "status", content: `tool: ${agentEvent.toolCall?.toolName ?? "started"}` });
+            } else if (agentEvent.type === "tool-finished") {
+              push({ type: "status", content: `tool done: ${agentEvent.toolCall?.toolName ?? "unknown"}` });
+            } else if (agentEvent.type === "status-notice" && agentEvent.message) {
+              push({ type: "status", content: agentEvent.message });
+            }
+          } else if (event.type === "hook" && event.payload.toolName) {
+            push({ type: "status", content: `${event.payload.hookEventName}: ${event.payload.toolName}` });
+          } else if (event.type === "status") {
+            push({ type: "status", content: event.payload.status });
+          } else if (event.type === "ended") {
+            push({ type: "status", content: `done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s` });
+          }
+        }, { sessionId });
+      };
+
+      let unsubscribe: (() => void) = () => {};
+
+      try {
+        if (clineSessionId) {
+          // Follow-up turn — reuse existing ClineCore session
+          unsubscribe = setupSubscription(clineSessionId);
+          const result = await cline.send({ sessionId: clineSessionId, prompt });
+          const text = resultText(result);
+          if (text && !streamedText.includes(text)) push({ type: "text", content: text });
+        } else {
+          // First turn — start new ClineCore session
+          const startResult = await cline.start({
+            source: SessionSource.API,
+            interactive: false,
+            prompt,
+            config: buildSessionConfig(input, llmCfg),
+          });
+          clineSessionId = startResult.sessionId;
+          push({ type: "session_id", content: clineSessionId });
+          unsubscribe = setupSubscription(clineSessionId);
+          const text = resultText(startResult.result);
+          if (text && !streamedText.includes(text)) push({ type: "text", content: text });
+        }
+        log.info("agent:done", { runtime: "cline-core", ms: Date.now() - startedAt, sessionId: clineSessionId });
+      } catch (err: any) {
+        // Fallback: if session no longer exists (e.g. after Docker restart), start fresh
+        if (clineSessionId && err.message?.includes("not found")) {
+          log.warn("agent:session-not-found", { clineSessionId, fallback: "start" });
+          unsubscribe();
+          const startResult = await cline.start({
+            source: SessionSource.API,
+            interactive: false,
+            prompt,
+            config: buildSessionConfig(input, llmCfg),
+          });
+          clineSessionId = startResult.sessionId;
+          push({ type: "session_id", content: clineSessionId });
+          unsubscribe = setupSubscription(clineSessionId);
+          const text = resultText(startResult.result);
+          if (text && !streamedText.includes(text)) push({ type: "text", content: text });
+          log.info("agent:done", { runtime: "cline-core", ms: Date.now() - startedAt, sessionId: clineSessionId, fallback: true });
+        } else {
+          log.error("agent:run-error", { runtime: "cline-core", error: err.message });
+          push({ type: "error", content: err.message });
+          errored = true;
+        }
+      } finally {
+        unsubscribe();
+        done = true;
+        wakeup.fn?.();
       }
-      log.info("agent:done", { runtime: "cline-core", ms: Date.now() - startedAt });
-      done = true;
-      notify?.();
-    }).catch((err: Error) => {
-      log.error("agent:run-error", { runtime: "cline-core", error: err.message });
-      push({ type: "error", content: err.message });
-      errored = true;
-      done = true;
-      notify?.();
-    }).finally(async () => {
-      unsubscribe();
-      await cline.dispose().catch((err: Error) => log.error("agent:dispose-error", { runtime: "cline-core", error: err.message }));
-    });
+    })();
 
     while (!done || queue.length > 0) {
       if (queue.length > 0) {
         yield queue.shift()!;
       } else {
-        await new Promise<void>((r) => { notify = r; });
-        notify = null;
+        await new Promise<void>((r) => { wakeup.fn = r; });
+        wakeup.fn = null;
       }
     }
 

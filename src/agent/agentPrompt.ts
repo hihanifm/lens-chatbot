@@ -28,15 +28,11 @@ export function buildPrompt(input: {
   workspacePath: string;
   files: string[];
   question: string;
-  conversationSummary?: string;
   skills: LoadedSkill[];
 }): string {
   const fileList = input.files.length
     ? input.files.map((f) => `- ${f}`).join("\n")
     : "(none selected)";
-  const history = input.conversationSummary
-    ? `Conversation so far:\n${input.conversationSummary}\n\n`
-    : "";
   const skillsHint = input.skills.length > 0
     ? `Available skills - read the relevant ones before starting:\n${input.skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n")}\n\n`
     : "";
@@ -49,7 +45,6 @@ export function buildPrompt(input: {
     `If the user says "this", "attached log", "current log", or "analyze this", inspect the selected files first.`,
     `If the user asks to list files or explore the workspace, inspect WORKSPACE with tools instead of answering from memory.`,
     ``,
-    history,
     skillsHint,
     `New question:\n${input.question}`,
   ].join("\n");

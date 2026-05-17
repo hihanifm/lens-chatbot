@@ -206,7 +206,6 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     broadcast(req.params.id, { type: "user_message", content: question, user: user.name, clientId }, clientId);
     broadcast(req.params.id, { type: "analyzing", user: user.name, clientId }, clientId);
 
-    const conversationSummary = messages.buildSummary(req.params.id);
     const updatedSession = sessions.get(req.params.id)!;
 
     log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: question.slice(0, 80), user: user.name });
@@ -217,9 +216,11 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         workspacePath: updatedSession.workspace_path,
         files: updatedSession.selected_files,
         question,
-        conversationSummary,
+        clineSessionId: updatedSession.cline_session_id,
       })) {
-        if (event.type === "text") {
+        if (event.type === "session_id") {
+          sessions.setClineSessionId(req.params.id, event.content);
+        } else if (event.type === "text") {
           fullResponse += event.content;
           const payload = { type: "text", content: event.content, user: user.name, clientId };
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
