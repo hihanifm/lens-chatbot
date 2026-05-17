@@ -1149,6 +1149,12 @@
     if (e.key === 'Enter') document.getElementById('load-bug-btn').click();
   });
   document.getElementById('question-input').addEventListener('focus', () => setBugInfoExpanded(false));
+
+  let lastChatScrollTop = 0;
+  document.getElementById('chat').addEventListener('scroll', function() {
+    if (this.scrollTop > lastChatScrollTop) setBugInfoExpanded(false);
+    lastChatScrollTop = this.scrollTop;
+  }, { passive: true });
   document.getElementById('question-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
   });
