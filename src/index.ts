@@ -12,6 +12,10 @@ const app = createApp(new MockBugTracker(), new ClineCoreAgentRunner());
 
 if (process.env.ADMIN_PIN && !settings.getAdminPinHash()) {
   hashPin(process.env.ADMIN_PIN).then((hash) => settings.setAdminPinHash(hash));
+} else if (!settings.getAdminPinHash()) {
+  const defaultPin = "admin";
+  log.warn("server:admin-pin-default", { hint: `No ADMIN_PIN set — using default PIN "${defaultPin}". Set ADMIN_PIN in .env to change it.` });
+  hashPin(defaultPin).then((hash) => settings.setAdminPinHash(hash));
 }
 
 const port = process.env.PORT ?? 3000;

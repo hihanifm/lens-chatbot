@@ -6,9 +6,9 @@ import unzipper from "unzipper";
 import type { BugTracker, BugDetails } from "./bugTracker.js";
 import { log } from "../logger.js";
 
-const WORKSPACES_ROOT = process.env.DATA_DIR
-  ? `${process.env.DATA_DIR}/workspaces`
-  : "data/local/workspaces";
+const WORKSPACES_ROOT = path.resolve(
+  process.env.DATA_DIR ? `${process.env.DATA_DIR}/workspaces` : "data/local/workspaces"
+);
 
 export async function getOrCreateWorkspace(bugId: string): Promise<string> {
   const workspacePath = path.join(WORKSPACES_ROOT, bugId);
