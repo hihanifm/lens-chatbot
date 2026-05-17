@@ -48,7 +48,9 @@ export async function listZipContents(zipPath: string, extractBaseDir: string): 
     const resolved = path.resolve(destPath);
     if (!resolved.startsWith(path.resolve(extractBaseDir) + path.sep)) continue;
     let extracted = false, filePath: string | undefined;
-    try { await fs.access(resolved); extracted = true; filePath = resolved; } catch {}
+    try { await fs.access(resolved); extracted = true; filePath = resolved; } catch (err: any) {
+      log.debug("zip:entry-not-extracted", { resolved, error: err.message });
+    }
     entries.push({ innerPath: file.path, size: file.uncompressedSize, extracted, filePath });
   }
   return entries;

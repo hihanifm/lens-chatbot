@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { log } from "./logger.js";
 
 interface ListenClient {
   clientId: string;
@@ -27,6 +28,7 @@ export function addClient(sessionId: string, client: ListenClient): void {
     } catch { /* client gone */ }
   }
   rooms.set(sessionId, [...existing, client]);
+  log.info("sse:client-added", { sessionId, clientId: client.clientId, userName: client.userName, total: rooms.get(sessionId)!.length });
 }
 
 export function removeClient(sessionId: string, clientId: string): void {
@@ -38,6 +40,7 @@ export function removeClient(sessionId: string, clientId: string): void {
   } else {
     rooms.delete(sessionId);
   }
+  log.info("sse:client-removed", { sessionId, clientId, remaining: remaining.length });
   if (!client) return;
   for (const c of remaining) {
     try {

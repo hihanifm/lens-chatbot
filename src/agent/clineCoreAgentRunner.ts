@@ -16,7 +16,8 @@ async function buildFileCommentMap(
   try {
     const raw = await fs.readFile(path.join(workspacePath, "bug.json"), "utf8");
     bug = JSON.parse(raw);
-  } catch {
+  } catch (err: any) {
+    log.debug("agent:bug-json-missing", { workspacePath, error: err.message, stack: err.stack });
     return map;
   }
   for (const comment of bug.comments ?? []) {
@@ -119,8 +120,10 @@ export class ClineCoreAgentRunner implements AgentRunner {
               streamedText += agentEvent.text;
               push({ type: "text", content: agentEvent.text });
             } else if (agentEvent.type === "tool-started") {
+              log.debug("agent:tool-start", { tool: agentEvent.toolCall?.toolName, sessionId: clineSessionId });
               push({ type: "status", content: `tool: ${agentEvent.toolCall?.toolName ?? "started"}` });
             } else if (agentEvent.type === "tool-finished") {
+              log.debug("agent:tool-done", { tool: agentEvent.toolCall?.toolName, sessionId: clineSessionId });
               push({ type: "status", content: `tool done: ${agentEvent.toolCall?.toolName ?? "unknown"}` });
             } else if (agentEvent.type === "status-notice" && agentEvent.message) {
               push({ type: "status", content: agentEvent.message });
@@ -177,7 +180,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
           if (text && !streamedText.includes(text)) push({ type: "text", content: text });
           log.info("agent:done", { runtime: "cline-core", ms: Date.now() - startedAt, sessionId: clineSessionId, fallback: true });
         } else {
-          log.error("agent:run-error", { runtime: "cline-core", error: err.message });
+          log.error("agent:run-error", { runtime: "cline-core", error: err.message, stack: err instanceof Error ? err.stack : undefined });
           push({ type: "error", content: err.message });
           errored = true;
         }

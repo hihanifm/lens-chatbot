@@ -161,8 +161,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     try {
       const raw = await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8");
       bug = JSON.parse(raw);
-    } catch {
-      // bug.json missing or unreadable — omit gracefully
+    } catch (err: any) {
+      log.debug("session:bug-json-missing", { sessionId: req.params.id, error: err.message, stack: err.stack });
     }
     let downloaded_files: string[] = [];
     try {
@@ -171,8 +171,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       downloaded_files = entries
         .filter(e => e.isFile())
         .map(e => path.join(e.parentPath ?? (e as any).path ?? attDir, e.name));
-    } catch {
-      // attachments dir may not exist yet
+    } catch (err: any) {
+      log.debug("session:attachments-dir-missing", { sessionId: req.params.id, error: err.message });
     }
     res.json({ session, messages: messages.list(req.params.id), bug, downloaded_files });
   });
@@ -188,7 +188,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       log.debug("bug:refreshed", { bugId: session.bug_id, state: bug.state, comments: bug.comments.length });
       res.json({ bug });
     } catch (err: any) {
-      log.error("bug:refresh-error", { sessionId: req.params.id, error: err.message });
+      log.error("bug:refresh-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       res.status(502).json({ error: `Failed to refresh bug: ${err.message}` });
     }
   });
@@ -227,7 +227,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       const extractedPath = await extractZipEntry(resolvedZip, String(innerPath), extractBaseDir);
       res.json({ filePath: extractedPath });
     } catch (err: any) {
-      log.error("extract-file:error", { error: err.message });
+      log.error("extract-file:error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       res.status(400).json({ error: err.message });
     }
   });
@@ -290,8 +290,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
+    log.info("sse:connect", { sessionId: req.params.id, clientId, userName: user.name });
     addClient(req.params.id, { clientId, userName: user.name, sessionId: req.params.id, res });
-    req.on("close", () => removeClient(req.params.id, clientId));
+    req.on("close", () => {
+      log.info("sse:disconnect", { sessionId: req.params.id, clientId });
+      removeClient(req.params.id, clientId);
+    });
   });
 
   app.post("/session/:id/abort", async (req, res) => {
@@ -303,6 +307,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       log.info("agent:aborted", { sessionId: req.params.id, clineSessionId: session.cline_session_id });
       res.json({ ok: true });
     } catch (err: any) {
+      log.error("session:abort-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       res.status(500).json({ error: err.message });
     }
   });
@@ -317,6 +322,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       log.info("agent:stopped", { sessionId: req.params.id });
       res.json({ ok: true });
     } catch (err: any) {
+      log.error("session:stop-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       res.status(500).json({ error: err.message });
     }
   });
@@ -381,7 +387,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         }
       }
     } catch (err: any) {
-      log.error("analyze:exception", { sessionId: req.params.id, error: err.message });
+      log.error("analyze:exception", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       messages.add(req.params.id, "assistant", `[Analysis error: ${err.message}]`, "Assistant");
       const payload = { type: "error", content: err.message, user: user.name, clientId };
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -411,7 +417,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       bugComments = (bugJson.comments ?? [])
         .map((c: any) => `${c.author} [${c.created_at}]: ${c.body}`)
         .join("\n");
-    } catch { /* bug.json missing or unreadable — continue without comments */ }
+    } catch (err: any) {
+      log.debug("wiki:bug-comments-missing", { sessionId: req.params.id, error: err.message, stack: err.stack });
+    }
 
     const llmCfg = settings.getLlmConfig();
     const baseUrl = llmCfg.provider === "openai"
@@ -435,7 +443,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         }),
       });
     } catch (err: any) {
-      log.error("wiki:llm-unreachable", { error: err.message });
+      log.error("wiki:llm-unreachable", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       return res.status(502).json({ error: `LLM unreachable: ${err.message}` });
     }
 
@@ -465,7 +473,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       log.info("wiki:created", { path: entry.path, module: entry.moduleSlug, bugId: session.bug_id });
       res.json({ entry });
     } catch (err: any) {
-      log.error("wiki:write-error", { error: err.message });
+      log.error("wiki:write-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       res.status(500).json({ error: `Failed to write wiki entry: ${err.message}` });
     }
   });
