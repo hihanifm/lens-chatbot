@@ -212,6 +212,8 @@
     .exp-add-btn { flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #374151; background: none; color: #9ca3af; cursor: pointer; font-family: inherit; }
     .exp-add-btn:hover { border-color: #6366f1; color: #818cf8; }
     .exp-add-btn.in-context { border-color: #6366f1; color: #818cf8; background: #1e1b4b; }
+    .exp-dl-btn { flex-shrink: 0; font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid #374151; color: #9ca3af; cursor: pointer; text-decoration: none; line-height: 1.6; display: inline-block; }
+    .exp-dl-btn:hover { border-color: #6366f1; color: #818cf8; }
     .exp-zip-row { display: flex; align-items: center; gap: 6px; padding: 5px 14px; font-size: 12px; cursor: pointer; color: #9ca3af; }
     .exp-zip-row:hover { background: #252836; }
     .exp-zip-toggle { font-size: 10px; }
@@ -1915,8 +1917,15 @@
       btn.classList.toggle('in-context', adding);
       btn.textContent = adding ? '✓' : '+ Add';
     });
+    const dl = document.createElement('a');
+    dl.className = 'exp-dl-btn';
+    dl.textContent = '⬇';
+    dl.title = 'Download';
+    dl.href = `/session/${currentSessionId}/workspace/download?filePath=${encodeURIComponent(filePath)}`;
+    dl.download = name;
     row.appendChild(nameEl);
     row.appendChild(btn);
+    row.appendChild(dl);
     return row;
   }
 

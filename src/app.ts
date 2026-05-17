@@ -251,6 +251,17 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     });
   });
 
+  app.get("/session/:id/workspace/download", (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const filePath = path.resolve(String(req.query.filePath ?? ""));
+    if (!filePath.startsWith(path.resolve(session.workspace_path) + path.sep))
+      return res.status(403).json({ error: "path outside workspace" });
+    res.download(filePath, path.basename(filePath), (err) => {
+      if (err) log.error("workspace:download-error", { filePath, error: err.message });
+    });
+  });
+
   app.post("/session/:id/attachment/:attId", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
