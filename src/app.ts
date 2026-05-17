@@ -45,7 +45,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   const app = express();
   app.use(express.json());
 
-  const MAX_UPLOAD_BYTES = parseInt(process.env.UPLOAD_SIZE_LIMIT_MB ?? "50") * 1024 * 1024;
+  const MAX_UPLOAD_BYTES = parseInt(process.env.UPLOAD_SIZE_LIMIT_MB ?? "500") * 1024 * 1024;
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
 
   app.use((req, _res, next) => {
