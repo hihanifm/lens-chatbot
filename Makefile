@@ -78,15 +78,16 @@ install-node:
 		echo "     apt unavailable or failed (proxy / Ubuntu repos cap at Node 18)."; \
 		echo ""; \
 		echo "3/3  local tarball → nvm ($(NODE_22_TARBALL)) ..."; \
+		NVM_DIR="$$HOME/.nvm"; \
+		if [ -f "$$NVM_DIR/versions/node/v$(NODE_22_VER)/bin/node" ]; then \
+			echo "" && echo "Node $(NODE_22_VER) already installed in nvm. Run: nvm use 22" && exit 0; \
+		fi; \
 		if [ -f "$(NODE_22_TARBALL)" ]; then \
-			NVM_DIR="$$HOME/.nvm"; \
 			mkdir -p "$$NVM_DIR/versions/node/v$(NODE_22_VER)"; \
 			tar -xJf "$(NODE_22_TARBALL)" --strip-components=1 -C "$$NVM_DIR/versions/node/v$(NODE_22_VER)" \
 				&& echo "" \
 				&& echo "Done. Installed Node $(NODE_22_VER) into $$NVM_DIR/versions/node/v$(NODE_22_VER)" \
-				&& echo "" \
 				&& echo "Activate with:  nvm use 22" \
-				&& echo "Or open a new terminal — .nvmrc will auto-switch." \
 				&& exit 0; \
 		fi; \
 		echo "     No tarball found in current directory."; \
