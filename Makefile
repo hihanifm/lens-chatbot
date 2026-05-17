@@ -3,12 +3,14 @@
 #   make dock               Run in Docker dev container (port 38001)
 #   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
-.PHONY: help dev dock dock-rebuild up down build rebuild logs restart ps \
+.PHONY: help dev dev-logs dev-stop dock dock-rebuild up down build rebuild logs restart ps \
         prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live
 
 help:
 	@echo "Dev modes:                                                   Ports: dev=38001"
-	@echo "  make dev                Run as plain Node on port 38001 (no Docker) — any host path works for skills"
+	@echo "  make dev                Run as plain Node on port 38001 (background, logs → data/dev/dev.log)"
+	@echo "  make dev-logs           Tail plain Node dev logs"
+	@echo "  make dev-stop           Stop plain Node dev process"
 	@echo "  make dock               Run in Docker dev container (port 38001)"
 	@echo "  make dock-rebuild       Full --no-cache rebuild + up"
 	@echo "  make build && make up   Build image + start (up is alias for dock)"
@@ -31,7 +33,15 @@ help:
 	@echo "  make clean              Remove containers/volumes; prune images"
 
 dev:
-	PORT=$${PORT:-38001} DATA_DIR=./data/dev npm run dev
+	mkdir -p ./data/dev
+	PORT=$${PORT:-38001} DATA_DIR=./data/dev npm run dev >> ./data/dev/dev.log 2>&1 &
+	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
+
+dev-logs:
+	tail -f ./data/dev/dev.log
+
+dev-stop:
+	@pkill -f "tsx src/index.ts" && echo "Stopped." || echo "Not running."
 
 dock:
 	docker compose --profile dev up -d
