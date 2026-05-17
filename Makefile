@@ -3,6 +3,7 @@
 #   make dock               Run in Docker dev container (port 38001)
 #   make build && make up   Build image + start dev stack (up = alias for dock)
 #   make rebuild            Full --no-cache rebuild + up (after git pull if stale)
+export PATH    := /usr/local/bin:$(PATH)
 OS             := $(shell uname -s)
 NODE_22_VER    := 22.15.0
 NODE_22_TARBALL := node-v$(NODE_22_VER)-linux-x64.tar.xz
