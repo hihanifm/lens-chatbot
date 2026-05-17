@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lens Chatbot — Architecture & Roadmap</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --blue: #58a6ff;
+    --blue-dim: #1f6feb;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --purple: #a371f7;
+    --red: #f85149;
+    --orange: #f0883e;
+    --accent: #58a6ff;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    overflow: hidden;
+  }
+
+  /* ── Layout ── */
+  #deck {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 48px 64px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+  }
+  .slide.active {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* ── Progress bar ── */
+  #progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: var(--blue);
+    transition: width 0.3s ease;
+    z-index: 100;
+  }
+
+  /* ── Nav ── */
+  #nav {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 40px;
+    padding: 10px 20px;
+    z-index: 100;
+  }
+  #nav button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 50%;
+    width: 32px; height: 32px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #nav button:hover { background: var(--surface2); border-color: var(--blue); }
+  #nav button:disabled { opacity: 0.3; cursor: default; }
+  #counter { color: var(--muted); font-size: 13px; min-width: 60px; text-align: center; }
+
+  /* ── Slide header ── */
+  .slide-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 8px;
+  }
+  h1 { font-size: 3rem; font-weight: 700; line-height: 1.1; }
+  h2 { font-size: 1.9rem; font-weight: 700; margin-bottom: 24px; }
+  h3 { font-size: 1.1rem; font-weight: 600; color: var(--blue); margin-bottom: 8px; }
+
+  /* ── Text helpers ── */
+  .muted { color: var(--muted); }
+  .accent { color: var(--blue); }
+  .green { color: var(--green); }
+  .yellow { color: var(--yellow); }
+  .purple { color: var(--purple); }
+  .orange { color: var(--orange); }
+  .red { color: var(--red); }
+
+  /* ── Cards / grids ── */
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .card-accent { border-color: var(--blue-dim); }
+
+  /* ── Code blocks ── */
+  pre, code {
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 0.82rem;
+  }
+  pre {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    line-height: 1.6;
+    overflow: auto;
+    white-space: pre;
+  }
+  code {
+    background: var(--surface2);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.8em;
+  }
+
+  /* ── Diagram boxes ── */
+  .diagram {
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 0.78rem;
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 24px;
+    line-height: 1.8;
+    white-space: pre;
+  }
+
+  /* ── Lists ── */
+  ul { list-style: none; }
+  ul li { padding: 4px 0 4px 20px; position: relative; }
+  ul li::before { content: "▸"; position: absolute; left: 0; color: var(--blue); }
+
+  .checklist li::before { content: "✓"; color: var(--green); font-weight: 700; }
+  .checklist li.wip::before { content: "◎"; color: var(--yellow); }
+  .checklist li.todo::before { content: "○"; color: var(--muted); }
+
+  /* ── Flow arrows ── */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+  .flow-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    text-align: center;
+    line-height: 1.3;
+    min-width: 90px;
+  }
+  .flow-arrow {
+    color: var(--blue);
+    font-size: 1.1rem;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .badge-green { background: rgba(63,185,80,0.2); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+  .badge-yellow { background: rgba(210,153,34,0.2); color: var(--yellow); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); }
+  .badge-purple { background: rgba(163,113,247,0.2); color: var(--purple); border: 1px solid rgba(163,113,247,0.4); }
+
+  /* ── Slide-specific ── */
+  .title-tagline { font-size: 1.2rem; color: var(--muted); margin-top: 16px; max-width: 520px; line-height: 1.6; }
+  .version-row { margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .layer-stack { display: flex; flex-direction: column; gap: 8px; }
+  .layer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+  }
+  .layer-label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; width: 80px; flex-shrink: 0; }
+  .layer-items { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    color: var(--text);
+  }
+  .chip-blue { border-color: var(--blue-dim); color: var(--blue); background: rgba(88,166,255,0.08); }
+  .chip-green { border-color: rgba(63,185,80,0.4); color: var(--green); background: rgba(63,185,80,0.08); }
+  .chip-purple { border-color: rgba(163,113,247,0.4); color: var(--purple); background: rgba(163,113,247,0.08); }
+  .chip-yellow { border-color: rgba(210,153,34,0.4); color: var(--yellow); background: rgba(210,153,34,0.08); }
+
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+  .small { font-size: 0.82rem; color: var(--muted); }
+  .tight ul li { padding-top: 2px; padding-bottom: 2px; }
+
+  /* ── Title slide background accent ── */
+  .slide-title::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(88,166,255,0.08) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<div id="deck">
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 1: Title                                      -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide active slide-title" data-slide="1">
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+    <div class="slide-label">Internal Engineering Tool</div>
+    <h1>Lens<span class="accent"> Chatbot</span></h1>
+    <p class="title-tagline">
+      An AI-powered debugging assistant that helps engineers analyze bugs — fetching context from your tracker, understanding log attachments, and capturing discoveries in a shared team knowledge base.
+    </p>
+    <div class="version-row">
+      <span class="badge badge-green">v0.2.1</span>
+      <span class="badge badge-blue">Node 22 + TypeScript</span>
+      <span class="badge badge-blue">Cline SDK</span>
+      <span class="badge badge-purple">SQLite</span>
+    </div>
+  </div>
+  <div style="margin-top:auto; padding-top:32px;">
+    <div class="grid grid-4" style="gap:12px;">
+      <div class="card" style="padding:14px;">
+        <div style="font-size:1.4rem; margin-bottom:4px;">🐛</div>
+        <div style="font-size:0.8rem; color:var(--muted);">Bug-centric sessions</div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:1.4rem; margin-bottom:4px;">🤖</div>
+        <div style="font-size:0.8rem; color:var(--muted);">Cline SDK agent</div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:1.4rem; margin-bottom:4px;">👥</div>
+        <div style="font-size:0.8rem; color:var(--muted);">Real-time multi-user</div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:1.4rem; margin-bottom:4px;">📚</div>
+        <div style="font-size:0.8rem; color:var(--muted);">Team wiki</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 2: What is it?                                -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="2">
+  <div class="slide-label">Problem & Solution</div>
+  <h2>What is it?</h2>
+  <div class="grid grid-2" style="gap:24px; flex:1;">
+    <div>
+      <h3>The Problem</h3>
+      <ul>
+        <li>Debugging complex bugs means juggling tracker details, huge log files, and scattered team knowledge</li>
+        <li>Engineers re-derive the same root causes that colleagues already solved</li>
+        <li>Logs are big — reading them manually takes hours</li>
+        <li>Context is lost when the session ends</li>
+        <li>No easy way for teammates to jump in and help</li>
+      </ul>
+      <div class="divider"></div>
+      <div class="card" style="border-color:rgba(248,81,73,0.3); background:rgba(248,81,73,0.05);">
+        <div style="font-size:0.82rem; color:var(--muted);">Without Lens</div>
+        <div style="font-size:0.9rem; margin-top:6px;">grep logs manually → jira tab → slack for context → repeat next week</div>
+      </div>
+    </div>
+    <div>
+      <h3>The Solution</h3>
+      <ul>
+        <li>One place to load a bug — tracker details fetched automatically</li>
+        <li>Upload / download log attachments, browse zip contents without extracting</li>
+        <li>AI agent reads the files and answers questions in natural language</li>
+        <li>Discoveries saved to a shared troubleshooting wiki (Karpathy-style)</li>
+        <li>Multiple engineers can join the same session in real time</li>
+      </ul>
+      <div class="divider"></div>
+      <div class="card" style="border-color:rgba(63,185,80,0.3); background:rgba(63,185,80,0.05);">
+        <div style="font-size:0.82rem; color:var(--muted);">With Lens</div>
+        <div style="font-size:0.9rem; margin-top:6px;">load bug → agent reads logs → answer in seconds → wiki auto-updated</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 3: Core Workflow                              -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="3">
+  <div class="slide-label">User Journey</div>
+  <h2>Core Workflow</h2>
+  <div style="display:flex; flex-direction:column; gap:24px; flex:1; justify-content:center;">
+    <div class="flow" style="justify-content:center; gap:4px;">
+      <div class="flow-step" style="border-color:var(--blue-dim); color:var(--blue);">
+        <div style="font-size:1.2rem;">1</div>
+        <div>Enter<br>Bug ID</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div style="font-size:1.2rem;">2</div>
+        <div>Fetch bug<br>from tracker</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div style="font-size:1.2rem;">3</div>
+        <div>Download<br>attachments</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div style="font-size:1.2rem;">4</div>
+        <div>Agent analyzes<br>files (SSE)</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div style="font-size:1.2rem;">5</div>
+        <div>Save to<br>wiki</div>
+      </div>
+    </div>
+
+    <div class="grid grid-3" style="gap:16px;">
+      <div class="card">
+        <h3>Steps 1–2: Bug Context</h3>
+        <ul class="tight">
+          <li><code>POST /session {bugId}</code></li>
+          <li>Tracker returns title, description, comments, attachments</li>
+          <li>Workspace created at <code>DATA_DIR/workspaces/BUG-ID/</code></li>
+          <li><code>bug.json</code> + <code>bug_summary.md</code> written</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Step 3: Files</h3>
+        <ul class="tight">
+          <li>File Explorer shows available attachments</li>
+          <li>Zips browsable without extraction (lazy)</li>
+          <li>User selects files for agent scope</li>
+          <li>Comment context auto-injected into prompt</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Steps 4–5: Intelligence</h3>
+        <ul class="tight">
+          <li>Agent reads wiki index first (mandatory)</li>
+          <li>Streams answer token-by-token via SSE</li>
+          <li>Multi-turn follow-ups reuse ClineCore session</li>
+          <li>User clicks "Save to Wiki" after resolution</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 4: Architecture Overview                      -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="4">
+  <div class="slide-label">System Design</div>
+  <h2>Architecture Overview</h2>
+  <div class="grid grid-2" style="gap:24px; flex:1;">
+    <div class="layer-stack">
+      <div class="layer" style="border-color:rgba(88,166,255,0.4); background:rgba(88,166,255,0.04);">
+        <div class="layer-label" style="color:var(--blue);">UI</div>
+        <div class="layer-items">
+          <span class="chip chip-blue">index.html (plain JS)</span>
+          <span class="chip chip-blue">SSE consumer</span>
+          <span class="chip chip-blue">File Explorer</span>
+          <span class="chip chip-blue">Wiki modal</span>
+        </div>
+      </div>
+      <div style="text-align:center; color:var(--muted); font-size:0.8rem;">HTTP / SSE</div>
+      <div class="layer" style="border-color:rgba(163,113,247,0.4); background:rgba(163,113,247,0.04);">
+        <div class="layer-label" style="color:var(--purple);">API</div>
+        <div class="layer-items">
+          <span class="chip chip-purple">Express (app.ts)</span>
+          <span class="chip chip-purple">REST routes</span>
+          <span class="chip chip-purple">SSE broadcast</span>
+          <span class="chip chip-purple">Auth</span>
+        </div>
+      </div>
+      <div style="text-align:center; color:var(--muted); font-size:0.8rem;">function calls</div>
+      <div class="layer" style="border-color:rgba(240,136,62,0.4); background:rgba(240,136,62,0.04);">
+        <div class="layer-label" style="color:var(--orange);">Agent</div>
+        <div class="layer-items">
+          <span class="chip chip-yellow">ClineCoreAgentRunner</span>
+          <span class="chip chip-yellow">agentPrompt.ts</span>
+          <span class="chip chip-yellow">skillsLoader.ts</span>
+        </div>
+      </div>
+      <div style="text-align:center; color:var(--muted); font-size:0.8rem;">file I/O</div>
+      <div class="layer" style="border-color:rgba(63,185,80,0.4); background:rgba(63,185,80,0.04);">
+        <div class="layer-label" style="color:var(--green);">Services</div>
+        <div class="layer-items">
+          <span class="chip chip-green">bugTracker.ts</span>
+          <span class="chip chip-green">attachmentService.ts</span>
+          <span class="chip chip-green">workspaceExplorer.ts</span>
+          <span class="chip chip-green">wikiService.ts</span>
+        </div>
+      </div>
+      <div style="text-align:center; color:var(--muted); font-size:0.8rem;">SQL queries</div>
+      <div class="layer">
+        <div class="layer-label">Data</div>
+        <div class="layer-items">
+          <span class="chip">SQLite (node:sqlite)</span>
+          <span class="chip">Filesystem workspaces</span>
+          <span class="chip">Wiki dir</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="card">
+        <h3>Interface-based Design</h3>
+        <ul class="tight">
+          <li><strong>AgentRunner</strong> — swap ClineCoreAgentRunner ↔ ClineCliRunner in one line</li>
+          <li><strong>BugTracker</strong> — swap MockBugTracker ↔ InternalBugTracker in one line</li>
+          <li>Product code never imports <code>@cline/sdk</code> directly</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Key Tech Choices</h3>
+        <ul class="tight">
+          <li><code>node:sqlite</code> — built-in, no native addon needed</li>
+          <li>SSE over WebSocket — simpler, HTTP-native streaming</li>
+          <li>Single ClineCore instance per app process</li>
+          <li>Skills as markdown — portable, version-controlled</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Docker Setup</h3>
+        <ul class="tight">
+          <li>Dev: port 38001, source mounted (hot reload)</li>
+          <li>Prod: port 38000, compiled <code>dist/</code>, static baked in</li>
+          <li>Base: Node 22 slim + python3, jq, ripgrep</li>
+          <li>ECR mirror — no Docker Hub dependency</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 5: File & Directory Map                       -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="5">
+  <div class="slide-label">Codebase</div>
+  <h2>File &amp; Directory Map</h2>
+  <div class="grid grid-2" style="gap:20px; flex:1;">
+    <pre style="font-size:0.76rem; line-height:1.7;"><span class="accent">lens-chatbot/</span>
+├── <span class="green">src/</span>
+│   ├── index.ts           ← wires tracker + runner, boots app
+│   ├── app.ts             ← Express factory, all routes (521 lines)
+│   ├── db.ts              ← SQLite schema + query helpers
+│   ├── broadcast.ts       ← SSE presence room, 25s keepalive
+│   ├── <span class="yellow">agent/</span>
+│   │   ├── agentRunner.ts       ← AgentRunner interface
+│   │   ├── agentPrompt.ts       ← system prompt builder
+│   │   ├── clineCoreAgentRunner.ts ← @cline/sdk integration
+│   │   ├── skillsLoader.ts      ← reads SKILLS_DIR .md files
+│   │   └── environment.md       ← agent tool reference doc
+│   └── <span class="yellow">services/</span>
+│       ├── bugTracker.ts        ← BugTracker interface + Mock
+│       ├── attachmentService.ts ← workspace + download + zip
+│       ├── workspaceExplorer.ts ← VirtualTree builder
+│       └── wikiService.ts       ← wiki CRUD + index mgmt
+├── <span class="green">static/</span>
+│   ├── index.html         ← SPA: plain JS, SSE consumer
+│   └── login.html         ← name + PIN auth gate
+├── <span class="green">skills/</span>            ← built-in Cline-format skill files
+│   ├── explore-workspace.md
+│   └── search-logs.md
+├── <span class="green">e2e/</span>              ← Playwright test suite
+├── <span class="green">docs/</span>             ← design docs + this file
+├── <span class="green">wiki/</span>             ← troubleshooting wiki dir
+└── docker-compose.yml, Makefile, Dockerfile</pre>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div class="card card-accent">
+        <h3>Workspace Layout (per bug)</h3>
+        <pre style="margin-top:8px; font-size:0.74rem;">DATA_DIR/workspaces/<span class="accent">BUG-ID</span>/
+  bug.json          ← raw tracker response
+  bug_summary.md    ← formatted for agent
+  attachments/
+    modem_log.txt
+    crash_dump.zip
+    crash_dump/     ← extracted entries
+  agent_notes/      ← agent can write here</pre>
+      </div>
+      <div class="card">
+        <h3>Wiki Layout</h3>
+        <pre style="margin-top:8px; font-size:0.74rem;">WIKI_DIR/
+  index.md                    ← root index (modules)
+  SCHEMA.md                   ← navigation guide
+  log.md                      ← append-only ingest log
+  <span class="green">IMS</span>/
+    index.md                  ← module index
+    20260517-BUG123-slug.md   ← entry file
+  <span class="green">RAN</span>/
+    index.md
+    ...</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 6: Data Flow — Session Creation               -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="6">
+  <div class="slide-label">Data Flow</div>
+  <h2>Session Creation</h2>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:24px;">
+    <div class="flow" style="justify-content:center; gap:4px; flex-wrap:nowrap;">
+      <div class="flow-step chip-blue" style="background:rgba(88,166,255,0.08); border-color:var(--blue-dim);">
+        Client<br><code style="font-size:0.7rem;">POST /session</code>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <code style="font-size:0.7rem;">tracker</code><br>.getBug()
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        Create<br>Workspace
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        Write<br>bug.json
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        Write<br>bug_summary.md
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <code style="font-size:0.7rem;">sessions</code><br>INSERT
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step chip-green" style="background:rgba(63,185,80,0.08); border-color:rgba(63,185,80,0.4);">
+        Return<br>session+bug
+      </div>
+    </div>
+    <div class="grid grid-3" style="gap:16px;">
+      <div class="card">
+        <h3>SQLite Schema</h3>
+        <pre style="margin-top:8px; font-size:0.74rem; line-height:1.6;"><span class="yellow">sessions</span>
+  id               TEXT PK
+  bug_id           TEXT
+  workspace_path   TEXT
+  selected_files   TEXT (JSON)
+  cline_session_id TEXT
+  status           TEXT
+  created_at       TEXT
+
+<span class="yellow">messages</span>
+  id               INT auto
+  session_id       TEXT → sessions
+  role             TEXT
+  content          TEXT
+  user_name        TEXT
+  created_at       TEXT</pre>
+      </div>
+      <div class="card">
+        <h3>One Session Per Bug</h3>
+        <ul class="tight">
+          <li>Bug ID is the natural room key</li>
+          <li>All engineers share the same session for a given bug</li>
+          <li>Messages have <code>user_name</code> column — attribution preserved</li>
+          <li>Re-loading a bug returns existing session + history</li>
+        </ul>
+        <div class="divider"></div>
+        <div class="small">
+          <code>GET /session/:id</code> returns session, bug details, and full message history in one call.
+        </div>
+      </div>
+      <div class="card">
+        <h3>Workspace Isolation</h3>
+        <ul class="tight">
+          <li>Each bug gets its own directory under <code>DATA_DIR/workspaces/</code></li>
+          <li><code>bug.json</code> never modified after creation</li>
+          <li><code>bug_summary.md</code> formatted for agent consumption</li>
+          <li>Agent can write to <code>agent_notes/</code> (sandboxed)</li>
+        </ul>
+        <div class="divider"></div>
+        <div class="small">
+          All paths validated against session workspace root — traversal attack prevention.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 7: Data Flow — Analysis                       -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="7">
+  <div class="slide-label">Data Flow</div>
+  <h2>Analysis &amp; Streaming</h2>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:20px;">
+    <div class="flow" style="justify-content:center; gap:4px; flex-wrap:nowrap;">
+      <div class="flow-step chip-blue" style="background:rgba(88,166,255,0.08); border-color:var(--blue-dim);">
+        <code style="font-size:0.68rem;">GET /analyze</code><br>?question=
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">buildPrompt<br>(agentPrompt)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">cline.start<br>or .send()</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">CoreSession<br>Event stream</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">SSE<br>text events</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">broadcast<br>.ts (room)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step chip-green" style="background:rgba(63,185,80,0.08); border-color:rgba(63,185,80,0.4);">
+        All clients<br>in room
+      </div>
+    </div>
+    <div class="grid grid-2" style="gap:20px;">
+      <div class="card">
+        <h3>buildPrompt() injects</h3>
+        <ul class="tight">
+          <li>WORKSPACE path variable</li>
+          <li>Selected files list (user's scope)</li>
+          <li>Skills from SKILLS_DIR (all files, agent picks relevant)</li>
+          <li>Wiki root index path (agent MUST read first)</li>
+          <li>File → comment map (inline context from bug tracker)</li>
+          <li>Available shell tools (bash, python3, rg, jq...)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>SSE Event Types</h3>
+        <div class="grid grid-2" style="gap:8px; margin-top:8px;">
+          <div><code class="chip-blue" style="display:inline-block; border-radius:4px; padding:2px 8px; font-size:0.75rem; background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.3); color:var(--blue);">text</code><div class="small" style="margin-top:4px;">Token-by-token content</div></div>
+          <div><code class="chip-yellow" style="display:inline-block; border-radius:4px; padding:2px 8px; font-size:0.75rem; background:rgba(210,153,34,0.08); border:1px solid rgba(210,153,34,0.3); color:var(--yellow);">status</code><div class="small" style="margin-top:4px;">Lifecycle events</div></div>
+          <div><code class="chip-green" style="display:inline-block; border-radius:4px; padding:2px 8px; font-size:0.75rem; background:rgba(63,185,80,0.08); border:1px solid rgba(63,185,80,0.3); color:var(--green);">done</code><div class="small" style="margin-top:4px;">Analysis complete</div></div>
+          <div><code style="display:inline-block; border-radius:4px; padding:2px 8px; font-size:0.75rem; background:var(--surface2); border:1px solid var(--border);">session_id</code><div class="small" style="margin-top:4px;">ClineCore session key</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="small">Unknown Cline SDK event types are emitted as <code>· event.type</code> status lines — full transparency by default.</div>
+      </div>
+    </div>
+    <div class="card" style="padding:14px;">
+      <div style="font-size:0.8rem; color:var(--muted); margin-bottom:6px;">Multi-turn context</div>
+      <div style="font-size:0.85rem;">First turn → <code>cline.start()</code> &nbsp;|&nbsp; Follow-ups → <code>cline.send()</code> (reuses ClineCore native context) &nbsp;|&nbsp; Auto-fallback to <code>start()</code> if session lost after Docker restart</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 8: Agent & Skills                             -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="8">
+  <div class="slide-label">Intelligence Layer</div>
+  <h2>Agent &amp; Skills System</h2>
+  <div class="grid grid-2" style="gap:24px; flex:1;">
+    <div>
+      <div class="card card-accent" style="margin-bottom:16px;">
+        <h3>ClineCore Configuration</h3>
+        <ul class="tight" style="margin-top:8px;">
+          <li>Mode: <code>plan</code> — read-only analysis, no file editing</li>
+          <li>Disabled: <code>APPLY_PATCH</code>, <code>EDITOR</code>, <code>FETCH_WEB_CONTENT</code></li>
+          <li>Max iterations: 12 (configurable via <code>AGENT_MAX_ITERATIONS</code>)</li>
+          <li>LLM provider: Ollama / OpenAI / OpenAI-compatible</li>
+          <li>Single shared instance across all sessions</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Available Agent Tools</h3>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+          <span class="chip chip-green">bash/sh</span>
+          <span class="chip chip-green">python3</span>
+          <span class="chip chip-green">ripgrep</span>
+          <span class="chip chip-green">jq</span>
+          <span class="chip">grep</span>
+          <span class="chip">awk</span>
+          <span class="chip">sed</span>
+          <span class="chip">find</span>
+          <span class="chip">cut</span>
+          <span class="chip">sort</span>
+        </div>
+        <div class="small" style="margin-top:10px;">All available in Docker. Agent shells out freely — it can write Python one-liners, search logs with ripgrep patterns, or use jq for JSON parsing.</div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px;">
+        <h3>Skills System</h3>
+        <ul class="tight" style="margin-top:8px;">
+          <li>Skills are Cline-format markdown files (YAML frontmatter + body)</li>
+          <li><code>SKILLS_DIR</code>: colon-separated paths — e.g. <code>/app/skills:/mnt/team-skills</code></li>
+          <li>All skill files passed to agent prompt — agent decides relevance</li>
+          <li>No backend keyword-matching logic (LLM-first principle)</li>
+        </ul>
+        <div class="divider"></div>
+        <div style="font-size:0.8rem; color:var(--muted);">Built-in skills</div>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+          <div class="card" style="padding:10px; flex:1; background:var(--surface2);">
+            <code style="color:var(--green);">explore-workspace.md</code>
+            <div class="small" style="margin-top:4px;">List files, extract zip contents</div>
+          </div>
+          <div class="card" style="padding:10px; flex:1; background:var(--surface2);">
+            <code style="color:var(--green);">search-logs.md</code>
+            <div class="small" style="margin-top:4px;">Fast log search with ripgrep</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border-color:rgba(163,113,247,0.3); background:rgba(163,113,247,0.04);">
+        <h3>LLM-first Principle</h3>
+        <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">
+          <strong>Prefer LLM intelligence over hand-coded logic.</strong><br>
+          Skill selection, response format, wiki navigation — all delegated to the model.<br>
+          Backend handles only what LLMs can't: I/O, persistence, streaming, auth.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 9: File Explorer                              -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="9">
+  <div class="slide-label">Feature Deep Dive</div>
+  <h2>File Explorer</h2>
+  <div class="grid grid-2" style="gap:24px; flex:1;">
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="card card-accent">
+        <h3>VirtualTree</h3>
+        <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">
+          <code>workspaceExplorer.ts</code> builds a two-section tree:<br>
+          <strong>BugAttachments</strong> — downloaded files + zip children<br>
+          <strong>CommentSections</strong> — bug comments as navigable nodes
+        </p>
+        <pre style="margin-top:10px; font-size:0.74rem; line-height:1.7;"><span class="accent">BugAttachments</span>
+  ├── modem_log.txt     [downloaded ✓]
+  ├── crash_dump.zip    [downloaded ✓]
+  │   ├── core.bin
+  │   └── trace.txt     [extracted ✓]
+  └── config.tar.gz     [not downloaded]
+
+<span class="accent">CommentSections</span>
+  ├── Comment #1 (Alice, 2026-05-10)
+  └── Comment #2 (Bob, 2026-05-11)</pre>
+      </div>
+      <div class="card">
+        <h3>Comment Context Injection</h3>
+        <ul class="tight">
+          <li>Bug tracker comments mapped to file references</li>
+          <li>When file is selected, relevant comments appended to prompt</li>
+          <li><code>buildFileCommentMap()</code> in agentPrompt.ts</li>
+          <li>Agent sees: <code>Comment: "User reported crash at..."</code></li>
+          <li>No extra API calls — comments already in bug.json</li>
+        </ul>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="card">
+        <h3>Lazy Zip Extraction (Phase 2)</h3>
+        <ul class="tight">
+          <li>Zips NOT auto-extracted on download</li>
+          <li><code>GET /zip-contents</code> reads central directory only — instant, no extraction</li>
+          <li><code>POST /extract-file</code> extracts one entry at a time on demand</li>
+          <li>Minimal disk usage — user controls what lands on disk</li>
+          <li>Traversal-safe: all paths validated against workspace root</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>File Selection → Agent Scope</h3>
+        <ul class="tight">
+          <li>Selected files stored in <code>sessions.selected_files</code> (JSON array)</li>
+          <li>Persists across page refresh and multi-user joins</li>
+          <li>Agent prompt lists only selected files in scope section</li>
+          <li>Agent is instructed to read files before answering (enforced)</li>
+        </ul>
+        <div class="divider"></div>
+        <div class="small">
+          Endpoints: <code>GET /workspace/files</code> (tree) · <code>POST /extract-file</code> · <code>GET /attachment/download</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 10: Multi-user Collaboration                  -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="10">
+  <div class="slide-label">Feature Deep Dive</div>
+  <h2>Multi-user Collaboration</h2>
+  <div class="grid grid-2" style="gap:24px; flex:1;">
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="card card-accent">
+        <h3>Bug ID = Room</h3>
+        <ul class="tight" style="margin-top:6px;">
+          <li>One session per bug — all engineers join the same room</li>
+          <li>Messages have <code>user_name</code> for attribution</li>
+          <li>Full history visible to all participants</li>
+          <li>Analysis stream broadcast to all connected clients</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Auth (Name + PIN)</h3>
+        <ul class="tight">
+          <li><code>POST /auth</code> — register (new name) or login (existing)</li>
+          <li>PIN hashed with scrypt, stored in SQLite</li>
+          <li>UUID assigned on registration, stored in <code>localStorage</code></li>
+          <li>Identity persists across sessions and page refreshes</li>
+          <li><code>GET /users/:id</code> — fetch profile by UUID</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Presence Room (broadcast.ts)</h3>
+        <ul class="tight">
+          <li>25-second keepalive ping per client</li>
+          <li><code>addClient</code> / <code>removeClient</code> / <code>broadcast</code></li>
+          <li>Clients auto-removed on connection close</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="height:100%;">
+        <h3>SSE Event Streams</h3>
+        <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+          <div style="background:var(--surface2); border-radius:6px; padding:14px;">
+            <div style="color:var(--blue); font-size:0.8rem; font-weight:600; margin-bottom:6px;">GET /session/:id/analyze</div>
+            <div class="small">Active analysis stream — emits text, status, done, error events as the agent works. One per running analysis.</div>
+          </div>
+          <div style="background:var(--surface2); border-radius:6px; padding:14px;">
+            <div style="color:var(--purple); font-size:0.8rem; font-weight:600; margin-bottom:6px;">GET /session/:id/listen</div>
+            <div class="small">Passive observer stream — receives all broadcast events plus presence events:</div>
+            <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+              <span class="chip" style="font-size:0.72rem;">presence:snapshot</span>
+              <span class="chip" style="font-size:0.72rem;">presence:join</span>
+              <span class="chip" style="font-size:0.72rem;">presence:leave</span>
+            </div>
+          </div>
+          <div style="background:var(--surface2); border-radius:6px; padding:14px;">
+            <div class="small"><strong>Transparency principle:</strong> every meaningful internal state change emits as a status event in the stream. Engineers see the full agent lifecycle — tool calls, file reads, reasoning steps.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 11: Troubleshooting Wiki                      -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="11">
+  <div class="slide-label">Knowledge Management</div>
+  <h2>Troubleshooting Wiki</h2>
+  <div class="grid grid-2" style="gap:24px; flex:1;">
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="card card-accent">
+        <h3>Two-Level Karpathy Index</h3>
+        <div class="diagram" style="margin-top:8px; font-size:0.72rem; padding:12px;">
+<span class="accent">WIKI_DIR/index.md</span>        ← root index (modules + entry counts)
+<span class="muted">  IMS/  (8 entries) — registration, handover, P-CSCF</span>
+<span class="muted">  RAN/  (3 entries) — scheduler, uplink, HO failure</span>
+
+<span class="green">WIKI_DIR/IMS/index.md</span>    ← module index (one line per entry)
+<span class="muted">  20260517-BUG123-pcscf-fail.md — P-CSCF discovery fails post-HO</span>
+<span class="muted">  20260510-BUG110-reg-timer.md  — IMS registration timer mismatch</span>
+
+<span class="yellow">WIKI_DIR/IMS/20260517-BUG123-pcscf-fail.md</span>  ← entry
+<span class="muted">  ## Problem / Root Cause / Evidence / Resolution / Key Log Patterns</span></div>
+      </div>
+      <div class="card">
+        <h3>Entry Structure</h3>
+        <pre style="font-size:0.73rem; line-height:1.6;">---
+bug_id:  BUG-123
+module:  IMS
+date:    2026-05-17
+title:   P-CSCF discovery fails post-handover
+tags:    [IMS, registration, P-CSCF]
+summary: One-line summary for index
+---
+
+## Problem
+## Root Cause
+## Evidence
+## Resolution
+## Key Log Patterns</pre>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="card">
+        <h3>Agent Mandatory Enforcement</h3>
+        <ul class="tight">
+          <li>Agent prompt includes wiki root index path</li>
+          <li>System prompt uses "MUST" language — read wiki before analysis</li>
+          <li>Three-step navigation: root → module → entry</li>
+          <li>Prevents re-deriving known root causes</li>
+          <li>Environment.md also reinforces wiki consultation</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>REST API</h3>
+        <ul class="tight">
+          <li><code>POST /session/:id/wiki</code> — synthesize + save entry</li>
+          <li><code>GET /wiki</code> — list all entries</li>
+          <li><code>GET /wiki/:module</code> — entries in module</li>
+          <li><code>GET /wiki/:module/:filename</code> — read full entry</li>
+        </ul>
+        <div class="divider"></div>
+        <div class="small">
+          Synthesis is a non-streaming LLM call via wikiService.ts. Index files updated automatically on every save. Collision-safe filenames: <code>YYYYMMDD-BUGID-slug.md</code>
+        </div>
+      </div>
+      <div class="card" style="border-color:rgba(163,113,247,0.3); background:rgba(163,113,247,0.04);">
+        <h3>Why Two Levels?</h3>
+        <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">Root index gives a module-level map. Module index gives a summary-level view. Agent never scans hundreds of files — it navigates like a human would read a well-organized wiki.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 12: Key Design Decisions                      -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="12">
+  <div class="slide-label">Engineering Philosophy</div>
+  <h2>Key Design Decisions</h2>
+  <div class="grid grid-2" style="gap:16px; flex:1;">
+    <div class="card" style="border-color:rgba(88,166,255,0.3);">
+      <div style="font-size:1.6rem; margin-bottom:8px;">🔌</div>
+      <h3>Interface-based Backends</h3>
+      <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">
+        <code>AgentRunner</code> and <code>BugTracker</code> are TypeScript interfaces. Swapping implementations is one line in <code>index.ts</code>. Product code never imports <code>@cline/sdk</code> directly — only <code>ClineCoreAgentRunner</code> does.
+      </p>
+    </div>
+    <div class="card" style="border-color:rgba(163,113,247,0.3);">
+      <div style="font-size:1.6rem; margin-bottom:8px;">🧠</div>
+      <h3>LLM-first Principle</h3>
+      <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">
+        Skill selection, response format, wiki navigation — delegated to the model. Backend only handles I/O, persistence, streaming, and auth. No keyword-matching, no response templating, no hard-coded skill routing.
+      </p>
+    </div>
+    <div class="card" style="border-color:rgba(63,185,80,0.3);">
+      <div style="font-size:1.6rem; margin-bottom:8px;">📡</div>
+      <h3>Transparency — Show Everything</h3>
+      <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">
+        This is an engineer's tool. Every agent lifecycle event surfaces as a <code>status</code> SSE event. Unknown Cline SDK events pass through as <code>· event.type</code>. Engineers see the full reasoning process, not just the final answer.
+      </p>
+    </div>
+    <div class="card" style="border-color:rgba(240,136,62,0.3);">
+      <div style="font-size:1.6rem; margin-bottom:8px;">💤</div>
+      <h3>Lazy / On-demand I/O</h3>
+      <p style="font-size:0.85rem; margin-top:6px; line-height:1.6;">
+        Zip files not extracted until the user explicitly selects individual entries. Wiki not synthesized unless the user requests it. Disk usage stays minimal; nothing happens until it needs to.
+      </p>
+    </div>
+    <div class="card" style="border-color:rgba(88,166,255,0.2); grid-column: 1 / -1;">
+      <div style="display:flex; gap:40px; justify-content:space-around;">
+        <div>
+          <div style="font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Database</div>
+          <div style="font-size:0.85rem;"><code>node:sqlite</code> — built-in Node 22, no native addon needed. Sufficient for session + message storage.</div>
+        </div>
+        <div>
+          <div style="font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Transport</div>
+          <div style="font-size:0.85rem;">SSE over WebSocket — simpler, HTTP-native, firewall-friendly, proxy-compatible.</div>
+        </div>
+        <div>
+          <div style="font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Skills</div>
+          <div style="font-size:0.85rem;">Markdown files — portable, version-controlled, LLM-parseable, admin-editable without code changes.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 13: Current Feature Status                    -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="13">
+  <div class="slide-label">v0.2.1 Status</div>
+  <h2>Current Feature Status</h2>
+  <div class="grid grid-3" style="gap:16px; flex:1;">
+    <div class="card">
+      <h3>Core Engine</h3>
+      <ul class="checklist tight" style="margin-top:8px;">
+        <li>Bug loading + workspace creation</li>
+        <li>ClineCore agent integration</li>
+        <li>SSE streaming (token-by-token)</li>
+        <li>Multi-turn session persistence</li>
+        <li>SQLite message history</li>
+        <li>LLM provider config (Ollama/OpenAI)</li>
+        <li>Admin PIN protection</li>
+        <li>Bug refresh endpoint</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>File Handling</h3>
+      <ul class="checklist tight" style="margin-top:8px;">
+        <li>Attachment download</li>
+        <li>File Explorer (VirtualTree)</li>
+        <li>Lazy zip browsing (no auto-extract)</li>
+        <li>Per-file zip extraction</li>
+        <li>Comment context injection</li>
+        <li>Path traversal protection</li>
+        <li>Selected files scope (persisted)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Collaboration</h3>
+      <ul class="checklist tight" style="margin-top:8px;">
+        <li>Multi-user shared sessions</li>
+        <li>Name + PIN auth (scrypt)</li>
+        <li>SSE presence stream (join/leave)</li>
+        <li>Real-time analysis broadcast</li>
+        <li>Per-message user attribution</li>
+      </ul>
+      <div class="divider"></div>
+      <h3>Knowledge</h3>
+      <ul class="checklist tight" style="margin-top:8px;">
+        <li>Troubleshooting wiki (v0.2.0)</li>
+        <li>Two-level Karpathy index</li>
+        <li>Agent mandatory wiki read</li>
+        <li>LLM synthesis of entries</li>
+        <li>REST read/write API</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px; padding:14px;">
+    <div style="display:flex; gap:24px; align-items:center; justify-content:center; flex-wrap:wrap;">
+      <div><span class="badge badge-green">✓ DONE</span> <span class="small">Live in v0.2.1</span></div>
+      <div style="color:var(--border);">|</div>
+      <div><strong style="color:var(--green);">10+</strong> <span class="small muted">REST endpoints</span></div>
+      <div style="color:var(--border);">|</div>
+      <div><strong style="color:var(--blue);">2</strong> <span class="small muted">Built-in skills</span></div>
+      <div style="color:var(--border);">|</div>
+      <div><strong style="color:var(--purple);">4</strong> <span class="small muted">SQLite tables</span></div>
+      <div style="color:var(--border);">|</div>
+      <div><strong style="color:var(--yellow);">521</strong> <span class="small muted">lines in app.ts</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────── -->
+<!-- SLIDE 14: Future Plans                              -->
+<!-- ─────────────────────────────────────────────────── -->
+<div class="slide" data-slide="14">
+  <div class="slide-label">Roadmap</div>
+  <h2>Future Plans</h2>
+  <div class="grid grid-2" style="gap:20px; flex:1;">
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="card" style="border-color:rgba(248,81,73,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span class="badge badge-yellow">Near-term</span>
+          <h3 style="margin:0;">Real Bug Tracker Integration</h3>
+        </div>
+        <ul class="tight">
+          <li>Implement <code>InternalBugTracker</code> stub (already exists in <code>bugTracker.ts</code>)</li>
+          <li>Connect to internal Jira / GitLab / custom tracker API</li>
+          <li>Swap one line in <code>index.ts</code> — no other code changes needed</li>
+          <li>Authentication and field mapping to <code>Bug</code> interface</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:rgba(210,153,34,0.3);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span class="badge badge-yellow">Near-term</span>
+          <h3 style="margin:0;">Wiki Phase 2</h3>
+        </div>
+        <ul class="tight">
+          <li>Full-text search across wiki entries</li>
+          <li>Tag-based filtering in UI</li>
+          <li>Agent-generated cross-references between related bugs</li>
+          <li>Wiki export (PDF / Markdown bundle)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span class="badge badge-blue">Medium-term</span>
+          <h3 style="margin:0;">Team Skills Directory</h3>
+        </div>
+        <ul class="tight">
+          <li>Mount <code>/mnt/team-skills</code> shared volume</li>
+          <li>Skill browser UI — see available skills before analysis</li>
+          <li>Skill versioning + org-wide distribution</li>
+        </ul>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span class="badge badge-blue">Medium-term</span>
+          <h3 style="margin:0;">Agent Fallback Modes</h3>
+        </div>
+        <ul class="tight">
+          <li>Implement <code>ClineCliAgentRunner</code> as fallback</li>
+          <li>AgentRunner interface already supports this — one-line swap</li>
+          <li>Useful for environments where ClineCore SDK is unavailable</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span class="badge badge-purple">Longer-term</span>
+          <h3 style="margin:0;">Richer Agent Context</h3>
+        </div>
+        <ul class="tight">
+          <li>Automatic git blame / patch context for code bugs</li>
+          <li>Symbol-aware log parsing (crash addresses → source lines)</li>
+          <li>Cross-bug correlation via wiki semantic search</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:rgba(63,185,80,0.3); background:rgba(63,185,80,0.03);">
+        <h3>Architecture Extensibility</h3>
+        <div style="margin-top:10px; display:flex; gap:8px; flex-direction:column;">
+          <div class="small"><span class="green">Bug tracker</span> — implement <code>InternalBugTracker</code> interface, swap in <code>index.ts:9</code></div>
+          <div class="small"><span class="blue">Agent runner</span> — implement <code>AgentRunner</code>, swap in <code>index.ts:9</code></div>
+          <div class="small"><span class="yellow">LLM model</span> — change <code>LLM_MODEL</code> in <code>.env</code></div>
+          <div class="small"><span class="purple">Skills</span> — add markdown files to <code>SKILLS_DIR</code></div>
+          <div class="small"><span class="orange">Ports</span> — set <code>DEV_PORT</code> / <code>PROD_PORT</code> in <code>.env</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- #deck -->
+
+<div id="nav">
+  <button id="btn-prev" onclick="navigate(-1)">←</button>
+  <span id="counter">1 / 14</span>
+  <button id="btn-next" onclick="navigate(1)">→</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let current = 0;
+
+  function goTo(n) {
+    slides[current].classList.remove('active');
+    current = Math.max(0, Math.min(total - 1, n));
+    slides[current].classList.add('active');
+    document.getElementById('counter').textContent = `${current + 1} / ${total}`;
+    document.getElementById('btn-prev').disabled = current === 0;
+    document.getElementById('btn-next').disabled = current === total - 1;
+    document.getElementById('progress-bar').style.width = `${((current + 1) / total) * 100}%`;
+  }
+
+  function navigate(dir) { goTo(current + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') navigate(1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') navigate(-1);
+    if (e.key === 'Home') goTo(0);
+    if (e.key === 'End') goTo(total - 1);
+  });
+
+  goTo(0);
+</script>
+</body>
+</html>
