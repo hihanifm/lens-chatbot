@@ -282,6 +282,33 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     }
   });
 
+  app.post("/settings/llm/models", async (req, res) => {
+    const { provider, baseUrl, apiKey } = req.body;
+    if (!provider) return res.status(400).json({ error: "provider required" });
+
+    const url =
+      provider === "openai"
+        ? "https://api.openai.com/v1/models"
+        : baseUrl
+          ? `${baseUrl}/models`
+          : null;
+
+    if (!url) return res.status(400).json({ error: "baseUrl required" });
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const upstream = await fetch(url, { headers });
+      if (!upstream.ok) return res.status(502).json({ error: `Provider returned ${upstream.status}` });
+      const data: any = await upstream.json();
+      const models: string[] = (data.data ?? []).map((m: any) => String(m.id)).sort();
+      res.json({ models });
+    } catch (err: any) {
+      log.warn("settings:models-fetch-error", { url, error: err.message });
+      res.status(502).json({ error: err.message });
+    }
+  });
+
   app.get("/settings/llm", (_req, res) => {
     const cfg = settings.getLlmConfig();
     const out = { ...cfg } as any;

@@ -242,7 +242,12 @@
     </div>
     <div class="s-group">
       <label class="s-label" for="s-model">Model</label>
-      <input id="s-model" class="s-input" type="text" placeholder="e.g. llama3.1:8b" />
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input id="s-model" class="s-input" type="text" placeholder="e.g. llama3.1:8b" list="s-model-list" autocomplete="off" style="flex:1;" />
+        <button id="s-fetch-models-btn" type="button" title="Fetch available models" style="flex-shrink:0; background:#f3f4f6; border:1.5px solid #e5e7eb; border-radius:8px; padding:8px 12px; cursor:pointer; font-size:13px; color:#374151; font-family:inherit; transition:background 0.15s; white-space:nowrap;">↻ Fetch</button>
+      </div>
+      <datalist id="s-model-list"></datalist>
+      <div id="s-model-status" style="font-size:11px; color:#9ca3af; margin-top:4px; min-height:16px;"></div>
     </div>
     <div class="s-group" id="s-baseurl-group">
       <label class="s-label" for="s-baseurl">Base URL</label>
@@ -963,9 +968,46 @@
     const p = sProvider.value;
     sBaseurlGroup.style.display = (p === 'openai') ? 'none' : 'block';
     sApikeyGroup.style.display = (p === 'ollama') ? 'none' : 'block';
+    if (sModelList) { sModelList.innerHTML = ''; sModelStatus.textContent = ''; }
   }
 
   sProvider.addEventListener('change', updateSettingsFields);
+
+  const sModelList = document.getElementById('s-model-list');
+  const sModelStatus = document.getElementById('s-model-status');
+
+  async function fetchModels() {
+    const provider = sProvider.value;
+    const baseUrl = sBaseurl.value.trim();
+    const apiKeyInput = sApikey.value.trim();
+    // Use saved (masked) key if field is empty — server will use saved config
+    const apiKey = apiKeyInput || undefined;
+
+    if (provider !== 'openai' && !baseUrl) {
+      sModelStatus.textContent = 'Enter a Base URL first.';
+      return;
+    }
+
+    sModelStatus.textContent = 'Fetching…';
+    document.getElementById('s-fetch-models-btn').disabled = true;
+    try {
+      const res = await fetch('/settings/llm/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, baseUrl: baseUrl || undefined, apiKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) { sModelStatus.textContent = data.error || 'Fetch failed.'; return; }
+      sModelList.innerHTML = data.models.map(m => `<option value="${m}"></option>`).join('');
+      sModelStatus.textContent = `${data.models.length} model${data.models.length !== 1 ? 's' : ''} found`;
+    } catch {
+      sModelStatus.textContent = 'Could not reach provider.';
+    } finally {
+      document.getElementById('s-fetch-models-btn').disabled = false;
+    }
+  }
+
+  document.getElementById('s-fetch-models-btn').addEventListener('click', fetchModels);
 
   async function openSettings() {
     sLlmError.textContent = '';
