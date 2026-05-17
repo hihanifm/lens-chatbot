@@ -835,6 +835,10 @@
     for (const fp of session.selected_files ?? []) contextFiles[fp] = fp.split('/').pop();
     updateContextBar();
 
+    isAdhocSession = bug?.state === 'adhoc';
+    setUploadPanelVisible(true);
+    setRefreshBtnVisible(!isAdhocSession);
+
     if (bug) renderBugPanel(bug, session.selected_files ?? [], downloaded_files ?? []);
 
     const chat = document.getElementById('chat');
