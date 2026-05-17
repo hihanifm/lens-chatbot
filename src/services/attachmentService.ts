@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { createReadStream } from "fs";
+import { createWriteStream } from "fs";
 import path from "path";
 import unzipper from "unzipper";
 import type { BugTracker, BugDetails } from "./bugTracker.js";
@@ -17,17 +17,6 @@ export async function getOrCreateWorkspace(bugId: string): Promise<string> {
   return workspacePath;
 }
 
-export async function walkFiles(dir: string): Promise<string[]> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  const results: string[] = [];
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) results.push(...await walkFiles(full));
-    else results.push(full);
-  }
-  return results;
-}
-
 export async function downloadAttachment(
   tracker: BugTracker,
   bugId: string,
@@ -39,22 +28,47 @@ export async function downloadAttachment(
   const filePath = path.join(workspacePath, "attachments", attName);
   await fs.writeFile(filePath, data);
   log.info("attachment:written", { filePath, bytes: data.length });
-
-  if (attName.endsWith(".zip")) {
-    const extractDir = path.join(workspacePath, "attachments", path.basename(attName, ".zip"));
-    await fs.mkdir(extractDir, { recursive: true });
-    await new Promise<void>((resolve, reject) => {
-      createReadStream(filePath)
-        .pipe(unzipper.Extract({ path: extractDir }))
-        .on("close", resolve)
-        .on("error", reject);
-    });
-    const extractedFiles = await walkFiles(extractDir);
-    log.info("attachment:extracted", { extractDir, files: extractedFiles.length });
-    return { filePath, extractedFiles };
-  }
-
   return { filePath, extractedFiles: [] };
+}
+
+export interface ZipEntry {
+  innerPath: string;
+  size: number;
+  extracted: boolean;
+  filePath?: string;
+}
+
+export async function listZipContents(zipPath: string, extractBaseDir: string): Promise<ZipEntry[]> {
+  const directory = await unzipper.Open.file(zipPath);
+  const entries: ZipEntry[] = [];
+  for (const file of directory.files) {
+    if (file.type === "Directory") continue;
+    const destPath = path.join(extractBaseDir, file.path);
+    const resolved = path.resolve(destPath);
+    if (!resolved.startsWith(path.resolve(extractBaseDir) + path.sep)) continue;
+    let extracted = false, filePath: string | undefined;
+    try { await fs.access(resolved); extracted = true; filePath = resolved; } catch {}
+    entries.push({ innerPath: file.path, size: file.uncompressedSize, extracted, filePath });
+  }
+  return entries;
+}
+
+export async function extractZipEntry(zipPath: string, innerPath: string, extractBaseDir: string): Promise<string> {
+  const destPath = path.resolve(path.join(extractBaseDir, innerPath));
+  if (!destPath.startsWith(path.resolve(extractBaseDir) + path.sep))
+    throw new Error("path traversal detected");
+  await fs.mkdir(path.dirname(destPath), { recursive: true });
+  const directory = await unzipper.Open.file(zipPath);
+  const entry = directory.files.find((f: any) => f.path === innerPath);
+  if (!entry) throw new Error(`Entry not found in zip: ${innerPath}`);
+  await new Promise<void>((resolve, reject) =>
+    entry.stream()
+      .pipe(createWriteStream(destPath))
+      .on("close", resolve)
+      .on("error", reject)
+  );
+  log.info("attachment:extracted-entry", { destPath });
+  return destPath;
 }
 
 export async function saveBugSummary(

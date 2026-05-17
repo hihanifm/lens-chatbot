@@ -1387,7 +1387,6 @@
       const wrapper = document.createElement('div');
       const zipRow = document.createElement('div');
       zipRow.className = 'exp-zip-row';
-      let expanded = false;
       const toggle = document.createElement('span');
       toggle.className = 'exp-zip-toggle';
       toggle.textContent = '▶';
@@ -1397,14 +1396,7 @@
       zipRow.appendChild(label);
       const childContainer = document.createElement('div');
       childContainer.style.display = 'none';
-      for (const child of (node.children ?? [])) {
-        childContainer.appendChild(makeFileRow(child.filePath, child.name, commentBody));
-      }
-      zipRow.addEventListener('click', () => {
-        expanded = !expanded;
-        toggle.textContent = expanded ? '▼' : '▶';
-        childContainer.style.display = expanded ? 'block' : 'none';
-      });
+      zipRow.addEventListener('click', () => expandZipNode(node.filePath, childContainer, toggle));
       wrapper.appendChild(zipRow);
       wrapper.appendChild(childContainer);
       return wrapper;
@@ -1432,6 +1424,80 @@
     }
 
     return makeFileRow(node.filePath, node.name, commentBody);
+  }
+
+  async function expandZipNode(zipPath, container, toggleEl) {
+    if (container.dataset.loaded) {
+      const nowHidden = container.style.display === 'none';
+      container.style.display = nowHidden ? 'block' : 'none';
+      toggleEl.textContent = nowHidden ? '▼' : '▶';
+      return;
+    }
+    toggleEl.textContent = '⏳';
+    const res = await fetch(`/session/${currentSessionId}/zip-contents?zipPath=${encodeURIComponent(zipPath)}`);
+    if (!res.ok) { toggleEl.textContent = '⚠'; return; }
+    const { entries } = await res.json();
+    container.innerHTML = '';
+    for (const entry of entries) container.appendChild(makeZipEntryRow(zipPath, entry));
+    container.dataset.loaded = '1';
+    container.style.display = 'block';
+    toggleEl.textContent = '▼';
+  }
+
+  function makeZipEntryRow(zipPath, entry) {
+    const row = document.createElement('div');
+    row.className = 'exp-file-row';
+    row.style.paddingLeft = '28px';
+    const nameEl = document.createElement('span');
+    nameEl.className = `exp-file-name${entry.extracted && contextFiles[entry.filePath] ? ' in-context' : ''}`;
+    nameEl.textContent = entry.innerPath.split('/').pop();
+    nameEl.title = entry.innerPath;
+    row.appendChild(nameEl);
+    const btn = document.createElement('button');
+    btn.className = 'exp-add-btn';
+    if (entry.extracted && contextFiles[entry.filePath]) {
+      btn.textContent = '✓';
+      btn.classList.add('in-context');
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await toggleFileInChat(entry.filePath, nameEl.textContent, false);
+        btn.textContent = '+ Add';
+        btn.classList.remove('in-context');
+        nameEl.classList.remove('in-context');
+      });
+    } else if (entry.extracted) {
+      btn.textContent = '+ Add';
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await toggleFileInChat(entry.filePath, nameEl.textContent, true);
+        btn.textContent = '✓';
+        btn.classList.add('in-context');
+        nameEl.classList.add('in-context');
+      });
+    } else {
+      btn.textContent = 'Extract & Add';
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btn.textContent = '⏳';
+        btn.disabled = true;
+        const res = await fetch(`/session/${currentSessionId}/extract-file`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zipPath, innerPath: entry.innerPath }),
+        });
+        if (!res.ok) { btn.textContent = '⚠'; btn.disabled = false; return; }
+        const { filePath } = await res.json();
+        entry.extracted = true;
+        entry.filePath = filePath;
+        await toggleFileInChat(filePath, nameEl.textContent, true);
+        btn.textContent = '✓';
+        btn.classList.add('in-context');
+        btn.disabled = false;
+        nameEl.classList.add('in-context');
+      });
+    }
+    row.appendChild(btn);
+    return row;
   }
 
   function makeFileRow(filePath, name, commentBody) {

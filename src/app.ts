@@ -3,7 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
-import { getOrCreateWorkspace, downloadAttachment, saveBugSummary } from "./services/attachmentService.js";
+import { getOrCreateWorkspace, downloadAttachment, saveBugSummary, listZipContents, extractZipEntry } from "./services/attachmentService.js";
 import { buildVirtualTree } from "./services/workspaceExplorer.js";
 import type { AgentRunner } from "./agent/agentRunner.js";
 import { sessions, messages, users, settings } from "./db.js";
@@ -141,6 +141,38 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!session) return res.status(404).json({ error: "session not found" });
     const tree = await buildVirtualTree(session.workspace_path);
     res.json(tree);
+  });
+
+  app.get("/session/:id/zip-contents", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const zipPath = path.resolve(String(req.query.zipPath ?? ""));
+    if (!zipPath.startsWith(session.workspace_path + path.sep))
+      return res.status(403).json({ error: "path outside workspace" });
+    const zipBaseName = path.basename(zipPath, ".zip");
+    const extractBaseDir = path.join(session.workspace_path, "attachments", zipBaseName);
+    const entries = await listZipContents(zipPath, extractBaseDir);
+    res.json({ entries });
+  });
+
+  app.post("/session/:id/extract-file", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const { zipPath, innerPath } = req.body;
+    if (!zipPath || !innerPath)
+      return res.status(400).json({ error: "zipPath and innerPath required" });
+    const resolvedZip = path.resolve(String(zipPath));
+    if (!resolvedZip.startsWith(session.workspace_path + path.sep))
+      return res.status(403).json({ error: "path outside workspace" });
+    const zipBaseName = path.basename(resolvedZip, ".zip");
+    const extractBaseDir = path.join(session.workspace_path, "attachments", zipBaseName);
+    try {
+      const extractedPath = await extractZipEntry(resolvedZip, String(innerPath), extractBaseDir);
+      res.json({ filePath: extractedPath });
+    } catch (err: any) {
+      log.error("extract-file:error", { error: err.message });
+      res.status(400).json({ error: err.message });
+    }
   });
 
   app.get("/session/:id/attachment/download", (req, res) => {

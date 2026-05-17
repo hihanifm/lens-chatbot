@@ -1,6 +1,5 @@
 import fs from "fs/promises";
 import path from "path";
-import { walkFiles } from "./attachmentService.js";
 
 export interface FileNode {
   name: string;
@@ -49,15 +48,7 @@ async function buildAttNode(workspacePath: string, att: { id: string; name: stri
     return { attId: att.id, name: att.name, isZip, downloaded: false };
   }
   if (isZip) {
-    const extractDir = path.join(workspacePath, "attachments", path.basename(att.name, ".zip"));
-    let children: FileNode[] = [];
-    try {
-      const files = await walkFiles(extractDir);
-      children = files.map((f) => ({ name: path.relative(extractDir, f), filePath: f }));
-    } catch {
-      // extract dir may not exist yet
-    }
-    return { attId: att.id, name: att.name, isZip: true, downloaded: true, filePath, children };
+    return { attId: att.id, name: att.name, isZip: true, downloaded: true, filePath, children: [] };
   }
   return { attId: att.id, name: att.name, isZip: false, downloaded: true, filePath };
 }
