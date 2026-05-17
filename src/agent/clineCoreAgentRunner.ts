@@ -122,21 +122,23 @@ export class ClineCoreAgentRunner implements AgentRunner {
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {
-      const setupSubscription = (sessionId: string): (() => void) => {
+      const setupSubscription = (sessionId?: string): (() => void) => {
         return cline.subscribe((event: CoreSessionEvent) => {
+          const evtSession = (event.payload as any)?.sessionId as string | undefined;
+          if (sessionId && evtSession && evtSession !== sessionId) return;
           if (event.type === "agent_event") {
             const agentEvent: any = event.payload.event;
-            if (agentEvent.type === "assistant-text-delta" && agentEvent.text) {
+            if (agentEvent.type === "content_start" && agentEvent.contentType === "text" && agentEvent.text) {
               streamedText += agentEvent.text;
               push({ type: "text", content: agentEvent.text });
-            } else if (agentEvent.type === "tool-started") {
-              log.debug("agent:tool-start", { tool: agentEvent.toolCall?.toolName, sessionId: clineSessionId });
-              push({ type: "status", content: `tool: ${agentEvent.toolCall?.toolName ?? "started"}` });
-            } else if (agentEvent.type === "tool-finished") {
-              log.debug("agent:tool-done", { tool: agentEvent.toolCall?.toolName, sessionId: clineSessionId });
-              push({ type: "status", content: `tool done: ${agentEvent.toolCall?.toolName ?? "unknown"}` });
-            } else if (agentEvent.type === "status-notice" && agentEvent.message) {
-              push({ type: "status", content: agentEvent.message });
+            } else if (agentEvent.type === "content_start" && agentEvent.contentType === "tool") {
+              log.debug("agent:tool-start", { tool: agentEvent.toolName, sessionId: clineSessionId });
+              push({ type: "status", content: `tool: ${agentEvent.toolName ?? "started"}` });
+            } else if (agentEvent.type === "content_end" && agentEvent.contentType === "tool") {
+              log.debug("agent:tool-done", { tool: agentEvent.toolName, sessionId: clineSessionId });
+              push({ type: "status", content: `tool done: ${agentEvent.toolName ?? "unknown"}` });
+            } else if (agentEvent.type === "notice" && agentEvent.message) {
+              push({ type: "status", content: `notice [${agentEvent.noticeType}]: ${agentEvent.message}` });
             } else if (agentEvent.type === "usage") {
               const parts = [`tokens ↑${agentEvent.totalInputTokens} ↓${agentEvent.totalOutputTokens}`];
               if (agentEvent.totalCost != null) parts.push(`cost $${agentEvent.totalCost.toFixed(4)}`);
@@ -144,8 +146,6 @@ export class ClineCoreAgentRunner implements AgentRunner {
               push({ type: "status", content: parts.join(" | ") });
             } else if (agentEvent.type === "done" && agentEvent.reason !== "completed") {
               push({ type: "status", content: `⚠ agent stopped: ${agentEvent.reason} (${agentEvent.iterations} iterations)` });
-            } else if (agentEvent.type === "notice") {
-              push({ type: "status", content: `notice [${agentEvent.noticeType}]: ${agentEvent.message}` });
             }
           } else if (event.type === "hook" && event.payload.toolName) {
             push({ type: "status", content: `${event.payload.hookEventName}: ${event.payload.toolName}` });
@@ -167,7 +167,8 @@ export class ClineCoreAgentRunner implements AgentRunner {
           const text = resultText(result);
           if (text && !streamedText.includes(text)) push({ type: "text", content: text });
         } else {
-          // First turn — start new ClineCore session
+          // First turn — subscribe before start() so streaming events are not missed
+          unsubscribe = setupSubscription();
           const startResult = await cline.start({
             source: SessionSource.API,
             interactive: false,
@@ -176,7 +177,6 @@ export class ClineCoreAgentRunner implements AgentRunner {
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
-          unsubscribe = setupSubscription(clineSessionId);
           const text = resultText(startResult.result);
           if (text && !streamedText.includes(text)) push({ type: "text", content: text });
         }
@@ -186,6 +186,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
         if (clineSessionId && err.message?.includes("not found")) {
           log.warn("agent:session-not-found", { clineSessionId, fallback: "start" });
           unsubscribe();
+          unsubscribe = setupSubscription();
           const startResult = await cline.start({
             source: SessionSource.API,
             interactive: false,
@@ -194,7 +195,6 @@ export class ClineCoreAgentRunner implements AgentRunner {
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
-          unsubscribe = setupSubscription(clineSessionId);
           const text = resultText(startResult.result);
           if (text && !streamedText.includes(text)) push({ type: "text", content: text });
           log.info("agent:done", { runtime: "cline-core", ms: Date.now() - startedAt, sessionId: clineSessionId, fallback: true });

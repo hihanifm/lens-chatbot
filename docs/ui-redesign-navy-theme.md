@@ -15,6 +15,8 @@
   --navy-muted:      #0a3d7a;   /* session list hover */
   --action:          #0062cc;   /* interactive hover, focus, links */
   --action-disabled: #7ab3e0;   /* disabled button bg */
+  --lucky:           #0e7490;   /* Lucky button — teal, distinct from primary navy */
+  --lucky-hover:     #0c6177;
   --sidebar-text:    #e2eaf7;
   --sidebar-muted:   #7ba4d4;
   --sidebar-border:  rgba(255,255,255,0.10);
@@ -85,6 +87,12 @@ Do these exact string replacements in the `<style>` block only (not in JS):
 | `background: #ede9fe` *(explorer-btn.active)* | `background: var(--sky-chip)` | explorer btn active |
 | `color: #6d28d9` | `color: var(--sky-text)` | explorer btn active text |
 | `border-color: #c4b5fd` | `border-color: var(--sky-border)` | explorer btn active border |
+| `background: #6c47ff` | `background: var(--lucky)` | Lucky button |
+| `background: #5835e0` | `background: var(--lucky-hover)` | Lucky button hover |
+| `color: #c4b5fd` *(streaming msg-time)* | `color: var(--sky-border)` | streaming timestamp |
+| `background: #f3f4f6` *(skill-item hover)* | `background: var(--chat-bg)` | skill picker row hover |
+
+> **Note on `#f3f4f6` collision:** this value also appears on `.att-menu-item:hover`, `.session-menu-item:hover`, `#session-menu-btn`, and `.s-btn-secondary`. Only replace the one on `.skill-item:hover` — the others are light-surface neutrals that are fine as-is. Match by surrounding selector context, not a blind global replace.
 
 ---
 
@@ -204,8 +212,13 @@ Not required — the styled empty circle still looks clean without it.
 - [ ] Avatar: styled circle (with or without initial)
 - [ ] Bug info: attachment pills and context chips are sky-blue/navy
 - [ ] Chat: user bubble is navy gradient, assistant bubble is white, chat bg is #eff6ff
+- [ ] Lucky button: teal (#0e7490), visually distinct from the navy Send button
+- [ ] Skill picker dropdown: opens cleanly, row hover is light blue (#eff6ff) not gray
+- [ ] Streaming assistant message: timestamp shows sky-blue (#93c5fd) not purple
 - [ ] Files drawer: matches sidebar navy tone (#001a4d)
 - [ ] All focus rings: blue (#0062cc), no purple
 - [ ] Search `#6366f1` in both files — should return zero matches
 - [ ] Search `#4f46e5` in both files — should return zero matches
 - [ ] Search `#0f1117` in both files — should return zero matches
+- [ ] Search `#6c47ff` in index.html — should return zero matches
+- [ ] Search `#c4b5fd` in index.html — should return zero matches
