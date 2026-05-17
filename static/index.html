@@ -159,6 +159,7 @@
     #settings-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #9ca3af; padding: 4px 8px; border-radius: 8px; transition: background 0.15s, color 0.15s; line-height: 1; }
     #settings-btn:hover { background: #f3f4f6; color: #374151; }
     #version-badge { font-size: 10px; color: #d1d5db; font-family: monospace; letter-spacing: 0.3px; user-select: none; }
+    #llm-badge { font-size: 11px; color: #9ca3af; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 2px 8px; font-family: monospace; white-space: nowrap; user-select: none; }
 
     /* Explorer button */
     #explorer-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; font-size: 13px; color: #6b7280; padding: 4px 10px; border-radius: 8px; transition: background 0.15s, color 0.15s, border-color 0.15s; }
@@ -227,6 +228,7 @@
     <span id="user-badge" style="margin-left:auto; font-size:13px; color:#6b7280; display:flex; align-items:center; gap:10px;"></span>
     <button id="explorer-btn" title="Workspace Files">🗂 Files</button>
     <button id="settings-btn" title="Settings">⚙</button>
+    <span id="llm-badge" title="LLM provider · model"></span>
     <span id="version-badge">v0.1.0</span>
   </div>
   <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
@@ -1183,6 +1185,7 @@
       return;
     }
     closeSettings();
+    loadLlmBadge();
     const toast = document.createElement('div');
     toast.textContent = 'Settings saved';
     toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#111827;color:white;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2000;opacity:1;transition:opacity 0.4s;';
@@ -1347,6 +1350,18 @@
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  async function loadLlmBadge() {
+    try {
+      const res = await fetch('/settings/llm');
+      if (!res.ok) return;
+      const { provider, model } = await res.json();
+      const badge = document.getElementById('llm-badge');
+      badge.textContent = `${provider} · ${model}`;
+      badge.title = `LLM: ${provider} / ${model}`;
+    } catch {}
+  }
+
+  loadLlmBadge();
   loadSessions();
 </script>
 </body>
