@@ -11,7 +11,8 @@
     body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2f5; height: 100vh; display: flex; color: #111827; }
 
     /* Sidebar */
-    #sidebar { width: 256px; background: #0f1117; color: #e5e7eb; padding: 20px 14px; overflow-y: auto; flex-shrink: 0; }
+    #sidebar { width: 256px; background: #0f1117; color: #e5e7eb; display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+    #sidebar-scroll { flex: 1; overflow-y: auto; padding: 20px 14px; }
     #sidebar-brand { font-size: 18px; font-weight: 700; letter-spacing: 1px; color: #f9fafb; padding: 0 8px 20px; border-bottom: 1px solid #1f2937; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
     #sidebar-brand .brand-icon { font-size: 20px; }
     #sidebar-brand .brand-sub { font-size: 10px; font-weight: 400; color: #4b5563; letter-spacing: 1.5px; text-transform: uppercase; display: block; margin-top: 1px; }
@@ -22,6 +23,19 @@
     #session-list li.active { background: #1e2a3a; }
     #session-list .bug-id { font-size: 13px; font-weight: 600; color: #93c5fd; }
     #session-list .date { font-size: 11px; color: #4b5563; margin-top: 3px; }
+    /* Sidebar footer */
+    #sidebar-footer { border-top: 1px solid #1f2937; padding: 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+    #sidebar-user { display: flex; align-items: center; gap: 8px; }
+    #sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: #1e2a3a; border: 1.5px solid #374151; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+    #sidebar-user-info { flex: 1; min-width: 0; }
+    #sidebar-username { font-size: 13px; font-weight: 600; color: #f3f4f6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #sidebar-logout { font-size: 11px; color: #6b7280; text-decoration: none; transition: color 0.15s; cursor: pointer; background: none; border: none; padding: 0; font-family: inherit; }
+    #sidebar-logout:hover { color: #f87171; }
+    #sidebar-footer-actions { display: flex; align-items: center; justify-content: space-between; }
+    #sidebar-llm-badge { font-size: 10px; color: #6b7280; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+    #sidebar-version { font-size: 10px; color: #374151; font-family: monospace; flex-shrink: 0; }
+    #sidebar-settings-btn { background: none; border: none; cursor: pointer; font-size: 16px; color: #6b7280; padding: 4px 6px; border-radius: 6px; transition: background 0.15s, color 0.15s; line-height: 1; flex-shrink: 0; }
+    #sidebar-settings-btn:hover { background: #1c1f26; color: #e5e7eb; }
 
     /* Main */
     #main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
@@ -156,10 +170,6 @@
     .session-reset-divider { text-align: center; font-size: 11px; color: #9ca3af; padding: 14px 0; letter-spacing: 0.4px; }
 
     /* Settings */
-    #settings-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #9ca3af; padding: 4px 8px; border-radius: 8px; transition: background 0.15s, color 0.15s; line-height: 1; }
-    #settings-btn:hover { background: #f3f4f6; color: #374151; }
-    #version-badge { font-size: 10px; color: #d1d5db; font-family: monospace; letter-spacing: 0.3px; user-select: none; }
-    #llm-badge { font-size: 11px; color: #9ca3af; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 2px 8px; font-family: monospace; white-space: nowrap; user-select: none; }
 
     /* Explorer button */
     #explorer-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; font-size: 13px; color: #6b7280; padding: 4px 10px; border-radius: 8px; transition: background 0.15s, color 0.15s, border-color 0.15s; }
@@ -210,26 +220,38 @@
 <body>
 
 <div id="sidebar">
-  <div id="sidebar-brand">
-    <span class="brand-icon">⚔️</span>
-    <div>
-      WarRoom
-      <span class="brand-sub">Bug Analysis</span>
+  <div id="sidebar-scroll">
+    <div id="sidebar-brand">
+      <span class="brand-icon">⚔️</span>
+      <div>
+        WarRoom
+        <span class="brand-sub">Bug Analysis</span>
+      </div>
+    </div>
+    <h2>Past Sessions</h2>
+    <ul id="session-list"></ul>
+  </div>
+  <div id="sidebar-footer">
+    <div id="sidebar-user">
+      <div id="sidebar-avatar">👤</div>
+      <div id="sidebar-user-info">
+        <div id="sidebar-username">—</div>
+        <button id="sidebar-logout">Log out</button>
+      </div>
+      <button id="sidebar-settings-btn" title="Settings">⚙</button>
+    </div>
+    <div id="sidebar-footer-actions">
+      <span id="sidebar-llm-badge"></span>
+      <span id="sidebar-version">v0.1.0</span>
     </div>
   </div>
-  <h2>Past Sessions</h2>
-  <ul id="session-list"></ul>
 </div>
 
 <div id="main">
   <div id="header">
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
-    <span id="user-badge" style="margin-left:auto; font-size:13px; color:#6b7280; display:flex; align-items:center; gap:10px;"></span>
-    <button id="explorer-btn" title="Workspace Files">🗂 Files</button>
-    <button id="settings-btn" title="Settings">⚙</button>
-    <span id="llm-badge" title="LLM provider · model"></span>
-    <span id="version-badge">v0.1.0</span>
+    <button id="explorer-btn" title="Workspace Files" style="margin-left:auto;">🗂 Files</button>
   </div>
   <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
     <span style="font-weight:600;">Also here:</span>
@@ -400,11 +422,8 @@
   currentUser = await bootstrapUser();
   if (!currentUser) throw new Error('redirecting');
 
-  document.getElementById('user-badge').innerHTML =
-    `<span>👤 ${currentUser.name}</span>` +
-    `<a href="#" style="font-size:12px; color:#9ca3af; text-decoration:none;" id="logout-link">Log out</a>`;
-  document.getElementById('logout-link').onclick = (e) => {
-    e.preventDefault();
+  document.getElementById('sidebar-username').textContent = currentUser.name;
+  document.getElementById('sidebar-logout').onclick = () => {
     localStorage.removeItem('lens_user_id');
     window.location.href = '/login.html';
   };
@@ -1151,7 +1170,7 @@
     settingsOverlay.classList.remove('open');
   }
 
-  document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.getElementById('sidebar-settings-btn').addEventListener('click', openSettings);
   document.getElementById('s-cancel-btn').addEventListener('click', closeSettings);
   settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
 
@@ -1356,7 +1375,7 @@
       const res = await fetch('/settings/llm');
       if (!res.ok) return;
       const { provider, model } = await res.json();
-      const badge = document.getElementById('llm-badge');
+      const badge = document.getElementById('sidebar-llm-badge');
       badge.textContent = `${provider} · ${model}`;
       badge.title = `LLM: ${provider} / ${model}`;
     } catch {}
