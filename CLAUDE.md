@@ -29,7 +29,31 @@ npm run test:e2e:live    # live suite against real Ollama (see playwright.live.c
 npx playwright test -g "test name pattern"  # run a single e2e test by name
 ```
 
-Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=llama3.1:8b`. `ADMIN_PIN` (optional): if set on first startup, hashed with scrypt and stored in SQLite; ignored on subsequent restarts — required to change LLM settings via the API. `NODE_OPTIONS=--experimental-sqlite` is required for `node:sqlite` (Node 22); set automatically by Docker and `npm run dev`.
+Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=llama3.1:8b`. `NODE_OPTIONS=--experimental-sqlite` is required for `node:sqlite` (Node 22); set automatically by Docker and `npm run dev`.
+
+Key env vars:
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `ADMIN_PIN` | `"admin"` | Hashed with scrypt on first startup, stored in SQLite; ignored on restart. Required to change LLM settings. |
+| `UPLOAD_SIZE_LIMIT_MB` | `50` | Max file upload size (multer, 413 on exceed) |
+| `AGENT_MAX_ITERATIONS` | `12` | ClineCore max iterations per analysis |
+| `LOG_LEVEL` | `info` | Server verbosity: `debug\|info\|warn\|error` |
+| `SKILLS_DIR` | `/app/skills` | Colon-separated skill directories (extra dirs also configurable via Settings UI) |
+| `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
+| `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
+
+Additional make targets:
+
+```bash
+make setup       # one-time: install deps + copy .env.example
+make dev-stop    # stop background Node dev process (PID-tracked)
+make dev-clean   # wipe data/local (DB + workspaces for npm run dev)
+make dock-clean  # wipe data/dev (DB + workspaces for Docker dev)
+make down        # stop dev containers
+make ps          # show container status
+make clean       # remove containers, volumes, prune images
+```
 
 ## Architecture
 
@@ -51,11 +75,14 @@ src/agent/
   clineCoreAgentRunner.ts ← ClineCoreAgentRunner (@cline/sdk ClineCore, session-aware)
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
   environment.md         ← agent environment context (tools, workspace layout) — read by agent every task
+  luckyAnalyzer.ts       ← LuckyAnalyzer: auto-downloads attachments, extracts zips, runs structured RCA
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
 wiki/                    ← two-level knowledge base: index.md → <module>/index.md → dated entries
 e2e/
-  smoke.spec.ts          ← Playwright tests: load bug, download attachment, analyze stream
-  server.ts              ← test server (MockBugTracker + StubAgentRunner, port 3099)
+  smoke.spec.ts          ← stub tests (MockBugTracker + StubAgentRunner, DATA_DIR=./e2e/.data, port 3099)
+  live.spec.ts           ← live tests against real Ollama (DATA_DIR=./e2e/.live-data)
+  server.ts              ← stub test server
+  liveServer.ts          ← live test server
   stubAgentRunner.ts     ← AgentRunner stub that emits predictable "E2E mock analysis" reply
 fixtures/                ← static fixture files for tests
 ```
@@ -67,6 +94,14 @@ fixtures/                ← static fixture files for tests
 **BugTracker is an interface.** `MockBugTracker` returns hardcoded data. `InternalBugTracker` stub exists in `bugTracker.ts` — implement the two methods and swap in `index.ts`.
 
 **Agent sessions persist across turns.** `cline_session_id` is stored in SQLite and passed back on follow-up turns so `ClineCoreAgentRunner` calls `cline.send()` instead of `cline.start()`, preserving ClineCore's native context. If the session is no longer found (e.g. after Docker restart), the runner falls back to `cline.start()` automatically.
+
+**ClineCoreAgentRunner config**: runs in `"plan"` mode, max `AGENT_MAX_ITERATIONS` iterations. Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, `SUBMIT_AND_EXIT`, all MCP settings tools. Spawn agent and agent teams disabled.
+
+**Ad-hoc sessions**: users can create a session without a bug tracker entry (`POST /session/adhoc` with title/description/optional bugId), then upload files (`POST /session/:id/upload`, up to 20 files, optional `commentLabel`/`commentBody` for grouping in the file explorer). Same workspace layout and analysis flow as tracker-based sessions.
+
+**Lucky analyzer** (`luckyAnalyzer.ts`): structured three-phase RCA (Evidence Collection → Root Cause Hypothesis → Targeted Interrogation). Auto-downloads top-level bug attachments and extracts zip entries into context. Runs as an ephemeral agent session (not persisted). Triggered via `GET /session/:id/lucky` (SSE stream).
+
+**Admin PIN**: default is `"admin"` (logged as a warning at startup if `ADMIN_PIN` env var was not set). Hashed with scrypt, stored in SQLite `settings` table. All LLM and skill-directory changes via API require PIN. Extra skill directories are also stored in DB and merged with `SKILLS_DIR` at load time.
 
 **Workspace layout** per bug:
 ```
@@ -95,8 +130,10 @@ File explorer endpoints:
 | `GET /session/:id/workspace/files` | Returns `VirtualTree` JSON — `bugAttachments` + per-comment `CommentSection[]` |
 | `GET /session/:id/zip-contents?zipPath=…` | Reads zip central directory (no extraction); returns `ZipEntry[]` with `extracted` flag |
 | `POST /session/:id/extract-file` | Extracts one entry from a zip; adds the resulting path to session files |
+| `PATCH /session/:id/files` | Add/remove a file from session context (`{ path, selected: true/false }`) |
+| `POST /session/:id/upload` | Upload files to session (multipart, max `UPLOAD_SIZE_LIMIT_MB`) |
 
-All three endpoints validate that resolved paths stay within `session.workspace_path` and return 403 on traversal attempts.
+All path-handling endpoints validate that resolved paths stay within `session.workspace_path` and return 403 on traversal attempts.
 
 ## Wiki system
 
@@ -124,6 +161,24 @@ Wiki endpoints:
 | `GET /wiki` | Lists all entries across modules (sorted by date) |
 | `GET /wiki/:module` | Reads the module's `index.md` |
 | `GET /wiki/:module/:filename` | Reads one full entry file |
+
+## Other API endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /auth` | Login with `{ name, pin }` → returns `{ userId }` |
+| `POST /session/adhoc` | Create ad-hoc session (`{ title, description?, bugId? }`) |
+| `POST /session/:id/refresh-bug` | Re-fetch bug details from tracker |
+| `POST /session/:id/abort` | Abort current in-progress agent analysis |
+| `POST /session/:id/stop` | Stop agent and clear `cline_session_id` (resets to fresh session) |
+| `GET /session/:id/lucky` | SSE stream: structured RCA via `LuckyAnalyzer` |
+| `GET /skills` | List all loaded skills with frontmatter (name, description, triggers) |
+| `GET /settings/llm` | Current LLM config (API key redacted to last 4 chars) |
+| `PUT /settings/llm` | Update LLM config (requires PIN) |
+| `POST /settings/llm/models` | List available models from the upstream LLM provider |
+| `GET /settings/skills` | List extra skill directories stored in DB |
+| `PUT /settings/skills` | Update extra skill directories (requires PIN, paths must exist) |
+| `PUT /settings/admin/pin` | Change admin PIN (requires current PIN) |
 
 ## Skills system
 
