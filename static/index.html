@@ -225,9 +225,8 @@
     .s-success { color: #059669; font-size: 12px; margin-top: 6px; min-height: 18px; }
 
     /* session mode tabs */
-    #session-mode-tabs { display: flex; gap: 4px; }
-    .tab-btn { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
-    .tab-btn.tab-active { background: #2563eb; color: white; border-color: #2563eb; }
+    #tab-adhoc { background: transparent; color: #6b7280; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-family: inherit; transition: color 0.15s, border-color 0.15s; }
+    #tab-adhoc:hover { color: #374151; border-color: #9ca3af; }
     #adhoc-page { display: none; position: fixed; inset: 0; background: #f8fafc; z-index: 150; align-items: center; justify-content: center; }
     #adhoc-page.open { display: flex; }
     #adhoc-card { background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 36px 40px; width: 480px; max-width: 95vw; display: flex; flex-direction: column; gap: 16px; }
@@ -285,18 +284,10 @@
 
 <div id="main">
   <div id="header">
-    <div id="session-mode-tabs">
-      <button id="tab-tracker" class="tab-btn tab-active">Load Bug</button>
-      <button id="tab-adhoc" class="tab-btn">Ad Hoc</button>
-    </div>
-
-    <!-- tracker mode (default) -->
-    <div id="tracker-mode">
-      <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
-      <button id="load-bug-btn">Load Bug</button>
-    </div>
-
-    <button id="explorer-btn" title="Workspace Files" style="margin-left:auto;">🗂 Files</button>
+    <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
+    <button id="load-bug-btn">Load Bug</button>
+    <button id="tab-adhoc" style="margin-left:auto;">Ad Hoc</button>
+    <button id="explorer-btn" title="Workspace Files">🗂 Files</button>
   </div>
   <div id="presence-bar" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:6px 24px; font-size:12px; color:#0369a1;">
     <span style="font-weight:600;">Also here:</span>
@@ -782,19 +773,13 @@
 
   function openAdhocPage() {
     document.getElementById('adhoc-page').classList.add('open');
-    document.getElementById('tab-adhoc').classList.add('tab-active');
-    document.getElementById('tab-tracker').classList.remove('tab-active');
     document.getElementById('adhoc-error').textContent = '';
   }
 
   function closeAdhocPage() {
     document.getElementById('adhoc-page').classList.remove('open');
-    document.getElementById('tab-tracker').classList.add('tab-active');
-    document.getElementById('tab-adhoc').classList.remove('tab-active');
   }
 
-  // Tab switching: Load Bug ↔ Ad Hoc
-  document.getElementById('tab-tracker').onclick = closeAdhocPage;
   document.getElementById('tab-adhoc').onclick = openAdhocPage;
   document.getElementById('adhoc-cancel-btn').onclick = closeAdhocPage;
 
