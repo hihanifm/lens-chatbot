@@ -866,6 +866,10 @@
     document.getElementById('explorer-upload-panel').style.display = visible ? '' : 'none';
   }
 
+  function setRefreshBtnVisible(visible) {
+    document.getElementById('bug-refresh-btn').style.display = visible ? '' : 'none';
+  }
+
   // Ad hoc file picker: show count
   document.getElementById('adhoc-files-input').onchange = (e) => {
     const n = e.target.files.length;
@@ -902,6 +906,7 @@
     currentSessionId = session.id;
     isAdhocSession = true;
     setUploadPanelVisible(true);
+    setRefreshBtnVisible(false);
     addSeenSession(session.id);
     contextFiles = {};
     updateContextBar();
@@ -945,6 +950,7 @@
   document.getElementById('load-bug-btn').onclick = async () => {
     isAdhocSession = false;
     setUploadPanelVisible(true);
+    setRefreshBtnVisible(true);
     const bugId = document.getElementById('bug-id-input').value.trim();
     if (!bugId) return;
 
