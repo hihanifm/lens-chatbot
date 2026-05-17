@@ -13,6 +13,7 @@ import type { LlmConfig } from "./db.js";
 import { addClient, removeClient, broadcast } from "./broadcast.js";
 import { createWikiEntry, listWikiEntries, readWikiEntry, buildWikiSynthesisPrompt } from "./services/wikiService.js";
 import { loadAgentSkills } from "./agent/agentPrompt.js";
+import { runLucky } from "./agent/luckyAnalyzer.js";
 import { log } from "./logger.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -398,6 +399,34 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       broadcast(req.params.id, payload, clientId);
       res.end();
     }
+  });
+
+  app.get("/session/:id/lucky", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    if (!session.workspace_path) return res.status(400).json({ error: "no workspace loaded" });
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    broadcast(req.params.id, { type: "analyzing", mode: "lucky" }, undefined);
+
+    log.info("lucky:start", { sessionId: req.params.id, files: session.selected_files });
+
+    try {
+      for await (const event of runLucky(runner, session)) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        broadcast(req.params.id, event, undefined);
+        if (event.type === "done" || event.type === "error") break;
+      }
+    } catch (err: any) {
+      log.error("lucky:exception", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
+      const payload = { type: "error", content: err.message };
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    }
+
+    res.end();
   });
 
   // ── Wiki routes ──────────────────────────────────────────────────────────────
