@@ -49,7 +49,7 @@ async function getCline(): Promise<ClineCore> {
 
 function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>) {
   return {
-    providerId: (llmCfg.provider === "openai" || llmCfg.provider === "openai-compatible" ? "openai-native" : llmCfg.provider) as any,
+    providerId: (llmCfg.provider === "openai" ? "openai-native" : llmCfg.provider === "openai-compatible" ? "openai-compatible" : llmCfg.provider) as any,
     modelId: llmCfg.model,
     apiKey: llmCfg.apiKey || "none",
     baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
