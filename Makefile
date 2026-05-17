@@ -116,7 +116,8 @@ setup: check-node
 dev: check-node
 	@pkill -f "tsx src/index.ts" 2>/dev/null && echo "Stopped previous process." || true
 	mkdir -p ./data/local
-	PORT=$${PORT:-38001} DATA_DIR=./data/local LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} npm run dev >> ./data/local/dev.log 2>&1 &
+	PORT=$${PORT:-38001} DATA_DIR=./data/local LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
+		NODE_OPTIONS=--experimental-sqlite node node_modules/.bin/tsx src/index.ts >> ./data/local/dev.log 2>&1 &
 	@echo "Started on http://localhost:38001 — logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
