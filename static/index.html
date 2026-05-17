@@ -69,7 +69,8 @@
     /* Bug info */
     #bug-info { background: white; padding: 14px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: none; border-bottom: 1px solid #f3f4f6; }
     #bug-info.expanded { max-height: 42vh; overflow-y: auto; padding-bottom: 18px; }
-    #bug-info-header { display: flex; gap: 12px; align-items: flex-start; }
+    #bug-info-header { display: flex; gap: 12px; align-items: flex-start; background: var(--sky-chip); padding: 12px 24px; margin: -14px -24px 14px; cursor: pointer; transition: background 0.15s; }
+    #bug-info-header:hover { background: #c7e2fe; }
     #bug-summary { flex: 1; min-width: 0; }
     #bug-info-toggle { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; line-height: 1.2; transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s; }
     #bug-info-toggle:hover { background: var(--sky-chip); border-color: var(--sky-border); color: var(--sky-text); }
@@ -735,6 +736,12 @@
   }
 
   document.getElementById('bug-info-toggle').addEventListener('click', () => {
+    const panel = document.getElementById('bug-info');
+    setBugInfoExpanded(!panel.classList.contains('expanded'));
+  });
+
+  document.getElementById('bug-info-header').addEventListener('click', (e) => {
+    if (e.target.closest('.bug-info-actions')) return;
     const panel = document.getElementById('bug-info');
     setBugInfoExpanded(!panel.classList.contains('expanded'));
   });
