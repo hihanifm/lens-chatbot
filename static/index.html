@@ -213,6 +213,8 @@
     .session-menu-item:hover { background: #f9fafb; }
     .session-menu-item.danger { color: #dc2626; }
     .session-menu-item.danger:hover { background: #fff5f5; }
+    .session-menu-item.session-menu-check label { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; }
+    .session-menu-item.session-menu-check input { width: 14px; height: 14px; accent-color: var(--lucky); cursor: pointer; flex-shrink: 0; }
     #skill-picker { display: none; position: absolute; bottom: calc(100% + 6px); left: 0; background: white; border: 1.5px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); min-width: 240px; max-height: 220px; overflow-y: auto; z-index: 100; }
     #skill-picker.open { display: block; }
     .skill-item { padding: 9px 13px; cursor: pointer; transition: background 0.12s; }
@@ -404,6 +406,9 @@
         <button id="session-menu-btn" title="Session options">⋮</button>
         <div id="session-menu">
           <div class="session-menu-item" id="plan-mode-item">Use Plan mode</div>
+          <div class="session-menu-item session-menu-check" id="lucky-yolo-item" title="YOLO mode: agent must call submit_and_exit to terminate — A/B test against default Lucky">
+            <label for="lucky-yolo"><input type="checkbox" id="lucky-yolo"> Lucky YOLO</label>
+          </div>
           <div class="session-menu-item danger" id="reset-session-item">Reset agent session</div>
         </div>
       </div>
@@ -607,6 +612,7 @@
 
   function applyFeatureFlags() {
     document.getElementById('lucky-btn').style.display = featureFlags.lucky ? '' : 'none';
+    document.getElementById('lucky-yolo-item').style.display = featureFlags.lucky ? '' : 'none';
     const wikiBtn = document.getElementById('wiki-session-btn');
     if (!featureFlags.wiki) wikiBtn.style.display = 'none';
   }
@@ -1368,10 +1374,11 @@
     sendBtn.disabled = true;
     input.disabled = true;
 
-    appendMessage('user', '🎲 I\'m Feeling Lucky — finding root cause automatically...');
+    const yolo = document.getElementById('lucky-yolo').checked;
+    appendMessage('user', `🎲 I'm Feeling Lucky${yolo ? ' (yolo)' : ''} — finding root cause automatically...`);
     const assistantEl = appendMessage('assistant', '', true);
 
-    const es = new EventSource(`/session/${currentSessionId}/lucky`);
+    const es = new EventSource(`/session/${currentSessionId}/lucky${yolo ? '?mode=yolo' : ''}`);
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
@@ -1578,6 +1585,8 @@
     document.getElementById('plan-mode-item').textContent = agentMode === 'plan' ? 'Use Act mode' : 'Use Plan mode';
     sessionMenuEl.classList.remove('open');
   });
+
+  document.getElementById('lucky-yolo-item').addEventListener('click', (e) => e.stopPropagation());
 
   document.getElementById('reset-session-item').addEventListener('click', () => {
     sessionMenuEl.classList.remove('open');
