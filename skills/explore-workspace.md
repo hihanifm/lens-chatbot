@@ -53,3 +53,28 @@ bug.json                3.4 KB
 
 Tell the user the total file count and total size, and flag any file types that
 look like logs (`.log`, `.txt`, `.out`, `.json`) vs binaries or archives.
+
+## Android `bugreport-*.zip` specifics
+
+Android bug reports have a predictable layout once extracted:
+
+```
+bugreport-*.zip
+├── bugreport-*.txt           ← full system dump; locate sections first
+├── dumpstate_board.txt       ← board-specific dumps
+└── FS/
+    └── data/
+        ├── anr/traces.txt    ← ANR traces
+        ├── tombstones/       ← native crash dumps
+        └── misc/radio/       ← radio / IMS logs
+```
+
+The `bugreport-*.txt` file is huge but section-delimited. Jump to the right
+section instead of scanning the whole thing:
+
+```bash
+rg '^------' "$WORKSPACE"/attachments/**/bugreport-*.txt
+```
+
+Common section headers: `------ SYSTEM LOG (logcat) ------`,
+`------ DUMPSYS ------`, `------ ANR (/data/anr/traces.txt) ------`.

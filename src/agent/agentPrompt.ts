@@ -27,7 +27,6 @@ export async function getWikiRootIndexPath(): Promise<string | null> {
 export async function buildSystemRules(): Promise<string> {
   return composePrompt([
     { fragment: "rules/role" },
-    { fragment: "rules/rca-template" },
     { fragment: "rules/citation-format" },
     { fragment: "rules/budget" },
     { fragment: "rules/path-policy" },
