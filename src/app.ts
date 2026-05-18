@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "node:fs/promises";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
@@ -59,7 +60,32 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.use(express.json());
 
   const MAX_UPLOAD_BYTES = parseInt(process.env.UPLOAD_SIZE_LIMIT_MB ?? "500") * 1024 * 1024;
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
+
+  function sessionUploadMiddleware(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    if (!session.workspace_path) return res.status(400).json({ error: "no workspace" });
+
+    const tmpDir = path.join(session.workspace_path, ".upload-tmp");
+    const storage = multer.diskStorage({
+      destination: (_req, _file, cb) => {
+        try {
+          mkdirSync(tmpDir, { recursive: true });
+          cb(null, tmpDir);
+        } catch (err) {
+          cb(err as Error, tmpDir);
+        }
+      },
+      filename: (_req, file, cb) => {
+        cb(null, `${randomUUID()}${path.extname(file.originalname)}`);
+      },
+    });
+    multer({ storage, limits: { fileSize: MAX_UPLOAD_BYTES } }).array("files", 20)(req, res, next);
+  }
 
   app.use((req, _res, next) => {
     log.info(`${req.method} ${req.path}`, Object.keys(req.query).length ? { query: req.query } : undefined);
@@ -122,13 +148,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.json({ session, bug });
   });
 
-  app.post("/session/:id/upload", upload.array("files", 20), async (req, res) => {
+  app.post("/session/:id/upload", sessionUploadMiddleware, async (req, res) => {
     const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "session not found" });
-    if (!session.workspace_path) return res.status(400).json({ error: "no workspace" });
+    if (!session?.workspace_path) return res.status(404).json({ error: "session not found" });
 
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) return res.status(400).json({ error: "no files uploaded" });
+    const multerFiles = req.files as Express.Multer.File[];
+    if (!multerFiles || multerFiles.length === 0) return res.status(400).json({ error: "no files uploaded" });
+
+    const files = multerFiles.map((f) => ({ originalname: f.originalname, path: f.path }));
 
     const commentLabel = (req.body.commentLabel as string | undefined)?.trim();
     const commentBody = (req.body.commentBody as string | undefined)?.trim();
@@ -140,6 +167,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       res.json(result);
     } catch (err: any) {
       log.error("session:upload:error", { err: err.message });
+      for (const f of files) await fs.unlink(f.path).catch(() => {});
       res.status(500).json({ error: err.message });
     }
   });

@@ -34,6 +34,25 @@ async function ensureModemLogSelected(page: Page) {
   await expect(page.locator("#context-bar")).toContainText("modem_log.txt");
 }
 
+test("adhoc upload shows global progress banner", async ({ page }) => {
+  await seedAuth(page);
+  await page.route("**/session/*/upload", async (route) => {
+    await new Promise((r) => setTimeout(r, 800));
+    await route.continue();
+  });
+  await page.goto("/");
+  await page.locator("#tab-adhoc").click();
+  await page.locator("#adhoc-title-input").fill("E2E upload test");
+  await page.locator("#adhoc-files-input").setInputFiles({
+    name: "tiny.log",
+    mimeType: "text/plain",
+    buffer: Buffer.from("e2e upload line\n"),
+  });
+  await page.locator("#adhoc-create-btn").click();
+  await expect(page.locator("#upload-banner")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("#upload-banner-text")).not.toBeEmpty();
+});
+
 test("home loads", async ({ page }) => {
   await seedAuth(page);
   await page.goto("/");

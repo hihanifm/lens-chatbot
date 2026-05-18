@@ -93,29 +93,48 @@ export interface AdHocUploadResult {
   commentId?: string;
 }
 
+async function moveUploadIntoAttachments(tempPath: string, dest: string): Promise<void> {
+  try {
+    await fs.rename(tempPath, dest);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "EXDEV") {
+      await fs.copyFile(tempPath, dest);
+      await fs.unlink(tempPath);
+      return;
+    }
+    throw err;
+  }
+}
+
 export async function saveAdHocFiles(
   workspacePath: string,
-  files: Array<{ originalname: string; buffer: Buffer }>,
+  files: Array<{ originalname: string; path: string }>,
   comment?: { label: string; body: string }
 ): Promise<AdHocUploadResult> {
   const filePaths: string[] = [];
+  const attEntries: { id: string; name: string; size: number }[] = [];
 
-  for (const file of files) {
-    const dest = path.join(workspacePath, "attachments", file.originalname);
-    await fs.writeFile(dest, file.buffer);
-    log.info("adhoc:file-saved", { dest, bytes: file.buffer.length });
-    filePaths.push(dest);
+  try {
+    for (const file of files) {
+      const safeName = path.basename(file.originalname);
+      const dest = path.join(workspacePath, "attachments", safeName);
+      const stat = await fs.stat(file.path);
+      log.info("session:upload:saving", { dest, bytes: stat.size });
+      await moveUploadIntoAttachments(file.path, dest);
+      log.info("adhoc:file-saved", { dest, bytes: stat.size });
+      filePaths.push(dest);
+      attEntries.push({ id: randomUUID(), name: safeName, size: stat.size });
+    }
+  } catch (err) {
+    for (const file of files) {
+      await fs.unlink(file.path).catch(() => {});
+    }
+    throw err;
   }
 
   const bugJsonPath = path.join(workspacePath, "bug.json");
   // no concurrency guard needed: single-user tool
   const bug = JSON.parse(await fs.readFile(bugJsonPath, "utf8"));
-
-  const attEntries = files.map((f) => ({
-    id: randomUUID(),
-    name: f.originalname,
-    size: f.buffer.length,
-  }));
 
   let commentId: string | undefined;
 

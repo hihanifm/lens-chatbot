@@ -129,6 +129,8 @@ DATA_DIR/workspaces/BUG-ID/
 
 A 🗂 Files drawer in the UI lets users browse all workspace files grouped by the bug comment that uploaded them, and toggle individual files into or out of the agent context.
 
+**Upload progress**: local file uploads (adhoc create or Files drawer) show a global `#upload-banner` below the header with bug ID, filename, MB progress, and phase (`Uploading` / `Saving on server…`). Progress stays visible when switching sessions or with the drawer closed. Only one in-flight upload per session. Server streams multipart bodies to `workspace/.upload-tmp/` via multer `diskStorage`, then renames into `attachments/` (not memory buffers).
+
 **Zip behavior**: zips are no longer auto-extracted on download. The zip file is saved to disk; contents are listed lazily when the user expands the zip node, and individual entries are extracted only when the user clicks `[Extract & Add]`.
 
 **Comment context**: when a file that came from a bug comment is added to context, `buildFileCommentMap()` in `clineCoreAgentRunner.ts` maps the file path to its comment body. `agentPrompt.ts` renders an inline `Comment:` line beside that file in the prompt so the agent sees the relevant comment without the user having to copy it.
