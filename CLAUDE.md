@@ -27,6 +27,10 @@ npm run test:e2e         # Playwright e2e suite (spins up real Express + MockBug
 npm run test:e2e:ui      # same, with Playwright UI
 npm run test:e2e:live    # live suite against real Ollama (see playwright.live.config.ts)
 npx playwright test -g "test name pattern"  # run a single e2e test by name
+
+npm run prompts:check              # fail if prompt-like strings appear in src/**/*.ts outside src/prompts/
+npm run prompts:check-cline-system # fail if @cline/shared system prompts drift from docs/reference snapshot
+npm run prompts:sync-cline-system  # refresh that snapshot after bumping @cline/sdk
 ```
 
 Requires a `.env` file — copy from `.env.example`. Ollama defaults: `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=llama3.1:8b`. `NODE_OPTIONS=--experimental-sqlite` is required for `node:sqlite` (Node 22); set automatically by Docker and `npm run dev`.
@@ -41,7 +45,8 @@ Key env vars:
 | `LOG_LEVEL` | `info` | Server verbosity: `debug\|info\|warn\|error` |
 | `SKILLS_DIR` | `/app/skills` | Colon-separated skill directories (extra dirs also configurable via Settings UI) |
 | `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
-| `PROMPTS_DIR` | `src/prompts` (bundled) | Directory of `.md` prompt files (`task.md`, `lucky.md`, `wiki-synthesis.md`); mount as a volume to edit prompts at runtime without rebuild |
+| `PROMPTS_DIR` | `src/prompts` (bundled) | Top-level `.md` prompts plus `fragments/`; mount as a volume to edit at runtime without rebuild |
+| `MAX_LUCKY_ATTACHMENTS` | `20` | Lucky route: max top-level bug attachments to auto-download |
 | `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
 
 Additional make targets:
@@ -60,16 +65,20 @@ make clean       # remove containers, volumes, prune images
 
 ```
 static/index.html        ← single-page UI, plain JS, SSE consumer; includes file explorer drawer
-src/index.ts             ← entry point: wires MockBugTracker + ClineSdkAgentRunner, calls createApp()
+src/index.ts             ← entry point: wires MockBugTracker + ClineCoreAgentRunner, calls createApp()
 src/app.ts               ← Express app factory (createApp), all routes, SSE streaming
 src/db.ts                ← SQLite via node:sqlite (built-in, no native addon)
 src/logger.ts            ← thin console wrapper with timestamps + levels
 src/broadcast.ts         ← SSE presence room (addClient/removeClient/broadcast), 25s ping keepalive
 src/prompts/
-  promptLoader.ts        ← loadPrompt(name) reads <name>.md from PROMPTS_DIR (or bundled src/prompts/); renderPrompt(template, vars) does {{var}} substitution
-  task.md                ← system prompt for normal analysis sessions
-  lucky.md               ← three-phase RCA prompt for Lucky analyzer
-  wiki-synthesis.md      ← LLM prompt template for wiki entry synthesis (uses {{bugId}}, {{module}}, {{today}}, {{bugComments}}, {{transcript}})
+  promptLoader.ts        ← loadPrompt, loadFragment, renderPrompt ({{var}}), composePrompt (join fragments)
+  base.md                ← ClineCore overridePrompt (act/plan analyze + Lucky act mode)
+  base-yolo.md           ← overridePrompt when mode=yolo (Lucky only); enables submit_and_exit termination
+  environment.md         ← tools + Android file reference; prepended to every user turn
+  lucky.md               ← Lucky user question (three-phase RCA instructions)
+  wiki-synthesis.md      ← wiki entry generation template ({{bugId}}, {{module}}, etc.)
+  fragments/rules/       ← domain rules → buildSystemRules() → {{CLINE_RULES}} slot
+  fragments/user/        ← per-turn context → buildPrompt() / buildFollowUpPrompt()
 src/services/
   bugTracker.ts          ← BugTracker interface + MockBugTracker + InternalBugTracker stub
   attachmentService.ts   ← workspace creation, file download, bug_summary.md write
@@ -77,11 +86,10 @@ src/services/
   wikiService.ts         ← create/list/read troubleshooting wiki entries; buildWikiSynthesisPrompt (uses wiki-synthesis.md template)
 src/agent/
   agentRunner.ts         ← AgentRunner interface + AgentEvent types
-  agentPrompt.ts         ← builds agent prompt string; accepts taskContext (from task.md), fileComments, skills, wikiRootIndex, priorReports
-  clineCoreAgentRunner.ts ← ClineCoreAgentRunner (@cline/sdk ClineCore, session-aware); loads task.md via loadPrompt; passes prior agent_notes/ reports
+  agentPrompt.ts         ← buildSystemRules(), buildPrompt(), buildFollowUpPrompt() via composePrompt + fragments
+  clineCoreAgentRunner.ts ← ClineCoreAgentRunner; base.md + rules + environment; prior agent_notes/ reports
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
-  environment.md         ← agent environment context (tools, workspace layout) — read by agent every task
-  luckyAnalyzer.ts       ← runLucky(): loads lucky.md via loadPrompt, runs ephemeral agent session for structured RCA
+  luckyAnalyzer.ts       ← runLucky(): lucky.md as user question; ephemeral session (not persisted)
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
 wiki/                    ← two-level knowledge base: index.md → <module>/index.md → dated entries
 e2e/
@@ -95,21 +103,36 @@ fixtures/                ← static fixture files for tests
 
 ## Key design decisions
 
-**AgentRunner is an interface.** `ClineSdkAgentRunner` is the only implementation. To add CLI fallback: create `clineCliRunner.ts` implementing the same interface, swap one line in `index.ts`. Product code never imports `@cline/sdk` directly.
+**AgentRunner is an interface.** `ClineCoreAgentRunner` is the only implementation. To add CLI fallback: create `clineCliRunner.ts` implementing the same interface, swap one line in `index.ts`. Product code never imports `@cline/sdk` directly (except `clineCoreAgentRunner.ts` and `skillsLoader.ts`).
 
 **BugTracker is an interface.** `MockBugTracker` returns hardcoded data. `InternalBugTracker` stub exists in `bugTracker.ts` — implement the two methods and swap in `index.ts`.
 
 **Agent sessions persist across turns.** `cline_session_id` is stored in SQLite and passed back on follow-up turns so `ClineCoreAgentRunner` calls `cline.send()` instead of `cline.start()`, preserving ClineCore's native context. If the session is no longer found (e.g. after Docker restart), the runner falls back to `cline.start()` automatically.
 
-**ClineCoreAgentRunner config**: runs in `"plan"` mode, max `AGENT_MAX_ITERATIONS` iterations. Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, `SUBMIT_AND_EXIT`, all MCP settings tools. Spawn agent and agent teams disabled.
+**ClineCoreAgentRunner config**: defaults to `"act"` mode (`GET /session/:id/analyze?mode=plan` for plan). Max `AGENT_MAX_ITERATIONS` iterations. Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, all MCP settings tools; `SUBMIT_AND_EXIT` only when `mode=yolo` (Lucky). Spawn agent and agent teams disabled.
+
+**Prompt composition** (two layers):
+1. **System prompt** — `loadPrompt("base")` or `loadPrompt("base-yolo")` passed as `overridePrompt` to `getClineDefaultSystemPrompt()`. Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` (stable per session).
+2. **User turn** — `buildPrompt()` prepends `environment.md`, then composes `fragments/user/*` (workspace, file list, skills/wiki hints, prior reports, question). Follow-ups use `buildFollowUpPrompt()` (shorter file list + question only).
 
 **Ad-hoc sessions**: users can create a session without a bug tracker entry (`POST /session/adhoc` with title/description/optional bugId), then upload files (`POST /session/:id/upload`, up to 20 files, optional `commentLabel`/`commentBody` for grouping in the file explorer). Same workspace layout and analysis flow as tracker-based sessions.
 
-**Lucky analyzer** (`luckyAnalyzer.ts`): loads the RCA prompt from `src/prompts/lucky.md` via `loadPrompt`, then runs an ephemeral agent session (not persisted to DB). `app.ts` auto-downloads top-level bug attachments and extracts zip entries into context before calling `runLucky`. Triggered via `GET /session/:id/lucky` (SSE stream). Edit `lucky.md` (or mount a custom `PROMPTS_DIR`) to change the RCA structure without rebuilding.
+**Lucky analyzer** (`luckyAnalyzer.ts`): passes `lucky.md` as the user question through the normal `analyze()` path (same system prompt stack as chat). Ephemeral — no `cline_session_id` persisted. `app.ts` auto-downloads top-level bug attachments (not comment attachments; cap `MAX_LUCKY_ATTACHMENTS`) and **fully extracts zips** into context before `runLucky` — unlike the file explorer, which lists zip contents lazily. Triggered via `GET /session/:id/lucky` (SSE). Gated by feature flag `lucky`.
 
-**Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act mode (current behavior). `GET /session/:id/lucky?mode=yolo` runs with `base-yolo.md` as the system prompt and re-enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to terminate (vs. act mode where any tool-call-less reply ends the task). The UI exposes a "yolo" checkbox next to the 🎲 button. Reports are tagged in `agent_notes/`: `lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md` for side-by-side comparison.
+**Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act (`base.md`). `?mode=yolo` uses `base-yolo.md` and enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to finish (vs act, where a tool-call-less reply ends the task). UI: "yolo" checkbox beside 🎲. Reports: `agent_notes/lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md`.
 
-**Externalized prompts**: all LLM-facing prompts live in `src/prompts/*.md` and are loaded at runtime via `promptLoader.ts`. Set `PROMPTS_DIR` to a mounted volume to edit prompts without rebuilding. Top-level prompts: `base.md` (system-prompt template passed as `overridePrompt` to ClineCore — replaces the default coding-agent framing), `environment.md` (tools + Android file reference), `lucky.md` (RCA), `wiki-synthesis.md` (wiki entry generation, supports `{{var}}` substitution). Reusable pieces live in `src/prompts/fragments/{rules,user}/` and are composed via `composePrompt` in `promptLoader.ts`.
+**Externalized prompts**: all LLM-facing text lives under `PROMPTS_DIR` (default bundled `src/prompts/`). Edit without rebuild, or mount a volume in Docker.
+
+| File / dir | Role |
+|------------|------|
+| `base.md`, `base-yolo.md` | ClineCore `overridePrompt` templates (`{{CLINE_RULES}}`, `{{PLATFORM_NAME}}`, etc.) |
+| `environment.md` | Tools + workspace/Android reference; first block of each user turn |
+| `lucky.md` | Lucky RCA instructions (injected as user question) |
+| `wiki-synthesis.md` | Wiki entry template (`renderPrompt` vars) |
+| `fragments/rules/*` | Session-stable domain rules (`role`, `rca-template`, `citation-format`, `budget`, `path-policy`, `no-modify`) |
+| `fragments/user/*` | Per-turn context (`workspace-header`, `files-*`, `skills-hint`, `wiki-hint`, `prior-reports`, `question`, `followup-files`) |
+
+`composePrompt()` in `promptLoader.ts` joins parts; `{ fragment: "rules/role" }` loads `fragments/rules/role.md`; `{ fragment: "user/question", vars: { question } }` substitutes `{{question}}`.
 
 **ClineCore system-prompt drift check**: `npm run prompts:check-cline-system` exits non-zero if `@cline/shared`'s upstream `DEFAULT_CLINE_SYSTEM_PROMPT` / `YOLO_CLINE_SYSTEM_PROMPT` differ from the snapshot in `docs/reference/cline-shared-system-prompts.md`. Run `npm run prompts:sync-cline-system` after bumping `@cline/sdk`, diff the changes, and decide whether `base.md` should follow upstream tool-call wording changes.
 
