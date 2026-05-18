@@ -8,6 +8,28 @@ import { log } from "../logger.js";
 import fs from "fs/promises";
 import path from "path";
 
+function summarizeToolInput(toolName: string | undefined, input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const inp = input as Record<string, unknown>;
+  if (toolName === "run_commands") {
+    const cmds = inp.commands;
+    if (Array.isArray(cmds) && cmds.length > 0) {
+      const joined = cmds.join(" && ");
+      return joined.length > 120 ? joined.slice(0, 120) + "…" : joined;
+    }
+  } else if (toolName === "read_files") {
+    const files = inp.files;
+    if (Array.isArray(files) && files.length > 0) {
+      return files.map((f: any) => {
+        const name = path.basename(String(f.path ?? ""));
+        const range = f.start_line != null ? `:${f.start_line}-${f.end_line ?? ""}` : "";
+        return `${name}${range}`;
+      }).join(", ");
+    }
+  }
+  return "";
+}
+
 async function buildFileCommentMap(
   workspacePath: string,
   files: string[]
@@ -169,16 +191,20 @@ export class ClineCoreAgentRunner implements AgentRunner {
             if (agentEvent.type === "content_start" && agentEvent.contentType === "text" && agentEvent.text) {
               streamedText += agentEvent.text;
               push({ type: "text", content: agentEvent.text });
+            } else if (agentEvent.type === "iteration_start") {
+              push({ type: "status", content: `iteration ${agentEvent.iteration}` });
             } else if (agentEvent.type === "content_start" && agentEvent.contentType === "tool") {
               log.debug("agent:tool-start", { tool: agentEvent.toolName, sessionId: clineSessionId });
-              push({ type: "status", content: `tool: ${agentEvent.toolName ?? "started"}` });
+              const detail = summarizeToolInput(agentEvent.toolName, agentEvent.input);
+              push({ type: "status", content: `tool: ${agentEvent.toolName ?? "started"}${detail ? ` · ${detail}` : ""}` });
             } else if (agentEvent.type === "content_end" && agentEvent.contentType === "tool") {
               if (agentEvent.error) {
                 log.warn("agent:tool-error", { tool: agentEvent.toolName, error: agentEvent.error, sessionId: clineSessionId });
                 push({ type: "tool_error", content: `tool failed: ${agentEvent.toolName ?? "unknown"} — ${agentEvent.error}` });
               } else {
                 log.debug("agent:tool-done", { tool: agentEvent.toolName, sessionId: clineSessionId });
-                push({ type: "status", content: `tool done: ${agentEvent.toolName ?? "unknown"}` });
+                const dur = agentEvent.durationMs != null ? ` · ${(agentEvent.durationMs / 1000).toFixed(1)}s` : "";
+                push({ type: "status", content: `tool done: ${agentEvent.toolName ?? "unknown"}${dur}` });
               }
             } else if (agentEvent.type === "notice" && agentEvent.message) {
               push({ type: "status", content: `notice [${agentEvent.noticeType}]: ${agentEvent.message}` });
