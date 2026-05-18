@@ -163,8 +163,18 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     try {
       const result = await saveAdHocFiles(session.workspace_path, files, comment);
+      const wsRoot = path.resolve(session.workspace_path);
+      for (const fp of result.filePaths) {
+        const resolved = path.resolve(fp);
+        if (!resolved.startsWith(wsRoot + path.sep)) {
+          log.warn("session:upload:path-outside-workspace", { sessionId: session.id, resolved, wsRoot });
+          continue;
+        }
+        sessions.addFile(session.id, resolved);
+      }
+      const updated = sessions.get(session.id)!;
       log.info("session:upload:done", { sessionId: session.id, count: files.length });
-      res.json(result);
+      res.json({ ...result, selected_files: updated.selected_files });
     } catch (err: any) {
       log.error("session:upload:error", { err: err.message });
       for (const f of files) await fs.unlink(f.path).catch(() => {});
