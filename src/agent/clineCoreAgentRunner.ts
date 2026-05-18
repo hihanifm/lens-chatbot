@@ -1,7 +1,7 @@
 import { ClineCore, DefaultToolNames, SessionSource } from "@cline/sdk";
 import type { CoreSessionEvent } from "@cline/sdk";
 import type { AgentEvent, AgentRunner } from "./agentRunner.js";
-import { buildPrompt, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
+import { buildPrompt, buildFollowUpPrompt, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
 import { loadPrompt } from "../prompts/promptLoader.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
@@ -102,6 +102,53 @@ async function buildFileCommentMap(
   return map;
 }
 
+function messageContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+  return JSON.stringify(content);
+}
+
+async function logSessionMessages(
+  cline: ClineCore,
+  clineSessionId: string,
+  workspacePath: string,
+  push: (event: AgentEvent) => void,
+): Promise<void> {
+  const messages = await cline.readMessages(clineSessionId);
+  const summary = messages.map((m: any, i: number) => {
+    const text = messageContentText(m.content);
+    return {
+      index: i,
+      role: m.role,
+      contentLength: text.length,
+      contentPreview: text.slice(0, 200),
+      hasBugTrackerContext: text.includes("## Bug Tracker Context"),
+    };
+  });
+  const logPath = path.join(
+    workspacePath,
+    "agent_notes",
+    `session-messages-${formatLogTimestamp()}.json`,
+  );
+  await fs.mkdir(path.dirname(logPath), { recursive: true });
+  await fs.writeFile(
+    logPath,
+    JSON.stringify({ clineSessionId, messageCount: messages.length, messages: summary }, null, 2),
+    "utf8",
+  );
+  const roles = summary.reduce((acc: Record<string, number>, m: { role: string }) => {
+    acc[m.role] = (acc[m.role] ?? 0) + 1;
+    return acc;
+  }, {});
+  const roleSummary = Object.entries(roles)
+    .map(([r, n]) => `${n} ${r}`)
+    .join(", ");
+  push({
+    type: "status",
+    content: `session history: ${messages.length} messages (${roleSummary}) → ${path.basename(logPath)}`,
+  });
+}
+
 function resultText(result: any): string {
   if (result && !result.text) {
     log.debug("agent:result-fields", { keys: Object.keys(result) });
@@ -147,6 +194,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
           systemPrompt: context.request.systemPrompt,
           messageCount: context.request.messages.length,
           messages: context.request.messages,
+          latestUserMessage: context.request.messages.at(-1),
           toolCount: context.request.tools.length,
           toolNames: context.request.tools.map((t: any) => t.name),
           options: context.request.options ?? {},
@@ -218,13 +266,21 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
-    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext, environmentContext });
+    const fullPrompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext, environmentContext });
+    const followUpPrompt = buildFollowUpPrompt({
+      workspacePath: input.workspacePath,
+      files: input.files,
+      question: input.question,
+      fileComments,
+    });
     const bugContext = bugJson ? formatBugContext(bugJson) : null;
-    const startPrompt = bugContext ? `${bugContext}\n\n${prompt}` : prompt;
+    const startPrompt = bugContext ? `${bugContext}\n\n${fullPrompt}` : fullPrompt;
+    const isFollowUp = !!input.clineSessionId;
+    const sentPrompt = isFollowUp ? followUpPrompt : startPrompt;
     if (flags.promptLogging) {
       const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${formatLogTimestamp()}.txt`);
       await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
-      await fs.writeFile(promptLogPath, prompt, "utf8").catch((err) => log.warn("agent:prompt-log-failed", { error: err.message }));
+      await fs.writeFile(promptLogPath, sentPrompt, "utf8").catch((err) => log.warn("agent:prompt-log-failed", { error: err.message }));
     }
     let clineSessionId = input.clineSessionId;
 
@@ -279,7 +335,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
         if (clineSessionId) {
           // Follow-up turn — reuse existing ClineCore session
           unsubscribe = setupSubscription(clineSessionId);
-          const result = await cline.send({ sessionId: clineSessionId, prompt });
+          const result = await cline.send({ sessionId: clineSessionId, prompt: followUpPrompt });
           const text = resultText(result);
           if (text && !streamedText.includes(text)) push({ type: "text", content: text });
         } else {
@@ -320,6 +376,13 @@ export class ClineCoreAgentRunner implements AgentRunner {
           errored = true;
         }
       } finally {
+        if (flags.llmRequestLogging && clineSessionId) {
+          try {
+            await logSessionMessages(cline, clineSessionId, input.workspacePath, push);
+          } catch (err: any) {
+            log.warn("agent:session-messages-log-failed", { error: err.message });
+          }
+        }
         unsubscribe();
         done = true;
         wakeup.fn?.();

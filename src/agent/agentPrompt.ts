@@ -71,3 +71,24 @@ export function buildPrompt(input: {
     `New question:\n${input.question}`,
   ].join("\n");
 }
+
+export function buildFollowUpPrompt(input: {
+  workspacePath: string;
+  files: string[];
+  question: string;
+  fileComments?: Record<string, string>;
+}): string {
+  const parts: string[] = [];
+  if (input.files.length) {
+    const fileList = input.files
+      .map((f) => {
+        const rel = path.relative(input.workspacePath, f);
+        const comment = input.fileComments?.[f];
+        return comment ? `- ${rel}\n  Comment: "${comment}"` : `- ${rel}`;
+      })
+      .join("\n");
+    parts.push(`Selected files (relative to WORKSPACE):\n${fileList}`);
+  }
+  parts.push(`New question:\n${input.question}`);
+  return parts.join("\n\n");
+}
