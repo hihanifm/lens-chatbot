@@ -65,18 +65,23 @@ src/app.ts               ← Express app factory (createApp), all routes, SSE st
 src/db.ts                ← SQLite via node:sqlite (built-in, no native addon)
 src/logger.ts            ← thin console wrapper with timestamps + levels
 src/broadcast.ts         ← SSE presence room (addClient/removeClient/broadcast), 25s ping keepalive
+src/prompts/
+  promptLoader.ts        ← loadPrompt(name) reads <name>.md from PROMPTS_DIR (or bundled src/prompts/); renderPrompt(template, vars) does {{var}} substitution
+  task.md                ← system prompt for normal analysis sessions
+  lucky.md               ← three-phase RCA prompt for Lucky analyzer
+  wiki-synthesis.md      ← LLM prompt template for wiki entry synthesis (uses {{bugId}}, {{module}}, {{today}}, {{bugComments}}, {{transcript}})
 src/services/
   bugTracker.ts          ← BugTracker interface + MockBugTracker + InternalBugTracker stub
   attachmentService.ts   ← workspace creation, file download, bug_summary.md write
   workspaceExplorer.ts   ← builds VirtualTree (AttachmentNodes + CommentSections) for file explorer
-  wikiService.ts         ← create/list/read troubleshooting wiki entries; buildWikiSynthesisPrompt
+  wikiService.ts         ← create/list/read troubleshooting wiki entries; buildWikiSynthesisPrompt (uses wiki-synthesis.md template)
 src/agent/
   agentRunner.ts         ← AgentRunner interface + AgentEvent types
-  agentPrompt.ts         ← builds agent prompt string; accepts fileComments + skills
-  clineCoreAgentRunner.ts ← ClineCoreAgentRunner (@cline/sdk ClineCore, session-aware)
+  agentPrompt.ts         ← builds agent prompt string; accepts taskContext (from task.md), fileComments, skills, wikiRootIndex, priorReports
+  clineCoreAgentRunner.ts ← ClineCoreAgentRunner (@cline/sdk ClineCore, session-aware); loads task.md via loadPrompt; passes prior agent_notes/ reports
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
   environment.md         ← agent environment context (tools, workspace layout) — read by agent every task
-  luckyAnalyzer.ts       ← LuckyAnalyzer: auto-downloads attachments, extracts zips, runs structured RCA
+  luckyAnalyzer.ts       ← runLucky(): loads lucky.md via loadPrompt, runs ephemeral agent session for structured RCA
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
 wiki/                    ← two-level knowledge base: index.md → <module>/index.md → dated entries
 e2e/
@@ -100,7 +105,11 @@ fixtures/                ← static fixture files for tests
 
 **Ad-hoc sessions**: users can create a session without a bug tracker entry (`POST /session/adhoc` with title/description/optional bugId), then upload files (`POST /session/:id/upload`, up to 20 files, optional `commentLabel`/`commentBody` for grouping in the file explorer). Same workspace layout and analysis flow as tracker-based sessions.
 
-**Lucky analyzer** (`luckyAnalyzer.ts`): structured three-phase RCA (Evidence Collection → Root Cause Hypothesis → Targeted Interrogation). Auto-downloads top-level bug attachments and extracts zip entries into context. Runs as an ephemeral agent session (not persisted). Triggered via `GET /session/:id/lucky` (SSE stream).
+**Lucky analyzer** (`luckyAnalyzer.ts`): loads the RCA prompt from `src/prompts/lucky.md` via `loadPrompt`, then runs an ephemeral agent session (not persisted to DB). `app.ts` auto-downloads top-level bug attachments and extracts zip entries into context before calling `runLucky`. Triggered via `GET /session/:id/lucky` (SSE stream). Edit `lucky.md` (or mount a custom `PROMPTS_DIR`) to change the RCA structure without rebuilding.
+
+**Externalized prompts**: all LLM-facing prompts live in `src/prompts/*.md` and are loaded at runtime via `promptLoader.ts`. Set `PROMPTS_DIR` to a mounted volume to edit prompts without rebuilding. Three prompts: `task.md` (normal analysis), `lucky.md` (RCA), `wiki-synthesis.md` (wiki entry generation, supports `{{var}}` substitution).
+
+**Prior reports**: on every `analyze` call, `clineCoreAgentRunner.ts` scans `agent_notes/` for previous `.md` reports and passes them to `buildPrompt` as `priorReports`. The prompt tells the agent to read the most recent report first and reuse its root cause rather than re-deriving from scratch.
 
 **Admin PIN**: default is `"admin"` (logged as a warning at startup if `ADMIN_PIN` env var was not set). Hashed with scrypt, stored in SQLite `settings` table. All LLM and skill-directory changes via API require PIN. Extra skill directories are also stored in DB and merged with `SKILLS_DIR` at load time.
 
