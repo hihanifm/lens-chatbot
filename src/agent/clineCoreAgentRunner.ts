@@ -8,6 +8,41 @@ import { log } from "../logger.js";
 import fs from "fs/promises";
 import path from "path";
 
+function formatBugContext(bug: any): string {
+  const lines: string[] = [
+    `## Bug Tracker Context`,
+    `**ID:** ${bug.id}  **Title:** ${bug.title}`,
+    `**State:** ${bug.state}  **Module:** ${bug.module}  **Owner:** ${bug.owner ?? "—"}  **Author:** ${bug.author ?? "—"}`,
+    `**Created:** ${bug.created_at}  **Updated:** ${bug.updated_at}`,
+    ``,
+    `**Description:**`,
+    bug.description || "(none)",
+  ];
+
+  const topAtts: any[] = bug.attachments ?? [];
+  if (topAtts.length > 0) {
+    lines.push(``, `**Attachments:**`);
+    for (const a of topAtts) {
+      lines.push(`- ${a.name}${a.size ? ` (${a.size} bytes)` : ""}`);
+    }
+  }
+
+  const comments: any[] = [...(bug.comments ?? [])].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  if (comments.length > 0) {
+    lines.push(``, `**Comments (chronological):**`);
+    for (const c of comments) {
+      lines.push(``, `> **${c.author}** (${c.created_at})`, `> ${c.body}`);
+      for (const a of c.attachments ?? []) {
+        lines.push(`>   - attachment: ${a.name}${a.size ? ` (${a.size} bytes)` : ""}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function summarizeToolInput(toolName: string | undefined, input: unknown): string {
   if (!input || typeof input !== "object") return "";
   const inp = input as Record<string, unknown>;
@@ -135,12 +170,13 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const flags = settings.getFeatureFlags();
-    const [skills, wikiRootIndex, fileComments, taskContext, environmentContext] = await Promise.all([
+    const [skills, wikiRootIndex, fileComments, taskContext, environmentContext, bugJson] = await Promise.all([
       loadAgentSkills(),
       flags.wiki ? getWikiRootIndexPath() : Promise.resolve(null),
       buildFileCommentMap(input.workspacePath, input.files),
       loadPrompt("task"),
       loadPrompt("environment"),
+      fs.readFile(path.join(input.workspacePath, "bug.json"), "utf8").then(JSON.parse).catch(() => null),
     ]);
     const agentNotesDir = path.join(input.workspacePath, "agent_notes");
     let priorReports: string[] = [];
@@ -174,6 +210,8 @@ export class ClineCoreAgentRunner implements AgentRunner {
     }
 
     const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext, environmentContext });
+    const bugContext = bugJson ? formatBugContext(bugJson) : null;
+    const startPrompt = bugContext ? `${bugContext}\n\n${prompt}` : prompt;
     if (flags.promptLogging) {
       const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${Date.now()}.txt`);
       await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
@@ -241,7 +279,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
           const startResult = await cline.start({
             source: SessionSource.API,
             interactive: false,
-            prompt,
+            prompt: startPrompt,
             config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging),
           });
           clineSessionId = startResult.sessionId;
@@ -259,7 +297,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
           const startResult = await cline.start({
             source: SessionSource.API,
             interactive: false,
-            prompt,
+            prompt: startPrompt,
             config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging),
           });
           clineSessionId = startResult.sessionId;
