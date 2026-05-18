@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "crypto";
+import { join } from "path";
 import { log } from "./logger.js";
 
 const DB_PATH = process.env.DATA_DIR
@@ -217,7 +218,7 @@ export const settings = {
   },
 
   getSkillsDirs(): string[] {
-    const envDirs = (process.env.SKILLS_DIR ?? "").split(":").filter(Boolean);
+    const envDirs = (process.env.SKILLS_DIR ?? join(process.cwd(), "skills")).split(":").filter(Boolean);
     const extraDirs = settings.getExtraSkillsDirs();
     return [...new Set([...envDirs, ...extraDirs])];
   },
