@@ -732,16 +732,7 @@
   const CTX_MAX = 25;
 
   function syncChatInputEnabled() {
-    if (!currentSessionId) {
-      document.getElementById('question-input').disabled = true;
-      document.getElementById('send-btn').disabled = true;
-      return;
-    }
-    // Tracker bugs: chat enabled on load (bug context is in the first agent prompt).
-    // Ad-hoc sessions: require at least one file in context.
-    const needsFiles = isAdhocSession;
-    const hasFiles = Object.keys(contextFiles).length > 0;
-    const enabled = !needsFiles || hasFiles;
+    const enabled = !!currentSessionId;
     document.getElementById('question-input').disabled = !enabled;
     document.getElementById('send-btn').disabled = !enabled;
   }

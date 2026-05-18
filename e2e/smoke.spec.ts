@@ -34,6 +34,16 @@ async function ensureModemLogSelected(page: Page) {
   await expect(page.locator("#context-bar")).toContainText("modem_log.txt");
 }
 
+test("adhoc session enables chat without files in context", async ({ page }) => {
+  await seedAuth(page);
+  await page.goto("/");
+  await page.locator("#tab-adhoc").click();
+  await page.locator("#adhoc-title-input").fill("E2E adhoc chat");
+  await page.locator("#adhoc-create-btn").click();
+  await expect(page.locator("#question-input")).toBeEnabled({ timeout: 10_000 });
+  await expect(page.locator("#send-btn")).toBeEnabled();
+});
+
 test("adhoc upload shows global progress banner", async ({ page }) => {
   await seedAuth(page);
   await page.route("**/session/*/upload", async (route) => {
