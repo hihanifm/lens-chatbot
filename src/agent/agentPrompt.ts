@@ -19,6 +19,10 @@ export async function getWikiRootIndexPath(): Promise<string | null> {
   }
 }
 
+/** Shown when no workspace paths passed verification (exist on disk). */
+export const NO_FILES_DOWNLOADED_LINE =
+  "(none downloaded — use Files panel to download attachments, then add to context)";
+
 export function buildPrompt(input: {
   workspacePath: string;
   files: string[];
@@ -36,7 +40,7 @@ export function buildPrompt(input: {
         const comment = input.fileComments?.[f];
         return comment ? `- ${rel}\n  Comment: "${comment}"` : `- ${rel}`;
       }).join("\n")
-    : "(none selected)";
+    : NO_FILES_DOWNLOADED_LINE;
   const skillsHint = input.skills.length > 0
     ? `Available skills - read the relevant ones before starting:\n${input.skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n")}\n\n`
     : "";
@@ -88,6 +92,8 @@ export function buildFollowUpPrompt(input: {
       })
       .join("\n");
     parts.push(`Selected files (relative to WORKSPACE):\n${fileList}`);
+  } else {
+    parts.push(`Selected files (relative to WORKSPACE):\n${NO_FILES_DOWNLOADED_LINE}`);
   }
   parts.push(`New question:\n${input.question}`);
   return parts.join("\n\n");

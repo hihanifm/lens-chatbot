@@ -19,6 +19,18 @@ import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js"
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
+async function listDownloadedAttachmentPaths(workspacePath: string): Promise<string[]> {
+  try {
+    const attDir = path.join(workspacePath, "attachments");
+    const entries = await fs.readdir(attDir, { recursive: true, withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile())
+      .map((e) => path.join(e.parentPath ?? (e as any).path ?? attDir, e.name));
+  } catch {
+    return [];
+  }
+}
+
 let skillsCache: { name: string; description: string; triggers: string[] }[] | null = null;
 
 export async function hashPin(pin: string): Promise<string> {
@@ -144,14 +156,16 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (existing) {
       await saveBugSummary(existing.workspace_path, bug);
       log.info("session:reused", { sessionId: existing.id });
-      return res.json({ session: existing, bug });
+      const downloaded_files = await listDownloadedAttachmentPaths(existing.workspace_path);
+      return res.json({ session: existing, bug, downloaded_files });
     }
 
     const workspacePath = await getOrCreateWorkspace(bugId);
     await saveBugSummary(workspacePath, bug);
     const session = sessions.create(bugId, workspacePath);
     log.info("session:created", { sessionId: session.id, workspace: workspacePath });
-    res.json({ session, bug });
+    const downloaded_files = await listDownloadedAttachmentPaths(workspacePath);
+    res.json({ session, bug, downloaded_files });
   });
 
   app.get("/sessions", (req, res) => {
@@ -170,16 +184,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     } catch (err: any) {
       log.debug("session:bug-json-missing", { sessionId: req.params.id, error: err.message, stack: err.stack });
     }
-    let downloaded_files: string[] = [];
-    try {
-      const attDir = path.join(session.workspace_path, "attachments");
-      const entries = await fs.readdir(attDir, { recursive: true, withFileTypes: true });
-      downloaded_files = entries
-        .filter(e => e.isFile())
-        .map(e => path.join(e.parentPath ?? (e as any).path ?? attDir, e.name));
-    } catch (err: any) {
-      log.debug("session:attachments-dir-missing", { sessionId: req.params.id, error: err.message });
-    }
+    let downloaded_files: string[] = await listDownloadedAttachmentPaths(session.workspace_path);
     res.json({ session, messages: messages.list(req.params.id), bug, downloaded_files });
   });
 

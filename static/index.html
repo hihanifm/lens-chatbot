@@ -927,6 +927,15 @@
     document.getElementById('wiki-module').value = bug.module ?? '';
   }
 
+  function maybeAppendDownloadAttachmentsNudge(bug, downloadedFiles, selectedFiles) {
+    if (!bug || bug.state === 'adhoc') return;
+    const hasDownloaded = (downloadedFiles ?? []).length > 0;
+    const hasContext = (selectedFiles ?? []).length > 0;
+    if (!hasDownloaded && !hasContext) {
+      appendMessage('status', 'No log files in workspace yet — download attachments from the bug panel or Files drawer for log analysis.');
+    }
+  }
+
   async function resumeSession(sessionId) {
     if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
     const res = await fetch(`/session/${sessionId}`);
@@ -948,6 +957,8 @@
     const chat = document.getElementById('chat');
     chat.innerHTML = '';
     for (const m of messages) appendMessage(m.role, m.content, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null);
+
+    maybeAppendDownloadAttachmentsNudge(bug, downloaded_files, session.selected_files ?? []);
 
     syncChatInputEnabled();
     if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
@@ -1070,14 +1081,15 @@
       appendMessage('error', `✗ Failed to load bug: ${body.error ?? res.statusText} (HTTP ${res.status})`);
       return;
     }
-    const { session, bug } = body;
+    const { session, bug, downloaded_files } = body;
     currentSessionId = session.id;
     addSeenSession(session.id);
     contextFiles = {};
     for (const fp of session.selected_files ?? []) contextFiles[fp] = fp.split('/').pop();
     updateContextBar();
-    renderBugPanel(bug, session.selected_files ?? []);
+    renderBugPanel(bug, session.selected_files ?? [], downloaded_files ?? []);
     document.getElementById('chat').innerHTML = '';
+    maybeAppendDownloadAttachmentsNudge(bug, downloaded_files, session.selected_files ?? []);
     syncChatInputEnabled();
     if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';

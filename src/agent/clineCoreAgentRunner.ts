@@ -21,17 +21,11 @@ function formatBugContext(bug: any): string {
     `**State:** ${bug.state}  **Module:** ${bug.module}  **Owner:** ${bug.owner ?? "—"}  **Author:** ${bug.author ?? "—"}`,
     `**Created:** ${bug.created_at}  **Updated:** ${bug.updated_at}`,
     ``,
+    `Log files are not in the workspace until you download them from the Files panel. Analysis without downloads is limited to the bug description and comments below.`,
+    ``,
     `**Description:**`,
     bug.description || "(none)",
   ];
-
-  const topAtts: any[] = bug.attachments ?? [];
-  if (topAtts.length > 0) {
-    lines.push(``, `**Attachments:**`);
-    for (const a of topAtts) {
-      lines.push(`- ${a.name}${a.size ? ` (${a.size} bytes)` : ""}`);
-    }
-  }
 
   const comments: any[] = [...(bug.comments ?? [])].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -40,13 +34,23 @@ function formatBugContext(bug: any): string {
     lines.push(``, `**Comments (chronological):**`);
     for (const c of comments) {
       lines.push(``, `> **${c.author}** (${c.created_at})`, `> ${c.body}`);
-      for (const a of c.attachments ?? []) {
-        lines.push(`>   - attachment: ${a.name}${a.size ? ` (${a.size} bytes)` : ""}`);
-      }
     }
   }
 
   return lines.join("\n");
+}
+
+async function filterExistingPaths(paths: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of paths) {
+    try {
+      await fs.access(p);
+      out.push(p);
+    } catch {
+      /* path missing — excluded from prompt context */
+    }
+  }
+  return out;
 }
 
 function summarizeToolInput(toolName: string | undefined, input: unknown): string {
@@ -228,10 +232,11 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const flags = settings.getFeatureFlags();
+    const existingFiles = await filterExistingPaths(input.files);
     const [skills, wikiRootIndex, fileComments, taskContext, environmentContext, bugJson] = await Promise.all([
       loadAgentSkills(),
       flags.wiki ? getWikiRootIndexPath() : Promise.resolve(null),
-      buildFileCommentMap(input.workspacePath, input.files),
+      buildFileCommentMap(input.workspacePath, existingFiles),
       loadPrompt("task"),
       loadPrompt("environment"),
       fs.readFile(path.join(input.workspacePath, "bug.json"), "utf8").then(JSON.parse).catch(() => null),
@@ -283,8 +288,8 @@ export class ClineCoreAgentRunner implements AgentRunner {
     }
 
     const logQuestion = isLlmSanitizeEnabled() ? questionForLlm : input.question;
-    log.info("agent:start", { runtime: "cline-core", model: llmCfg.model, files: input.files.length, skills: skills.length, question: logQuestion.slice(0, 60), reuse: !!input.clineSessionId });
-    push({ type: "status", content: `provider: ${llmCfg.provider} | model: ${llmCfg.model} | runtime: cline-core | files: ${input.files.length}` });
+    log.info("agent:start", { runtime: "cline-core", model: llmCfg.model, files: existingFiles.length, skills: skills.length, question: logQuestion.slice(0, 60), reuse: !!input.clineSessionId });
+    push({ type: "status", content: `provider: ${llmCfg.provider} | model: ${llmCfg.model} | runtime: cline-core | files: ${existingFiles.length}` });
     if (skills.length > 0) {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
@@ -294,6 +299,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
     const fullPrompt = buildPrompt({
       ...input,
+      files: existingFiles,
       question: questionForLlm,
       fileComments: fileCommentsForLlm,
       skills,
@@ -304,7 +310,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
     });
     const followUpPrompt = buildFollowUpPrompt({
       workspacePath: input.workspacePath,
-      files: input.files,
+      files: existingFiles,
       question: questionForLlm,
       fileComments: fileCommentsForLlm,
     });
