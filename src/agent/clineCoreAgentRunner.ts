@@ -1,6 +1,6 @@
 import { ClineCore, DefaultToolNames, SessionSource } from "@cline/sdk";
 import type { CoreSessionEvent } from "@cline/sdk";
-import type { AgentEvent, AgentRunner } from "./agentRunner.js";
+import type { AgentEvent, AgentRunner, ToolCommandLine } from "./agentRunner.js";
 import { buildPrompt, buildFollowUpPrompt, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
 import { loadPrompt } from "../prompts/promptLoader.js";
 import { settings } from "../db.js";
@@ -51,6 +51,21 @@ async function filterExistingPaths(paths: string[]): Promise<string[]> {
     }
   }
   return out;
+}
+
+/** Parses run_commands tool output: array of { query, success, error? }. */
+function parseRunCommandsOutput(output: unknown): ToolCommandLine[] | null {
+  if (!Array.isArray(output) || output.length === 0) return null;
+  const rows: ToolCommandLine[] = [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") return null;
+    const o = item as Record<string, unknown>;
+    if (typeof o.query !== "string" || typeof o.success !== "boolean") return null;
+    const row: ToolCommandLine = { query: o.query, success: o.success };
+    if (typeof o.error === "string" && o.error.length > 0) row.error = o.error;
+    rows.push(row);
+  }
+  return rows;
 }
 
 function summarizeToolInput(toolName: string | undefined, input: unknown): string {
@@ -344,6 +359,15 @@ export class ClineCoreAgentRunner implements AgentRunner {
               if (agentEvent.error) {
                 log.warn("agent:tool-error", { tool: agentEvent.toolName, error: agentEvent.error, sessionId: clineSessionId });
                 push({ type: "tool_error", content: `tool failed: ${agentEvent.toolName ?? "unknown"} — ${agentEvent.error}` });
+              } else if (agentEvent.toolName === "run_commands") {
+                const perCmd = parseRunCommandsOutput(agentEvent.output);
+                if (perCmd) {
+                  push({ type: "tool_command", content: "", toolCommands: perCmd });
+                } else {
+                  log.debug("agent:tool-done", { tool: agentEvent.toolName, sessionId: clineSessionId });
+                  const dur = agentEvent.durationMs != null ? ` · ${(agentEvent.durationMs / 1000).toFixed(1)}s` : "";
+                  push({ type: "status", content: `tool done: ${agentEvent.toolName ?? "unknown"}${dur}` });
+                }
               } else {
                 log.debug("agent:tool-done", { tool: agentEvent.toolName, sessionId: clineSessionId });
                 const dur = agentEvent.durationMs != null ? ` · ${(agentEvent.durationMs / 1000).toFixed(1)}s` : "";

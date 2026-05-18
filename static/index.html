@@ -165,11 +165,14 @@
     .eng-log-chevron { flex-shrink: 0; width: 12px; transition: transform 0.15s; }
     .eng-log.expanded .eng-log-chevron { transform: rotate(90deg); }
     .eng-log-label { font-weight: 600; color: #6b7280; }
+    .eng-log-failure-badge { display: none; margin-left: 4px; font-size: 10px; font-weight: 600; color: #dc2626; }
+    .eng-log-has-failures .eng-log-failure-badge { display: inline; }
     .eng-log-summary { color: #9ca3af; font-weight: 400; }
     .eng-log-body { display: none; flex-direction: column; gap: 1px; padding: 2px 0 4px 18px; }
     .eng-log.expanded .eng-log-body { display: flex; }
     .eng-log-line { padding: 1px 6px; }
     .eng-log-line.tool-error { color: #dc2626; }
+    .eng-log-line.cmd-ok { color: #15803d; }
     .msg.error { align-self: flex-start; background: #fff5f5; border: 1px solid #fecaca; color: #dc2626; font-family: monospace; font-size: 12px; max-width: 100%; border-radius: 8px; }
     .empty-state { text-align: center; color: #9ca3af; margin: auto; font-size: 14px; line-height: 1.6; }
 
@@ -691,6 +694,10 @@
         appendMessage('error', `✗ ${data.user}: ${data.content}`);
       } else if (data.type === 'status') {
         appendEngineeringLogLine(`[${data.user}] ${data.content}`);
+      } else if (data.type === 'tool_error') {
+        appendEngineeringLogLine(`[${data.user}] ${data.content}`, true);
+      } else if (data.type === 'tool_command') {
+        appendEngineeringToolCommands(data.commands, data.user);
       }
     };
 
@@ -1405,6 +1412,8 @@
         appendEngineeringLogLine(data.content);
       } else if (data.type === 'tool_error') {
         appendEngineeringLogLine(data.content, true);
+      } else if (data.type === 'tool_command') {
+        appendEngineeringToolCommands(data.commands);
       } else if (data.type === 'text') {
         assistantEl.textContent += data.content;
         assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1585,6 +1594,7 @@
         <button type="button" class="eng-log-toggle" aria-expanded="true">
           <span class="eng-log-chevron">▶</span>
           <span class="eng-log-label">Engineering log</span>
+          <span class="eng-log-failure-badge">✗ failures</span>
           <span class="eng-log-summary">· running…</span>
         </button>
       </div>
@@ -1602,16 +1612,43 @@
     group.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 
+  function bumpEngLogSummary() {
+    if (!currentEngLog) return;
+    const body = currentEngLog.querySelector('.eng-log-body');
+    const n = body.childElementCount;
+    currentEngLog.querySelector('.eng-log-summary').textContent = `· ${n} event${n === 1 ? '' : 's'}`;
+  }
+
+  function appendEngineeringToolCommands(commands, remoteUser) {
+    if (!currentEngLog || !commands || commands.length === 0) return;
+    const body = currentEngLog.querySelector('.eng-log-body');
+    const userPrefix = remoteUser ? `[${remoteUser}] ` : '';
+    for (const c of commands) {
+      const ok = c.success === true;
+      if (!ok) currentEngLog.classList.add('eng-log-has-failures');
+      const line = document.createElement('div');
+      line.className = 'eng-log-line msg status' + (ok ? ' cmd-ok' : ' cmd-fail tool-error');
+      const q = typeof c.query === 'string' ? c.query : String(c.query ?? '');
+      const truncated = q.length > 280 ? q.slice(0, 280) + '…' : q;
+      line.textContent = `${userPrefix}${ok ? '✓' : '✗'} ${truncated}${c.error ? ' — ' + c.error : ''}`;
+      body.appendChild(line);
+    }
+    bumpEngLogSummary();
+    currentEngLog.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
   function appendEngineeringLogLine(content, isError = false) {
     if (!currentEngLog) return;
     const body = currentEngLog.querySelector('.eng-log-body');
     const line = document.createElement('div');
     line.className = 'eng-log-line msg status';
-    if (isError) line.classList.add('tool-error');
+    if (isError) {
+      line.classList.add('tool-error');
+      currentEngLog.classList.add('eng-log-has-failures');
+    }
     line.textContent = content;
     body.appendChild(line);
-    const n = body.childElementCount;
-    currentEngLog.querySelector('.eng-log-summary').textContent = `· ${n} event${n === 1 ? '' : 's'}`;
+    bumpEngLogSummary();
     currentEngLog.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 

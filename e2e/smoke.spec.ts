@@ -97,6 +97,20 @@ test("analyze this uses downloaded attachment context", async ({ page }) => {
   await expect(page.locator(".msg.assistant")).toContainText("attachments/modem_log.txt", { timeout: 15_000 });
 });
 
+test("engineering log shows per-command tool_command lines", async ({ page }) => {
+  await seedAuth(page);
+  await page.goto("/");
+  await page.locator("#bug-id-input").fill("BUG-123");
+  await page.locator("#load-bug-btn").click();
+  await expect(page.locator("#bug-info")).toBeVisible();
+  await ensureModemLogSelected(page);
+  await page.locator("#question-input").fill("__tool_command_test__");
+  await page.locator("#send-btn").click();
+  await expect(page.locator(".eng-log-line.cmd-ok")).toContainText("✓ echo ok", { timeout: 15_000 });
+  await expect(page.locator(".eng-log-line.cmd-fail")).toContainText("✗ exit 1");
+  await expect(page.locator(".eng-log.eng-log-has-failures .eng-log-failure-badge")).toBeVisible();
+});
+
 test("shared session: two tabs see same session and broadcast", async ({ browser }) => {
   // Two separate browser contexts (Tab A and Tab B)
   const ctxA = await browser.newContext();

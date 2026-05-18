@@ -409,6 +409,19 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           const payload = { type: "status", content: event.content, user: user.name, clientId };
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
           broadcast(req.params.id, payload, clientId);
+        } else if (event.type === "tool_error") {
+          const payload = { type: "tool_error", content: event.content, user: user.name, clientId };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+          broadcast(req.params.id, payload, clientId);
+        } else if (event.type === "tool_command") {
+          const payload = {
+            type: "tool_command",
+            commands: event.toolCommands ?? [],
+            user: user.name,
+            clientId,
+          };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+          broadcast(req.params.id, payload, clientId);
         }
       }
     } catch (err: any) {
