@@ -17,6 +17,7 @@ import { loadAgentSkills } from "./agent/agentPrompt.js";
 import { runLucky } from "./agent/luckyAnalyzer.js";
 import { log } from "./logger.js";
 import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js";
+import { classifyBatch, shouldAutoSelect, summarizeBatch } from "./services/attachmentFilter.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -163,8 +164,17 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     try {
       const result = await saveAdHocFiles(session.workspace_path, files, comment);
-      log.info("session:upload:done", { sessionId: session.id, count: files.length });
-      res.json(result);
+      // Auto-select via attachment-filter skill (priority/useful only).
+      const classified = await classifyBatch(result.filePaths, session.workspace_path);
+      const autoAdded: string[] = [];
+      for (const c of classified) {
+        if (shouldAutoSelect(c.classification)) {
+          sessions.addFile(session.id, c.absPath);
+          autoAdded.push(c.relPath);
+        }
+      }
+      log.info("session:upload:done", { sessionId: session.id, count: files.length, autoSelected: autoAdded.length });
+      res.json({ ...result, autoSelected: autoAdded });
     } catch (err: any) {
       log.error("session:upload:error", { err: err.message });
       for (const f of files) await fs.unlink(f.path).catch(() => {});
@@ -311,8 +321,17 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       attName,
       session.workspace_path
     );
-    log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length });
-    res.json({ filePath, extractedFiles });
+    // Auto-select via attachment-filter skill (priority/useful only).
+    const classified = await classifyBatch([filePath, ...extractedFiles], session.workspace_path);
+    const autoAdded: string[] = [];
+    for (const c of classified) {
+      if (shouldAutoSelect(c.classification)) {
+        sessions.addFile(req.params.id, c.absPath);
+        autoAdded.push(c.relPath);
+      }
+    }
+    log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length, autoSelected: autoAdded.length });
+    res.json({ filePath, extractedFiles, autoSelected: autoAdded });
   });
 
   app.patch("/session/:id/files", (req, res) => {
@@ -487,6 +506,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       if (allAttachments.length > maxLuckyAttachments) {
         res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] ${allAttachments.length} attachments found — processing first ${maxLuckyAttachments} (set MAX_LUCKY_ATTACHMENTS to override).` })}\n\n`);
       }
+      const candidatePaths: string[] = [];
       for (const att of allAttachments.slice(0, maxLuckyAttachments)) {
         const attPath = path.join(session.workspace_path, "attachments", att.name);
         let downloaded = true;
@@ -508,17 +528,26 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
               if (!entry.extracted) {
                 try {
                   res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Extracting ${entry.innerPath}...` })}\n\n`);
-                  sessions.addFile(req.params.id, await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
+                  candidatePaths.push(await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
                 } catch { /* skip bad entry */ }
               } else if (entry.filePath) {
-                sessions.addFile(req.params.id, entry.filePath);
+                candidatePaths.push(entry.filePath);
               }
             }
           } catch { /* skip unreadable zip */ }
         } else {
-          sessions.addFile(req.params.id, attPath);
+          candidatePaths.push(attPath);
         }
       }
+
+      // Apply attachment-filter skill — keep priority/useful, drop skip/oversize.
+      const classified = await classifyBatch(candidatePaths, session.workspace_path);
+      for (const c of classified) {
+        if (shouldAutoSelect(c.classification)) sessions.addFile(req.params.id, c.absPath);
+      }
+      const summary = summarizeBatch(classified);
+      res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Filter: kept ${summary.kept} of ${classified.length} files (priority ${summary.priority}, useful ${summary.useful}, skipped noise ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}). Override via file explorer.` })}\n\n`);
+      log.info("lucky:filter", { sessionId: req.params.id, candidates: classified.length, ...summary });
       res.write(`data: ${JSON.stringify({ type: "status", content: "[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed." })}\n\n`);
     }
 
