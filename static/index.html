@@ -529,6 +529,32 @@
 
     <hr class="s-divider" />
 
+    <div class="s-section">Features</div>
+    <div class="s-group" style="display:flex; flex-direction:column; gap:10px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#374151;">
+        <input type="checkbox" id="f-prompt-log" style="width:15px;height:15px;accent-color:var(--action);cursor:pointer;">
+        Prompt logging <span style="color:#9ca3af;font-size:11px;">(write prompt-*.txt per turn)</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#374151;">
+        <input type="checkbox" id="f-llm-log" style="width:15px;height:15px;accent-color:var(--action);cursor:pointer;">
+        LLM request logging <span style="color:#9ca3af;font-size:11px;">(write llm-request-*.json per turn)</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#374151;">
+        <input type="checkbox" id="f-wiki" style="width:15px;height:15px;accent-color:var(--action);cursor:pointer;">
+        Wiki integration <span style="color:#9ca3af;font-size:11px;">(agent hints + Add to Wiki button)</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#374151;">
+        <input type="checkbox" id="f-lucky" style="width:15px;height:15px;accent-color:var(--action);cursor:pointer;">
+        Lucky analyzer <span style="color:#9ca3af;font-size:11px;">(🎲 button + /lucky endpoint)</span>
+      </label>
+    </div>
+    <div id="f-error" class="s-error"></div>
+    <div class="s-btn-row">
+      <button class="s-btn-primary" id="f-save-btn">Save Features</button>
+    </div>
+
+    <hr class="s-divider" />
+
     <div class="s-section">Change Admin PIN</div>
     <div class="s-group">
       <label class="s-label" for="s-cur-pin">Current PIN</label>
@@ -551,6 +577,22 @@
 </div>
 
 <script type="module">
+  let featureFlags = { promptLogging: true, llmRequestLogging: true, wiki: true, lucky: true };
+
+  async function loadFeatureFlags() {
+    try {
+      const res = await fetch('/settings/features');
+      if (res.ok) featureFlags = (await res.json()).flags;
+    } catch {}
+    applyFeatureFlags();
+  }
+
+  function applyFeatureFlags() {
+    document.getElementById('lucky-btn').style.display = featureFlags.lucky ? '' : 'none';
+    const wikiBtn = document.getElementById('wiki-session-btn');
+    if (!featureFlags.wiki) wikiBtn.style.display = 'none';
+  }
+
   let currentSessionId = null;
   let isAdhocSession = false;
   const SEEN_KEY = 'warroom_seen_sessions';
@@ -857,9 +899,9 @@
     }
     document.getElementById('bug-info').style.display = 'block';
 
-    // Show wiki button only when bug is resolved
+    // Show wiki button only when bug is resolved and wiki is enabled
     const wikiBtn = document.getElementById('wiki-session-btn');
-    wikiBtn.style.display = isResolved(bug.state) ? 'inline-flex' : 'none';
+    wikiBtn.style.display = (featureFlags.wiki && isResolved(bug.state)) ? 'inline-flex' : 'none';
     wikiBtn.disabled = false;
     wikiBtn.textContent = '📖 Add to wiki';
     document.getElementById('wiki-module').value = bug.module ?? '';
@@ -889,7 +931,7 @@
 
     document.getElementById('question-input').disabled = false;
     document.getElementById('send-btn').disabled = false;
-    document.getElementById('lucky-btn').disabled = false;
+    if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(sessionId);
     loadSessions();
@@ -1021,7 +1063,7 @@
     const hasContext = (session.selected_files ?? []).length > 0;
     document.getElementById('question-input').disabled = !hasContext;
     document.getElementById('send-btn').disabled = !hasContext;
-    document.getElementById('lucky-btn').disabled = false;
+    if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(session.id);
     loadSessions();
@@ -1686,6 +1728,17 @@
       }
     } catch {}
 
+    try {
+      const res = await fetch('/settings/features');
+      if (res.ok) {
+        const { flags } = await res.json();
+        document.getElementById('f-prompt-log').checked = flags.promptLogging;
+        document.getElementById('f-llm-log').checked = flags.llmRequestLogging;
+        document.getElementById('f-wiki').checked = flags.wiki;
+        document.getElementById('f-lucky').checked = flags.lucky;
+      }
+    } catch {}
+
     updateSettingsFields();
     settingsOverlay.classList.add('open');
   }
@@ -1764,6 +1817,40 @@
     closeSettings();
     const toast = document.createElement('div');
     toast.textContent = 'Skills directories saved';
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#111827;color:white;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2000;opacity:1;transition:opacity 0.4s;';
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);
+  });
+
+  document.getElementById('f-save-btn').addEventListener('click', async () => {
+    document.getElementById('f-error').textContent = '';
+    if (!settingsPinShown) {
+      settingsPinShown = true;
+      sPinRow.style.display = 'block';
+      sPin.focus();
+      return;
+    }
+    const pin = sPin.value.trim();
+    if (!pin) { document.getElementById('f-error').textContent = 'Enter your admin PIN to save.'; return; }
+
+    const flags = {
+      promptLogging: document.getElementById('f-prompt-log').checked,
+      llmRequestLogging: document.getElementById('f-llm-log').checked,
+      wiki: document.getElementById('f-wiki').checked,
+      lucky: document.getElementById('f-lucky').checked,
+    };
+    const res = await fetch('/settings/features', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, flags }),
+    });
+    const data = await res.json();
+    if (!res.ok) { document.getElementById('f-error').textContent = data.error || 'Save failed.'; return; }
+    featureFlags = data.flags;
+    applyFeatureFlags();
+    closeSettings();
+    const toast = document.createElement('div');
+    toast.textContent = 'Features saved';
     toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#111827;color:white;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2000;opacity:1;transition:opacity 0.4s;';
     document.body.appendChild(toast);
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);
@@ -2129,6 +2216,7 @@
 
   loadLlmBadge();
   loadSessions();
+  loadFeatureFlags();
 
   // Sidebar collapse
   const sidebar = document.getElementById('sidebar');

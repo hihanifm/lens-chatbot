@@ -180,6 +180,20 @@ export const messages = {
 
 export default db;
 
+export interface FeatureFlags {
+  promptLogging: boolean;
+  llmRequestLogging: boolean;
+  wiki: boolean;
+  lucky: boolean;
+}
+
+const DEFAULT_FLAGS: FeatureFlags = {
+  promptLogging: true,
+  llmRequestLogging: true,
+  wiki: true,
+  lucky: true,
+};
+
 export interface LlmConfig {
   provider: "ollama" | "openai" | "openai-compatible";
   model: string;
@@ -226,5 +240,15 @@ export const settings = {
   setSkillsDirs(dirs: string[]): void {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('skills_dirs', ?)").run(JSON.stringify(dirs));
     log.info("settings:skills-dirs-updated", { dirs });
+  },
+
+  getFeatureFlags(): FeatureFlags {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'feature_flags'").get() as any;
+    return row ? { ...DEFAULT_FLAGS, ...JSON.parse(row.value) } : { ...DEFAULT_FLAGS };
+  },
+
+  setFeatureFlags(flags: FeatureFlags): void {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('feature_flags', ?)").run(JSON.stringify(flags));
+    log.info("settings:feature-flags-updated", { flags });
   },
 };

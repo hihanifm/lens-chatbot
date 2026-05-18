@@ -413,6 +413,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   });
 
   app.get("/session/:id/lucky", async (req, res) => {
+    if (!settings.getFeatureFlags().lucky) return res.status(403).json({ error: "Lucky analyzer is disabled" });
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
     if (!session.workspace_path) return res.status(400).json({ error: "no workspace loaded" });
@@ -610,6 +611,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   });
 
   app.get("/wiki", async (_req, res) => {
+    if (!settings.getFeatureFlags().wiki) return res.status(403).json({ error: "Wiki is disabled" });
     try {
       const entries = await listWikiEntries();
       res.json({ entries });
@@ -619,6 +621,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   });
 
   app.get("/wiki/:module", async (req, res) => {
+    if (!settings.getFeatureFlags().wiki) return res.status(403).json({ error: "Wiki is disabled" });
     try {
       const all = await listWikiEntries();
       const filtered = all.filter((e) => e.moduleSlug === req.params.module);
@@ -630,6 +633,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   });
 
   app.get("/wiki/:module/:filename", async (req, res) => {
+    if (!settings.getFeatureFlags().wiki) return res.status(403).json({ error: "Wiki is disabled" });
     const { module: moduleSlug, filename } = req.params;
     if (!filename.endsWith(".md")) return res.status(400).json({ error: "filename must end in .md" });
     try {
@@ -727,6 +731,25 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     settings.setSkillsDirs(dirs);
     skillsCache = null;
     res.json({ dirs });
+  });
+
+  app.get("/settings/features", (_req, res) => {
+    res.json({ flags: settings.getFeatureFlags() });
+  });
+
+  app.put("/settings/features", async (req, res) => {
+    const { pin, flags } = req.body;
+    if (!pin) return res.status(400).json({ error: "pin required" });
+    if (!flags || typeof flags !== "object") return res.status(400).json({ error: "flags object required" });
+
+    const stored = settings.getAdminPinHash();
+    if (!stored) return res.status(503).json({ error: "Admin PIN not configured — set ADMIN_PIN in .env" });
+    if (!(await verifyPin(String(pin), stored))) return res.status(401).json({ error: "Invalid PIN" });
+
+    const current = settings.getFeatureFlags();
+    const updated = { ...current, ...flags };
+    settings.setFeatureFlags(updated);
+    res.json({ flags: updated });
   });
 
   app.put("/settings/admin/pin", async (req, res) => {

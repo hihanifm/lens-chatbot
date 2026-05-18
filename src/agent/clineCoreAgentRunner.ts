@@ -56,7 +56,7 @@ async function getCline(): Promise<ClineCore> {
   return clineInstance;
 }
 
-function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>) {
+function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>, enableLlmLog: boolean) {
   return {
     providerId: (llmCfg.provider === "openai" ? "openai-native" : llmCfg.provider === "openai-compatible" ? "openai-compatible" : llmCfg.provider) as any,
     modelId: llmCfg.model,
@@ -72,7 +72,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     enableAgentTeams: false,
     disableMcpSettingsTools: true,
     checkpoint: { enabled: false },
-    hooks: {
+    hooks: enableLlmLog ? {
       beforeModel: async (context: any) => {
         const iter = context.snapshot?.iteration ?? Date.now();
         const logPath = path.join(input.workspacePath, "agent_notes", `llm-request-${iter}.json`);
@@ -90,7 +90,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
           .catch((err: any) => log.warn("agent:llm-request-log-failed", { error: err.message }));
         return undefined;
       },
-    },
+    } : undefined,
     toolPolicies: {
       [DefaultToolNames.APPLY_PATCH]: { enabled: false },
       [DefaultToolNames.EDITOR]: { enabled: false },
@@ -112,9 +112,10 @@ export class ClineCoreAgentRunner implements AgentRunner {
   }
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
+    const flags = settings.getFeatureFlags();
     const [skills, wikiRootIndex, fileComments, taskContext, environmentContext] = await Promise.all([
       loadAgentSkills(),
-      getWikiRootIndexPath(),
+      flags.wiki ? getWikiRootIndexPath() : Promise.resolve(null),
       buildFileCommentMap(input.workspacePath, input.files),
       loadPrompt("task"),
       loadPrompt("environment"),
@@ -151,9 +152,11 @@ export class ClineCoreAgentRunner implements AgentRunner {
     }
 
     const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext, environmentContext });
-    const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${Date.now()}.txt`);
-    await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
-    await fs.writeFile(promptLogPath, prompt, "utf8").catch((err) => log.warn("agent:prompt-log-failed", { error: err.message }));
+    if (flags.promptLogging) {
+      const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${Date.now()}.txt`);
+      await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
+      await fs.writeFile(promptLogPath, prompt, "utf8").catch((err) => log.warn("agent:prompt-log-failed", { error: err.message }));
+    }
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {
@@ -208,7 +211,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
             source: SessionSource.API,
             interactive: false,
             prompt,
-            config: buildSessionConfig(input, llmCfg),
+            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging),
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
@@ -226,7 +229,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
             source: SessionSource.API,
             interactive: false,
             prompt,
-            config: buildSessionConfig(input, llmCfg),
+            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging),
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
