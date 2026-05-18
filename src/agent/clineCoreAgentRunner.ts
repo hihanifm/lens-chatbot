@@ -173,8 +173,13 @@ export class ClineCoreAgentRunner implements AgentRunner {
               log.debug("agent:tool-start", { tool: agentEvent.toolName, sessionId: clineSessionId });
               push({ type: "status", content: `tool: ${agentEvent.toolName ?? "started"}` });
             } else if (agentEvent.type === "content_end" && agentEvent.contentType === "tool") {
-              log.debug("agent:tool-done", { tool: agentEvent.toolName, sessionId: clineSessionId });
-              push({ type: "status", content: `tool done: ${agentEvent.toolName ?? "unknown"}` });
+              if (agentEvent.error) {
+                log.warn("agent:tool-error", { tool: agentEvent.toolName, error: agentEvent.error, sessionId: clineSessionId });
+                push({ type: "tool_error", content: `tool failed: ${agentEvent.toolName ?? "unknown"} — ${agentEvent.error}` });
+              } else {
+                log.debug("agent:tool-done", { tool: agentEvent.toolName, sessionId: clineSessionId });
+                push({ type: "status", content: `tool done: ${agentEvent.toolName ?? "unknown"}` });
+              }
             } else if (agentEvent.type === "notice" && agentEvent.message) {
               push({ type: "status", content: `notice [${agentEvent.noticeType}]: ${agentEvent.message}` });
             } else if (agentEvent.type === "usage") {

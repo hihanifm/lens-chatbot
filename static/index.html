@@ -169,6 +169,7 @@
     .eng-log-body { display: none; flex-direction: column; gap: 1px; padding: 2px 0 4px 18px; }
     .eng-log.expanded .eng-log-body { display: flex; }
     .eng-log-line { padding: 1px 6px; }
+    .eng-log-line.tool-error { color: #dc2626; }
     .msg.error { align-self: flex-start; background: #fff5f5; border: 1px solid #fecaca; color: #dc2626; font-family: monospace; font-size: 12px; max-width: 100%; border-radius: 8px; }
     .empty-state { text-align: center; color: #9ca3af; margin: auto; font-size: 14px; line-height: 1.6; }
 
@@ -1375,6 +1376,8 @@
       const data = JSON.parse(e.data);
       if (data.type === 'status') {
         appendEngineeringLogLine(data.content);
+      } else if (data.type === 'tool_error') {
+        appendEngineeringLogLine(data.content, true);
       } else if (data.type === 'text') {
         assistantEl.textContent += data.content;
         assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1566,11 +1569,12 @@
     group.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 
-  function appendEngineeringLogLine(content) {
+  function appendEngineeringLogLine(content, isError = false) {
     if (!currentEngLog) return;
     const body = currentEngLog.querySelector('.eng-log-body');
     const line = document.createElement('div');
     line.className = 'eng-log-line msg status';
+    if (isError) line.classList.add('tool-error');
     line.textContent = content;
     body.appendChild(line);
     const n = body.childElementCount;
