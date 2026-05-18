@@ -8,6 +8,11 @@ import { log } from "../logger.js";
 import fs from "fs/promises";
 import path from "path";
 
+function formatLogTimestamp(d = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+
 function formatBugContext(bug: any): string {
   const lines: string[] = [
     `## Bug Tracker Context`,
@@ -131,8 +136,12 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     checkpoint: { enabled: false },
     hooks: enableLlmLog ? {
       beforeModel: async (context: any) => {
-        const iter = context.snapshot?.iteration ?? Date.now();
-        const logPath = path.join(input.workspacePath, "agent_notes", `llm-request-${iter}.json`);
+        const iter = context.snapshot?.iteration ?? 0;
+        const logPath = path.join(
+          input.workspacePath,
+          "agent_notes",
+          `llm-request-${formatLogTimestamp()}-iter${iter}.json`
+        );
         const payload = {
           systemPromptLength: context.request.systemPrompt?.length ?? 0,
           systemPrompt: context.request.systemPrompt,
@@ -213,7 +222,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
     const bugContext = bugJson ? formatBugContext(bugJson) : null;
     const startPrompt = bugContext ? `${bugContext}\n\n${prompt}` : prompt;
     if (flags.promptLogging) {
-      const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${Date.now()}.txt`);
+      const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${formatLogTimestamp()}.txt`);
       await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
       await fs.writeFile(promptLogPath, prompt, "utf8").catch((err) => log.warn("agent:prompt-log-failed", { error: err.message }));
     }
