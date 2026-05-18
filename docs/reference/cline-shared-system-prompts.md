@@ -8,7 +8,7 @@
 | Source file in package | `dist/prompt/system.d.ts` |
 | Captured | 2026-05-18 |
 
-These strings are exported as `const` literals from the published typings. When upgrading `@cline/shared`, re-read `node_modules/@cline/shared/dist/prompt/system.d.ts` and update this document if the literals changed.
+These strings are exported as `const` literals from the published typings. Regenerate this file with `npm run prompts:sync-cline-system` after upgrading `@cline/shared`, or run `npm run prompts:check-cline-system` in CI to detect drift.
 
 ## Placeholders
 
@@ -88,9 +88,9 @@ Environment you are running in:
 </env>
 
 IMPORTANT: 
-When the user describes a bug, unexpected behavior, or provides a bug report, your primary goal is to produce a correct fix in the source code that resolves the issue.
-A correct fix means the underlying behavior is fixed — not just the symptoms addressed superficially.
-After applying your fix, you must run the relevant test suite to confirm your changes actually resolve the problem. If tests fail, analyze the failures, revise your fix, and re-run until tests pass.
+When the user describes a bug, unexpected behavior, or provides a bug report, your primary goal is to produce a correct fix in the source code that resolves the issue. 
+A correct fix means the underlying behavior is fixed — not just the symptoms addressed superficially. 
+After applying your fix, you must run the relevant test suite to confirm your changes actually resolve the problem. If tests fail, analyze the failures, revise your fix, and re-run until tests pass. 
 Do not consider the task complete until tests pass.
 Always includes tool calls in your response until the task is completed. You should only end the task when all the requirements are met by calling the 'submit_and_exit' tool.
 Response without the submit_and_exit tool call will considered not completed and the task will continue.

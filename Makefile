@@ -10,7 +10,7 @@ NODE_22_TARBALL := node-v$(NODE_22_VER)-linux-x64.tar.xz
 NODE_22_URL    := https://nodejs.org/dist/v$(NODE_22_VER)/$(NODE_22_TARBALL)
 
 .PHONY: help setup check-node install-node dev dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
-        prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live
+        prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live sync-cline-system-prompts
 
 help:
 	@echo "Dev modes:                                                   Ports: dev=38001"
@@ -42,6 +42,7 @@ help:
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean              Remove containers/volumes; prune images"
+	@echo "  make sync-cline-system-prompts  Regenerate docs/reference/cline-shared-system-prompts.md from @cline/shared"
 
 check-node:
 	@node --version 2>/dev/null | grep -qE '^v(2[2-9]|[3-9][0-9])' || { \
@@ -193,6 +194,9 @@ test-e2e:
 
 test-e2e-live:
 	DATA_DIR=./e2e/.live-data npx playwright test -c playwright.live.config.ts
+
+sync-cline-system-prompts:
+	npm run prompts:sync-cline-system
 
 clean:
 	docker compose --profile dev down --remove-orphans --volumes
