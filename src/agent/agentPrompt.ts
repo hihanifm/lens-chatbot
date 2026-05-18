@@ -32,8 +32,9 @@ export function buildPrompt(input: {
 }): string {
   const fileList = input.files.length
     ? input.files.map((f) => {
+        const rel = path.relative(input.workspacePath, f);
         const comment = input.fileComments?.[f];
-        return comment ? `- ${f}\n  Comment: "${comment}"` : `- ${f}`;
+        return comment ? `- ${rel}\n  Comment: "${comment}"` : `- ${rel}`;
       }).join("\n")
     : "(none selected)";
   const skillsHint = input.skills.length > 0
@@ -50,7 +51,7 @@ export function buildPrompt(input: {
     : "";
   const priorReportsHint = (input.priorReports?.length)
     ? `Prior analysis reports for this bug (most recent first):\n` +
-      input.priorReports.map((p) => `  ${p}`).join("\n") + "\n" +
+      input.priorReports.map((p) => `  ${path.relative(input.workspacePath, p)}`).join("\n") + "\n" +
       `Read the most recent report first — reuse its root cause and evidence rather than re-deriving from scratch if the same files are present.\n\n`
     : "";
   return [
