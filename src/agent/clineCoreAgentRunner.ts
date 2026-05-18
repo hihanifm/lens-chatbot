@@ -6,6 +6,7 @@ import { loadPrompt } from "../prompts/promptLoader.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
 import { isLlmSanitizeEnabled, sanitizeForLlm } from "../services/llmSanitize.js";
+import { egressContext } from "../services/httpEgressLogger.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -246,6 +247,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
   }
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
+    egressContext.enterWith({ workspacePath: input.workspacePath, sessionId: input.clineSessionId });
     const flags = settings.getFeatureFlags();
     const existingFiles = await filterExistingPaths(input.files);
     const [skills, wikiRootIndex, fileComments, rules, environmentContext, baseTemplate, bugJson] = await Promise.all([

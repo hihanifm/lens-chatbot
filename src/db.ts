@@ -183,6 +183,7 @@ export default db;
 export interface FeatureFlags {
   promptLogging: boolean;
   llmRequestLogging: boolean;
+  httpEgressLogging: boolean;
   wiki: boolean;
   lucky: boolean;
 }
@@ -190,6 +191,7 @@ export interface FeatureFlags {
 const DEFAULT_FLAGS: FeatureFlags = {
   promptLogging: true,
   llmRequestLogging: true,
+  httpEgressLogging: false,
   wiki: true,
   lucky: true,
 };

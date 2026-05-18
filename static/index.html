@@ -562,6 +562,10 @@
         LLM request logging <span style="color:#9ca3af;font-size:11px;">(llm-request-*.json + session-messages-*.json per turn)</span>
       </label>
       <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#374151;">
+        <input type="checkbox" id="f-http-egress" style="width:15px;height:15px;accent-color:var(--action);cursor:pointer;">
+        HTTP egress logging <span style="color:#9ca3af;font-size:11px;">(http-egress-*.json — raw wire-level LLM calls, redacted)</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#374151;">
         <input type="checkbox" id="f-wiki" style="width:15px;height:15px;accent-color:var(--action);cursor:pointer;">
         Wiki integration <span style="color:#9ca3af;font-size:11px;">(agent hints + Add to Wiki button)</span>
       </label>
@@ -599,7 +603,7 @@
 </div>
 
 <script type="module">
-  let featureFlags = { promptLogging: true, llmRequestLogging: true, wiki: true, lucky: true };
+  let featureFlags = { promptLogging: true, llmRequestLogging: true, httpEgressLogging: false, wiki: true, lucky: true };
   let agentMode = 'act';
 
   async function loadFeatureFlags() {
@@ -1927,6 +1931,7 @@
         const { flags } = await res.json();
         document.getElementById('f-prompt-log').checked = flags.promptLogging;
         document.getElementById('f-llm-log').checked = flags.llmRequestLogging;
+        document.getElementById('f-http-egress').checked = !!flags.httpEgressLogging;
         document.getElementById('f-wiki').checked = flags.wiki;
         document.getElementById('f-lucky').checked = flags.lucky;
       }
@@ -2029,6 +2034,7 @@
     const flags = {
       promptLogging: document.getElementById('f-prompt-log').checked,
       llmRequestLogging: document.getElementById('f-llm-log').checked,
+      httpEgressLogging: document.getElementById('f-http-egress').checked,
       wiki: document.getElementById('f-wiki').checked,
       lucky: document.getElementById('f-lucky').checked,
     };

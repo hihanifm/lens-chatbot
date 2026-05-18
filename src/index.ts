@@ -4,8 +4,11 @@ dotenv({ path: existsSync(".env") ? ".env" : ".env.example" });
 import { createApp, hashPin } from "./app.js";
 import { MockBugTracker } from "./services/bugTracker.js";
 import { ClineCoreAgentRunner } from "./agent/clineCoreAgentRunner.js";
+import { installFetchInterceptor } from "./services/httpEgressLogger.js";
 import { settings } from "./db.js";
 import { log } from "./logger.js";
+
+installFetchInterceptor();
 
 // Swap MockBugTracker → InternalBugTracker when API is ready
 const app = createApp(new MockBugTracker(), new ClineCoreAgentRunner());
