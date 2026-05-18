@@ -72,6 +72,25 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     enableAgentTeams: false,
     disableMcpSettingsTools: true,
     checkpoint: { enabled: false },
+    hooks: {
+      beforeModel: async (context: any) => {
+        const iter = context.snapshot?.iteration ?? Date.now();
+        const logPath = path.join(input.workspacePath, "agent_notes", `llm-request-${iter}.json`);
+        const payload = {
+          systemPromptLength: context.request.systemPrompt?.length ?? 0,
+          systemPrompt: context.request.systemPrompt,
+          messageCount: context.request.messages.length,
+          messages: context.request.messages,
+          toolCount: context.request.tools.length,
+          toolNames: context.request.tools.map((t: any) => t.name),
+          options: context.request.options ?? {},
+        };
+        await fs.mkdir(path.dirname(logPath), { recursive: true });
+        await fs.writeFile(logPath, JSON.stringify(payload, null, 2), "utf8")
+          .catch((err: any) => log.warn("agent:llm-request-log-failed", { error: err.message }));
+        return undefined;
+      },
+    },
     toolPolicies: {
       [DefaultToolNames.APPLY_PATCH]: { enabled: false },
       [DefaultToolNames.EDITOR]: { enabled: false },
