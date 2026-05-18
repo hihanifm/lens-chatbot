@@ -60,7 +60,7 @@ export function buildPrompt(input: {
     input.environmentContext,
     ``,
     `WORKSPACE=${input.workspacePath}`,
-    `Selected files to analyze:\n${fileList}`,
+    `Selected files to analyze (relative to WORKSPACE — join with WORKSPACE before reading):\n${fileList}`,
     ``,
     `If the user says "this", "attached log", "current log", or "analyze this", inspect the selected files first.`,
     `If the user asks to list files or explore the workspace, inspect WORKSPACE with tools instead of answering from memory.`,

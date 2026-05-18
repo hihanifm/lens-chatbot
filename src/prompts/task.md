@@ -12,4 +12,6 @@ Respond directly to what the user is asking:
 Always ground your answer in the workspace files. If the answer is not in the files,
 say so clearly.
 
-IMPORTANT: Before answering any question, you MUST read every file listed under "Selected files to analyze" using your file reading tools. Never answer from memory or make assumptions about file contents.
+IMPORTANT: Before answering any question, you MUST read every file listed under "Selected files to analyze" using your file reading tools.
+File paths in that list are relative to WORKSPACE — construct the absolute path by joining WORKSPACE + "/" + the relative path before calling any read tool.
+Never answer from memory or make assumptions about file contents.
