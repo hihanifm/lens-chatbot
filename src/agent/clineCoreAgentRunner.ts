@@ -21,14 +21,19 @@ async function buildFileCommentMap(
     log.debug("agent:bug-json-missing", { workspacePath, error: err.message, stack: err.stack });
     return map;
   }
+  // Build suffix→comment index first, then do one O(n) pass over files
+  const suffixIndex = new Map<string, string>();
   for (const comment of bug.comments ?? []) {
     for (const att of comment.attachments ?? []) {
-      const flatSuffix = `/${att.name}`;
-      const zipBase = `/${path.basename(att.name, ".zip")}/`;
-      for (const f of files) {
-        if (f.endsWith(flatSuffix) || f.includes(zipBase)) {
-          map[f] = comment.body;
-        }
+      suffixIndex.set(`/${att.name}`, comment.body);
+      suffixIndex.set(`/${path.basename(att.name, ".zip")}/`, comment.body);
+    }
+  }
+  for (const f of files) {
+    for (const [suffix, body] of suffixIndex) {
+      if (f.endsWith(suffix) || f.includes(suffix)) {
+        map[f] = body;
+        break;
       }
     }
   }
@@ -36,6 +41,9 @@ async function buildFileCommentMap(
 }
 
 function resultText(result: any): string {
+  if (result && !result.text) {
+    log.debug("agent:result-fields", { keys: Object.keys(result) });
+  }
   return result?.text ?? result?.outputText ?? result?.result?.text ?? result?.result?.outputText ?? "";
 }
 
@@ -85,11 +93,12 @@ export class ClineCoreAgentRunner implements AgentRunner {
   }
 
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
-    const [skills, wikiRootIndex, fileComments, taskContext] = await Promise.all([
+    const [skills, wikiRootIndex, fileComments, taskContext, environmentContext] = await Promise.all([
       loadAgentSkills(),
       getWikiRootIndexPath(),
       buildFileCommentMap(input.workspacePath, input.files),
       loadPrompt("task"),
+      loadPrompt("environment"),
     ]);
     const agentNotesDir = path.join(input.workspacePath, "agent_notes");
     let priorReports: string[] = [];
@@ -122,7 +131,10 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
 
-    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext });
+    const prompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext, environmentContext });
+    const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${Date.now()}.txt`);
+    await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
+    await fs.writeFile(promptLogPath, prompt, "utf8").catch((err) => log.warn("agent:prompt-log-failed", { error: err.message }));
     let clineSessionId = input.clineSessionId;
 
     const runPromise = (async () => {

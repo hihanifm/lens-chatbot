@@ -4,8 +4,6 @@ import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 import { getWikiRoot } from "../services/wikiService.js";
 import { settings } from "../db.js";
 
-const AGENTS_MD = path.resolve(import.meta.dirname, "./environment.md");
-
 export async function loadAgentSkills(): Promise<LoadedSkill[]> {
   const skillsDirs = settings.getSkillsDirs();
   return loadSkills(skillsDirs);
@@ -28,6 +26,7 @@ export function buildPrompt(input: {
   skills: LoadedSkill[];
   wikiRootIndex: string | null;
   taskContext: string;
+  environmentContext: string;
   fileComments?: Record<string, string>;
   priorReports?: string[];
 }): string {
@@ -57,7 +56,7 @@ export function buildPrompt(input: {
   return [
     input.taskContext,
     ``,
-    `Read ${AGENTS_MD} for environment context and available tools.`,
+    input.environmentContext,
     ``,
     `WORKSPACE=${input.workspacePath}`,
     `Selected files to analyze:\n${fileList}`,

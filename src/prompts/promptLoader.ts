@@ -13,8 +13,5 @@ export async function loadPrompt(name: string): Promise<string> {
 }
 
 export function renderPrompt(template: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce(
-    (t, [k, v]) => t.replaceAll(`{{${k}}}`, v),
-    template
-  );
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
