@@ -700,6 +700,21 @@
   const CTX_INITIAL = 5;
   const CTX_MAX = 25;
 
+  function syncChatInputEnabled() {
+    if (!currentSessionId) {
+      document.getElementById('question-input').disabled = true;
+      document.getElementById('send-btn').disabled = true;
+      return;
+    }
+    // Tracker bugs: chat enabled on load (bug context is in the first agent prompt).
+    // Ad-hoc sessions: require at least one file in context.
+    const needsFiles = isAdhocSession;
+    const hasFiles = Object.keys(contextFiles).length > 0;
+    const enabled = !needsFiles || hasFiles;
+    document.getElementById('question-input').disabled = !enabled;
+    document.getElementById('send-btn').disabled = !enabled;
+  }
+
   function updateContextBar() {
     const bar = document.getElementById('context-bar');
     bar.innerHTML = '';
@@ -762,6 +777,7 @@
     }
     contextFiles = {};
     updateContextBar();
+    syncChatInputEnabled();
   }
 
   // Registry so chip removals can sync attachment button state
@@ -780,6 +796,7 @@
       attachmentStateCallbacks.get(filePath)?.setInChat(false);
     }
     updateContextBar();
+    syncChatInputEnabled();
   }
 
   async function loadSessions() {
@@ -932,8 +949,7 @@
     chat.innerHTML = '';
     for (const m of messages) appendMessage(m.role, m.content, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null);
 
-    document.getElementById('question-input').disabled = false;
-    document.getElementById('send-btn').disabled = false;
+    syncChatInputEnabled();
     if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(sessionId);
@@ -1003,8 +1019,7 @@
     updateContextBar();
     renderBugPanel(bug, []);
     document.getElementById('chat').innerHTML = '';
-    document.getElementById('question-input').disabled = true;
-    document.getElementById('send-btn').disabled = true;
+    syncChatInputEnabled();
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(session.id);
     loadSessions();
@@ -1063,9 +1078,7 @@
     updateContextBar();
     renderBugPanel(bug, session.selected_files ?? []);
     document.getElementById('chat').innerHTML = '';
-    const hasContext = (session.selected_files ?? []).length > 0;
-    document.getElementById('question-input').disabled = !hasContext;
-    document.getElementById('send-btn').disabled = !hasContext;
+    syncChatInputEnabled();
     if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(session.id);
@@ -1370,7 +1383,7 @@
     let isDone = false;
 
     const finishAnalysis = () => {
-      document.getElementById('send-btn').disabled = false;
+      syncChatInputEnabled();
       document.getElementById('abort-btn').style.display = 'none';
     };
 
