@@ -228,10 +228,13 @@
 
     /* Settings */
 
-    /* Explorer button */
-    #explorer-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; font-size: 13px; color: #6b7280; padding: 4px 10px; border-radius: 8px; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-    #explorer-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
-    #explorer-btn.active { background: var(--sky-chip); color: var(--sky-text); border-color: var(--sky-border); }
+    /* Explorer + upload shortcuts */
+    #explorer-btn,
+    #upload-logs-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; font-size: 13px; color: #6b7280; padding: 4px 10px; border-radius: 8px; transition: background 0.15s, color 0.15s, border-color 0.15s; font-family: inherit; }
+    #explorer-btn:hover,
+    #upload-logs-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+    #explorer-btn.active,
+    #upload-logs-btn.active { background: var(--sky-chip); color: var(--sky-text); border-color: var(--sky-border); }
 
     /* Explorer drawer */
     #explorer-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 300px; min-width: 220px; max-width: 600px; background: var(--explorer-bg); color: var(--sidebar-text); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.2s ease; z-index: 200; box-shadow: -4px 0 20px rgba(0,0,0,0.25); }
@@ -298,8 +301,8 @@
     #adhoc-cancel-btn:hover { background: #e5e7eb; }
     #adhoc-error { margin: 0; font-size: 13px; color: #dc2626; min-height: 18px; }
 
-    /* explorer upload panel — hidden by default; shown when a session is active */
-    #explorer-upload-panel { display: none; padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
+    /* explorer upload panel — hidden by default; shown via setUploadPanelVisible(true) inline display:block */
+    #explorer-upload-panel { display: none; flex-shrink: 0; padding: 12px 16px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
     #explorer-upload-panel input[type=text] { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px; font-family: inherit; }
     #upload-submit-btn { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
     #upload-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -342,7 +345,8 @@
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
     <button id="tab-adhoc" style="margin-left:auto;">Ad Hoc</button>
-    <button id="explorer-btn" title="Workspace Files">Files</button>
+    <button id="upload-logs-btn" type="button" title="Open Files drawer → upload local logs">Upload logs…</button>
+    <button id="explorer-btn" title="Browse workspace files, zips, and upload extra logs">Files</button>
   </div>
   <div id="presence-bar" style="display:none; background:#eff6ff; border-bottom:1px solid #bfdbfe; padding:6px 24px; font-size:12px; color:#003087;">
     <span style="font-weight:600;">Also here:</span>
@@ -939,7 +943,15 @@
     const hasDownloaded = (downloadedFiles ?? []).length > 0;
     const hasContext = (selectedFiles ?? []).length > 0;
     if (!hasDownloaded && !hasContext) {
-      appendMessage('status', 'No log files in workspace yet — download attachments from the bug panel or Files drawer for log analysis.');
+      appendMessage('status', 'No log files in workspace yet — download attachments from the bug panel or Files drawer, or open Files (or Upload logs…) to add local logs for analysis.');
+    }
+  }
+
+  function maybeAppendAdhocUploadHint(bug, selectedFiles) {
+    if (!bug || bug.state !== 'adhoc') return;
+    const hasContext = (selectedFiles ?? []).length > 0;
+    if (!hasContext) {
+      appendMessage('status', 'Add logs anytime: open Upload logs… or Files, then use Upload Files at the bottom of the drawer.');
     }
   }
 
@@ -966,6 +978,7 @@
     for (const m of messages) appendMessage(m.role, m.content, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null);
 
     maybeAppendDownloadAttachmentsNudge(bug, downloaded_files, session.selected_files ?? []);
+    maybeAppendAdhocUploadHint(bug, session.selected_files ?? []);
 
     syncChatInputEnabled();
     if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
@@ -988,7 +1001,7 @@
   document.getElementById('adhoc-cancel-btn').onclick = closeAdhocPage;
 
   function setUploadPanelVisible(visible) {
-    document.getElementById('explorer-upload-panel').style.display = visible ? '' : 'none';
+    document.getElementById('explorer-upload-panel').style.display = visible ? 'block' : 'none';
   }
 
   function setRefreshBtnVisible(visible) {
@@ -1038,19 +1051,25 @@
     renderBugPanel(bug, []);
     document.getElementById('chat').innerHTML = '';
     syncChatInputEnabled();
+
+    const adhocPick = document.getElementById('adhoc-files-input');
+    const uploadQueue = adhocPick.files;
+
     document.getElementById('session-menu-wrap').style.display = 'block';
     connectListen(session.id);
     loadSessions();
 
-    // Upload files if any were selected
-    const files = document.getElementById('adhoc-files-input').files;
-    if (files.length > 0) {
-      appendMessage('status', `Uploading ${files.length} file${files.length > 1 ? 's' : ''}…`);
+    if (!uploadQueue || uploadQueue.length === 0) {
+      maybeAppendAdhocUploadHint(bug, session.selected_files ?? []);
+    }
+
+    if (uploadQueue && uploadQueue.length > 0) {
+      appendMessage('status', `Uploading ${uploadQueue.length} file${uploadQueue.length > 1 ? 's' : ''}…`);
       const progress = document.getElementById('upload-progress');
       progress.value = 0;
       progress.style.display = '';
       const fd = new FormData();
-      for (const f of files) fd.append('files', f);
+      for (const f of uploadQueue) fd.append('files', f);
       try {
         const { status: httpStatus, body: upBody } = await uploadWithProgress(
           `/session/${session.id}/upload`, fd,
@@ -1068,6 +1087,7 @@
         progress.style.display = 'none';
         appendMessage('error', `✗ Upload failed: ${err.message}`);
       }
+      adhocPick.value = '';
     }
   };
 
@@ -1959,12 +1979,22 @@
   let explorerOpen = false;
 
   document.getElementById('explorer-btn').addEventListener('click', () => toggleExplorer());
+  document.getElementById('upload-logs-btn').addEventListener('click', () => {
+    if (!currentSessionId) {
+      appendMessage('error', '✗ Load or create a session first.');
+      return;
+    }
+    toggleExplorer(true);
+    const panel = document.getElementById('explorer-upload-panel');
+    setTimeout(() => { panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 50);
+  });
   document.getElementById('explorer-close').addEventListener('click', () => toggleExplorer(false));
 
   function toggleExplorer(force) {
     explorerOpen = force !== undefined ? force : !explorerOpen;
     document.getElementById('explorer-drawer').classList.toggle('open', explorerOpen);
     document.getElementById('explorer-btn').classList.toggle('active', explorerOpen);
+    document.getElementById('upload-logs-btn').classList.toggle('active', explorerOpen);
     if (explorerOpen && currentSessionId) refreshExplorerTree();
   }
 
