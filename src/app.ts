@@ -467,6 +467,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
     if (!session.workspace_path) return res.status(400).json({ error: "no workspace loaded" });
+    const mode: "act" | "yolo" = req.query.mode === "yolo" ? "yolo" : "act";
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -522,21 +523,22 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     }
 
     const updatedSession = sessions.get(req.params.id)!;
-    log.info("lucky:start", { sessionId: req.params.id, files: updatedSession.selected_files });
+    log.info("lucky:start", { sessionId: req.params.id, mode, files: updatedSession.selected_files });
+    const luckyStartedAt = Date.now();
 
-    messages.add(req.params.id, "user", "[Lucky] Automated root cause analysis");
+    messages.add(req.params.id, "user", `[Lucky:${mode}] Automated root cause analysis`);
     let fullResponse = "";
 
     try {
-      for await (const event of runLucky(runner, updatedSession)) {
+      for await (const event of runLucky(runner, updatedSession, mode)) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
         broadcast(req.params.id, event, undefined);
         if (event.type === "text") {
           fullResponse += event.content;
         } else if (event.type === "done") {
-          log.info("lucky:done", { sessionId: req.params.id, responseLen: fullResponse.length });
+          log.info("lucky:done", { sessionId: req.params.id, mode, durationMs: Date.now() - luckyStartedAt, responseLen: fullResponse.length });
           if (fullResponse) {
-            const reportName = `lucky-${new Date().toISOString().replace(/[:.]/g, "-")}.md`;
+            const reportName = `lucky-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.md`;
             const reportPath = path.join(updatedSession.workspace_path, "agent_notes", reportName);
             try {
               await fs.writeFile(reportPath, fullResponse);

@@ -3,9 +3,10 @@ import { loadPrompt } from "../prompts/promptLoader.js";
 
 export async function* runLucky(
   runner: AgentRunner,
-  session: { workspace_path: string; selected_files: string[] }
+  session: { workspace_path: string; selected_files: string[] },
+  mode: "act" | "yolo" = "act"
 ): AsyncIterable<AgentEvent> {
-  yield { type: "status", content: "[Lucky] Starting evidence-first root cause analysis..." };
+  yield { type: "status", content: `[Lucky:${mode}] Starting evidence-first root cause analysis...` };
 
   const luckyPrompt = await loadPrompt("lucky");
 
@@ -13,6 +14,7 @@ export async function* runLucky(
     workspacePath: session.workspace_path,
     files: session.selected_files,
     question: luckyPrompt,
+    mode,
     // No clineSessionId → fresh ephemeral session
   })) {
     if (event.type === "session_id") continue; // don't persist lucky sessions to DB

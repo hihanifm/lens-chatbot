@@ -107,7 +107,13 @@ fixtures/                ← static fixture files for tests
 
 **Lucky analyzer** (`luckyAnalyzer.ts`): loads the RCA prompt from `src/prompts/lucky.md` via `loadPrompt`, then runs an ephemeral agent session (not persisted to DB). `app.ts` auto-downloads top-level bug attachments and extracts zip entries into context before calling `runLucky`. Triggered via `GET /session/:id/lucky` (SSE stream). Edit `lucky.md` (or mount a custom `PROMPTS_DIR`) to change the RCA structure without rebuilding.
 
-**Externalized prompts**: all LLM-facing prompts live in `src/prompts/*.md` and are loaded at runtime via `promptLoader.ts`. Set `PROMPTS_DIR` to a mounted volume to edit prompts without rebuilding. Three prompts: `task.md` (normal analysis), `lucky.md` (RCA), `wiki-synthesis.md` (wiki entry generation, supports `{{var}}` substitution).
+**Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act mode (current behavior). `GET /session/:id/lucky?mode=yolo` runs with `base-yolo.md` as the system prompt and re-enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to terminate (vs. act mode where any tool-call-less reply ends the task). The UI exposes a "yolo" checkbox next to the 🎲 button. Reports are tagged in `agent_notes/`: `lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md` for side-by-side comparison.
+
+**Externalized prompts**: all LLM-facing prompts live in `src/prompts/*.md` and are loaded at runtime via `promptLoader.ts`. Set `PROMPTS_DIR` to a mounted volume to edit prompts without rebuilding. Top-level prompts: `base.md` (system-prompt template passed as `overridePrompt` to ClineCore — replaces the default coding-agent framing), `environment.md` (tools + Android file reference), `lucky.md` (RCA), `wiki-synthesis.md` (wiki entry generation, supports `{{var}}` substitution). Reusable pieces live in `src/prompts/fragments/{rules,user}/` and are composed via `composePrompt` in `promptLoader.ts`.
+
+**ClineCore system-prompt drift check**: `npm run prompts:check-cline-system` exits non-zero if `@cline/shared`'s upstream `DEFAULT_CLINE_SYSTEM_PROMPT` / `YOLO_CLINE_SYSTEM_PROMPT` differ from the snapshot in `docs/reference/cline-shared-system-prompts.md`. Run `npm run prompts:sync-cline-system` after bumping `@cline/sdk`, diff the changes, and decide whether `base.md` should follow upstream tool-call wording changes.
+
+**Prompt-drift check**: `npm run prompts:check` scans `src/**/*.ts` (outside `src/prompts/`) for multi-line template literals containing prompt markers (`IMPORTANT:`, `MUST read`, `Selected files`, etc.) and fails if found — ensures prompt content stays in `.md` files.
 
 **Prior reports**: on every `analyze` call, `clineCoreAgentRunner.ts` scans `agent_notes/` for previous `.md` reports and passes them to `buildPrompt` as `priorReports`. The prompt tells the agent to read the most recent report first and reuse its root cause rather than re-deriving from scratch.
 

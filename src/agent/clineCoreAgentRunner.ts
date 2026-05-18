@@ -1,7 +1,7 @@
-import { ClineCore, DefaultToolNames, SessionSource } from "@cline/sdk";
+import { ClineCore, DefaultToolNames, SessionSource, getClineDefaultSystemPrompt } from "@cline/sdk";
 import type { CoreSessionEvent } from "@cline/sdk";
 import type { AgentEvent, AgentRunner, ToolCommandLine } from "./agentRunner.js";
-import { buildPrompt, buildFollowUpPrompt, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
+import { buildPrompt, buildFollowUpPrompt, buildSystemRules, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
 import { loadPrompt } from "../prompts/promptLoader.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
@@ -185,7 +185,7 @@ async function getCline(): Promise<ClineCore> {
   return clineInstance;
 }
 
-function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>, enableLlmLog: boolean) {
+function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>, enableLlmLog: boolean, systemPrompt: string) {
   return {
     providerId: (llmCfg.provider === "openai" ? "openai-native" : llmCfg.provider === "openai-compatible" ? "openai-compatible" : llmCfg.provider) as any,
     modelId: llmCfg.model,
@@ -193,8 +193,8 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
     cwd: input.workspacePath,
     workspaceRoot: input.workspacePath,
-    mode: (input.mode ?? "act") as "plan" | "act",
-    systemPrompt: "", // empty → ClineCore uses its own DEFAULT_CLINE_SYSTEM_PROMPT
+    mode: ((input.mode ?? "act") === "yolo" ? "act" : (input.mode ?? "act")) as "plan" | "act",
+    systemPrompt,
     maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 12),
     enableTools: true,
     enableSpawnAgent: false,
@@ -229,7 +229,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
       [DefaultToolNames.APPLY_PATCH]: { enabled: false },
       [DefaultToolNames.EDITOR]: { enabled: false },
       [DefaultToolNames.FETCH_WEB_CONTENT]: { enabled: false },
-      [DefaultToolNames.SUBMIT_AND_EXIT]: { enabled: false },
+      [DefaultToolNames.SUBMIT_AND_EXIT]: { enabled: input.mode === "yolo" },
     },
   };
 }
@@ -248,14 +248,25 @@ export class ClineCoreAgentRunner implements AgentRunner {
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     const flags = settings.getFeatureFlags();
     const existingFiles = await filterExistingPaths(input.files);
-    const [skills, wikiRootIndex, fileComments, taskContext, environmentContext, bugJson] = await Promise.all([
+    const [skills, wikiRootIndex, fileComments, rules, environmentContext, baseTemplate, bugJson] = await Promise.all([
       loadAgentSkills(),
       flags.wiki ? getWikiRootIndexPath() : Promise.resolve(null),
       buildFileCommentMap(input.workspacePath, existingFiles),
-      loadPrompt("task"),
+      buildSystemRules(),
       loadPrompt("environment"),
+      loadPrompt(input.mode === "yolo" ? "base-yolo" : "base"),
       fs.readFile(path.join(input.workspacePath, "bug.json"), "utf8").then(JSON.parse).catch(() => null),
     ]);
+    const systemPrompt = getClineDefaultSystemPrompt({
+      rootPath: input.workspacePath,
+      workspaceRoot: input.workspacePath,
+      cwd: input.workspacePath,
+      mode: (input.mode ?? "act"),
+      rules,
+      platform: process.platform,
+      ide: "Terminal Shell",
+      overridePrompt: baseTemplate,
+    });
     const agentNotesDir = path.join(input.workspacePath, "agent_notes");
     let priorReports: string[] = [];
     try {
@@ -312,7 +323,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `PII patterns redacted in prompt (${sanitizeReplacementTotal} substitutions)` });
     }
 
-    const fullPrompt = buildPrompt({
+    const fullPrompt = await buildPrompt({
       ...input,
       files: existingFiles,
       question: questionForLlm,
@@ -320,10 +331,9 @@ export class ClineCoreAgentRunner implements AgentRunner {
       skills,
       wikiRootIndex,
       priorReports,
-      taskContext,
       environmentContext,
     });
-    const followUpPrompt = buildFollowUpPrompt({
+    const followUpPrompt = await buildFollowUpPrompt({
       workspacePath: input.workspacePath,
       files: existingFiles,
       question: questionForLlm,
@@ -355,6 +365,15 @@ export class ClineCoreAgentRunner implements AgentRunner {
               log.debug("agent:tool-start", { tool: agentEvent.toolName, sessionId: clineSessionId });
               const detail = summarizeToolInput(agentEvent.toolName, agentEvent.input);
               push({ type: "status", content: `tool: ${agentEvent.toolName ?? "started"}${detail ? ` · ${detail}` : ""}` });
+              if (agentEvent.toolName === DefaultToolNames.SUBMIT_AND_EXIT) {
+                const summary = typeof agentEvent.input === "string"
+                  ? agentEvent.input
+                  : (agentEvent.input?.summary ?? agentEvent.input?.result ?? JSON.stringify(agentEvent.input));
+                if (summary) {
+                  streamedText += summary;
+                  push({ type: "text", content: summary });
+                }
+              }
             } else if (agentEvent.type === "content_end" && agentEvent.contentType === "tool") {
               if (agentEvent.error) {
                 log.warn("agent:tool-error", { tool: agentEvent.toolName, error: agentEvent.error, sessionId: clineSessionId });
@@ -409,7 +428,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
             source: SessionSource.API,
             interactive: false,
             prompt: startPrompt,
-            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging),
+            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt),
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
@@ -427,7 +446,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
             source: SessionSource.API,
             interactive: false,
             prompt: startPrompt,
-            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging),
+            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt),
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });

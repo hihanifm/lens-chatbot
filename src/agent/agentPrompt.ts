@@ -3,6 +3,7 @@ import path from "node:path";
 import { loadSkills, type LoadedSkill } from "./skillsLoader.js";
 import { getWikiRoot } from "../services/wikiService.js";
 import { settings } from "../db.js";
+import { composePrompt, loadFragment } from "../prompts/promptLoader.js";
 
 export async function loadAgentSkills(): Promise<LoadedSkill[]> {
   const skillsDirs = settings.getSkillsDirs();
@@ -19,82 +20,93 @@ export async function getWikiRootIndexPath(): Promise<string | null> {
   }
 }
 
-/** Shown when no workspace paths passed verification (exist on disk). */
-export const NO_FILES_DOWNLOADED_LINE =
-  "(none downloaded — use Files panel to download attachments, then add to context)";
+/**
+ * Domain rules — joined into ClineCore's {{CLINE_RULES}} slot at session start.
+ * Stable per session; does not depend on per-turn state.
+ */
+export async function buildSystemRules(): Promise<string> {
+  return composePrompt([
+    { fragment: "rules/role" },
+    { fragment: "rules/rca-template" },
+    { fragment: "rules/citation-format" },
+    { fragment: "rules/budget" },
+    { fragment: "rules/path-policy" },
+    { fragment: "rules/no-modify" },
+  ]);
+}
 
-export function buildPrompt(input: {
+function renderFileList(
+  files: string[],
+  workspacePath: string,
+  fileComments?: Record<string, string>,
+): string {
+  return files
+    .map((f) => {
+      const rel = path.relative(workspacePath, f);
+      const comment = fileComments?.[f];
+      return comment ? `- ${rel}\n  Comment: "${comment}"` : `- ${rel}`;
+    })
+    .join("\n");
+}
+
+function renderSkills(skills: LoadedSkill[]): string {
+  return skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n");
+}
+
+function renderReports(reports: string[], workspacePath: string): string {
+  return reports.map((p) => `  ${path.relative(workspacePath, p)}`).join("\n");
+}
+
+export async function buildPrompt(input: {
   workspacePath: string;
   files: string[];
   question: string;
   skills: LoadedSkill[];
   wikiRootIndex: string | null;
-  taskContext: string;
   environmentContext: string;
   fileComments?: Record<string, string>;
   priorReports?: string[];
-}): string {
+}): Promise<string> {
   const fileList = input.files.length
-    ? input.files.map((f) => {
-        const rel = path.relative(input.workspacePath, f);
-        const comment = input.fileComments?.[f];
-        return comment ? `- ${rel}\n  Comment: "${comment}"` : `- ${rel}`;
-      }).join("\n")
-    : NO_FILES_DOWNLOADED_LINE;
-  const skillsHint = input.skills.length > 0
-    ? `Available skills - read the relevant ones before starting:\n${input.skills.map((s) => `  - ${s.filePath}  (${s.name})`).join("\n")}\n\n`
-    : "";
-  const wikiHint = input.wikiRootIndex
-    ? `IMPORTANT: Before starting analysis, you MUST read the troubleshooting wiki index:\n` +
-      `  ${input.wikiRootIndex}\n` +
-      `Navigate in order:\n` +
-      `  1. Read the root index above — find which module(s) match this bug\n` +
-      `  2. Read <module>/index.md — pick the 1–2 entries most relevant to this bug\n` +
-      `  3. Read those entry files — use their root cause and log patterns to shortcut investigation\n` +
-      `Do not skip this step. Confirmed resolutions from past bugs are more reliable than re-deriving from scratch.\n\n`
-    : "";
-  const priorReportsHint = (input.priorReports?.length)
-    ? `Prior analysis reports for this bug (most recent first):\n` +
-      input.priorReports.map((p) => `  ${path.relative(input.workspacePath, p)}`).join("\n") + "\n" +
-      `Read the most recent report first — reuse its root cause and evidence rather than re-deriving from scratch if the same files are present.\n\n`
-    : "";
-  return [
-    input.taskContext,
-    ``,
+    ? renderFileList(input.files, input.workspacePath, input.fileComments)
+    : await loadFragment("user/no-files-downloaded");
+
+  return composePrompt([
     input.environmentContext,
-    ``,
-    `WORKSPACE=${input.workspacePath}`,
-    `Selected files to analyze (relative to WORKSPACE — join with WORKSPACE before reading):\n${fileList}`,
-    ``,
-    `If the user says "this", "attached log", "current log", or "analyze this", inspect the selected files first.`,
-    `If the user asks to list files or explore the workspace, inspect WORKSPACE with tools instead of answering from memory.`,
-    ``,
-    skillsHint,
-    wikiHint,
-    priorReportsHint,
-    `New question:\n${input.question}`,
-  ].join("\n");
+    "",
+    { fragment: "user/workspace-header", vars: { workspace: input.workspacePath } },
+    { fragment: "user/files-header", vars: { fileList } },
+    input.files.length
+      ? { fragment: "user/files-present" }
+      : { fragment: "user/files-empty", vars: { workspace: input.workspacePath } },
+    input.skills.length > 0 && {
+      fragment: "user/skills-hint",
+      vars: { skills: renderSkills(input.skills) },
+    },
+    input.wikiRootIndex && {
+      fragment: "user/wiki-hint",
+      vars: { wikiPath: input.wikiRootIndex },
+    },
+    input.priorReports?.length && {
+      fragment: "user/prior-reports",
+      vars: { reports: renderReports(input.priorReports, input.workspacePath) },
+    },
+    { fragment: "user/question", vars: { question: input.question } },
+  ]);
 }
 
-export function buildFollowUpPrompt(input: {
+export async function buildFollowUpPrompt(input: {
   workspacePath: string;
   files: string[];
   question: string;
   fileComments?: Record<string, string>;
-}): string {
-  const parts: string[] = [];
-  if (input.files.length) {
-    const fileList = input.files
-      .map((f) => {
-        const rel = path.relative(input.workspacePath, f);
-        const comment = input.fileComments?.[f];
-        return comment ? `- ${rel}\n  Comment: "${comment}"` : `- ${rel}`;
-      })
-      .join("\n");
-    parts.push(`Selected files (relative to WORKSPACE):\n${fileList}`);
-  } else {
-    parts.push(`Selected files (relative to WORKSPACE):\n${NO_FILES_DOWNLOADED_LINE}`);
-  }
-  parts.push(`New question:\n${input.question}`);
-  return parts.join("\n\n");
+}): Promise<string> {
+  const fileList = input.files.length
+    ? renderFileList(input.files, input.workspacePath, input.fileComments)
+    : await loadFragment("user/no-files-downloaded");
+
+  return composePrompt([
+    { fragment: "user/followup-files", vars: { fileList } },
+    { fragment: "user/question", vars: { question: input.question } },
+  ]);
 }
