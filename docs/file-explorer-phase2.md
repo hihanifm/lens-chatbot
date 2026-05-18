@@ -12,7 +12,7 @@ Phase 1 ships with full auto-extraction: downloading a zip immediately extracts 
 |---|---|---|
 | Zip download | Extracts everything immediately | Saves zip only |
 | Explorer zip node | Pre-populated children (already extracted) | Collapsed; children fetched lazily on expand |
-| Selecting a zip file | Click `[+ Add]` on already-extracted file | Click `[Extract & Add]` → extracts only that file |
+| Selecting a zip file | Click `[+ Add]` on already-extracted file | Click `[Extract]` → writes file to disk; then `[+ Add]` to add to agent context |
 | Disk usage | All zip contents written on download | Only selected files written to disk |
 
 ### Explorer UX (Phase 2)
@@ -24,10 +24,10 @@ Phase 1 ships with full auto-extraction: downloading a zip immediately extracts 
   → (user taps to expand — fetches contents from zip central directory)
 
   crash_dump.zip ▼
-    radio_log.txt          [Extract & Add]   ← not yet on disk
-    system_log.txt         [✓ In context]    ← extracted + selected
-    modem_raw.bin          [Extract & Add]
-    debug_symbols.txt      [Extract & Add]
+    radio_log.txt          [Extract]         ← not yet on disk
+    system_log.txt         [✓ In context]    ← extracted + user clicked + Add
+    modem_raw.bin          [Extract]
+    debug_symbols.txt      [Extract]
 ```
 
 ---
@@ -39,7 +39,7 @@ Phase 1 ships with full auto-extraction: downloading a zip immediately extracts 
 | `src/services/attachmentService.ts` | Remove auto-extract; add `listZipContents()` + `extractZipEntry()` |
 | `src/services/workspaceExplorer.ts` | Zip nodes have no `children` — empty array; lazy fetch happens client-side |
 | `src/app.ts` | Add `GET /zip-contents`; add `POST /extract-file` |
-| `static/index.html` | Zip node fetches contents on expand; `[Extract & Add]` button |
+| `static/index.html` | Zip node fetches contents on expand; `[Extract]` then optional `[+ Add]` |
 
 No DB changes.
 
@@ -182,7 +182,7 @@ app.get("/session/:id/zip-contents", async (req, res) => {
 
 ### `POST /session/:id/extract-file`
 
-Called when user clicks `[Extract & Add]` on an inner zip entry.
+Called when user clicks `[Extract]` on an inner zip entry (writes to disk only; does not update `selected_files`).
 
 ```typescript
 app.post("/session/:id/extract-file", async (req, res) => {
@@ -201,8 +201,6 @@ app.post("/session/:id/extract-file", async (req, res) => {
   const extractBaseDir = path.join(session.workspace_path, "attachments", zipBaseName);
 
   const extractedPath = await extractZipEntry(resolvedZip, String(innerPath), extractBaseDir);
-  sessions.addFile(session.id, extractedPath);
-
   res.json({ filePath: extractedPath });
 });
 ```
@@ -280,7 +278,7 @@ function makeZipEntryRow(zipPath, entry) {
     });
   } else {
     // Not yet extracted
-    btn.textContent = 'Extract & Add';
+    btn.textContent = 'Extract';
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       btn.textContent = '⏳';
@@ -292,13 +290,11 @@ function makeZipEntryRow(zipPath, entry) {
       });
       if (!res.ok) { btn.textContent = '⚠'; btn.disabled = false; return; }
       const { filePath } = await res.json();
-      await toggleFileInChat(filePath, nameEl.textContent, true);
-      btn.textContent = '✓';
-      btn.classList.add('in-context');
-      btn.disabled = false;
-      nameEl.classList.add('in-context');
       entry.extracted = true;
       entry.filePath = filePath;
+      btn.textContent = '+ Add';
+      btn.disabled = false;
+      // user clicks + Add to call toggleFileInChat(...)
     });
   }
 
@@ -325,7 +321,7 @@ zipRow.addEventListener('click', () => {
 1. `npm run test:e2e` — update any test that checks zip auto-extraction on download; all others pass
 2. Download a zip → confirm only the `.zip` file is written to disk (no sibling directory created)
 3. Open explorer → tap zip node → loading spinner → inner file list appears
-4. Click `[Extract & Add]` on one file → only that file is extracted to disk → appears in context bar
+4. Click `[Extract]` on one file → only that file is written to disk → click `[+ Add]` to add to context bar
 5. Collapse and re-expand zip node → no network request (cached)
 6. Send question → agent prompt shows that file + its comment context
 7. `POST /extract-file` with `innerPath` containing `../` → 403

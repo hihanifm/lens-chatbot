@@ -742,18 +742,6 @@
     document.getElementById('send-btn').disabled = !enabled;
   }
 
-  /** After upload: server adds paths to selected_files; mirror into contextFiles so ad-hoc chat enables. */
-  function applyUploadSelection(upBody) {
-    if (Array.isArray(upBody.selected_files)) {
-      contextFiles = {};
-      for (const fp of upBody.selected_files) contextFiles[fp] = fp.split('/').pop();
-    } else if (upBody.filePaths?.length) {
-      for (const fp of upBody.filePaths) contextFiles[fp] = fp.split('/').pop();
-    }
-    updateContextBar();
-    syncChatInputEnabled();
-  }
-
   function updateContextBar() {
     const bar = document.getElementById('context-bar');
     bar.innerHTML = '';
@@ -1188,7 +1176,6 @@
       startSessionUpload(session.id, fd, uploadQueue, {
         bugId: bug.id,
         onSuccess: (upBody) => {
-          applyUploadSelection(upBody);
           appendMessage('text', `✓ ${upBody.filePaths.length} file${upBody.filePaths.length > 1 ? 's' : ''} uploaded`);
           if (explorerOpen && currentSessionId === session.id) refreshExplorerTree();
         },
@@ -2171,7 +2158,6 @@
     const started = startSessionUpload(currentSessionId, fd, files, {
       bugId: currentBugId ?? currentSessionId,
       onSuccess: (resBody) => {
-        applyUploadSelection(resBody);
         btn.disabled = false;
         status.textContent = `✓ ${resBody.filePaths.length} file(s) uploaded`;
         document.getElementById('upload-files-input').value = '';
@@ -2331,7 +2317,7 @@
         nameEl.classList.add('in-context');
       });
     } else {
-      btn.textContent = 'Extract & Add';
+      btn.textContent = 'Extract';
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         btn.textContent = '⏳';
@@ -2345,11 +2331,15 @@
         const { filePath } = await res.json();
         entry.extracted = true;
         entry.filePath = filePath;
-        await toggleFileInChat(filePath, nameEl.textContent, true);
-        btn.textContent = '✓';
-        btn.classList.add('in-context');
+        btn.textContent = '+ Add';
         btn.disabled = false;
-        nameEl.classList.add('in-context');
+        btn.onclick = async (ev) => {
+          ev.stopPropagation();
+          await toggleFileInChat(entry.filePath, nameEl.textContent, true);
+          btn.textContent = '✓';
+          btn.classList.add('in-context');
+          nameEl.classList.add('in-context');
+        };
       });
     }
     row.appendChild(btn);

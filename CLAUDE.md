@@ -160,7 +160,7 @@ A 🗂 Files drawer in the UI lets users browse all workspace files grouped by t
 
 **Upload progress**: local file uploads (adhoc create or Files drawer) show a global `#upload-banner` below the header with bug ID, filename, MB progress, and phase (`Uploading` / `Saving on server…`). Progress stays visible when switching sessions or with the drawer closed. Only one in-flight upload per session. Server streams multipart bodies to `workspace/.upload-tmp/` via multer `diskStorage`, then renames into `attachments/` (not memory buffers).
 
-**Zip behavior**: zips are no longer auto-extracted on download. The zip file is saved to disk; contents are listed lazily when the user expands the zip node, and individual entries are extracted only when the user clicks `[Extract & Add]`.
+**Zip behavior**: zips are no longer auto-extracted on download. The zip file is saved to disk; contents are listed lazily when the user expands the zip node. Individual entries are extracted to disk when the user clicks `[Extract]`; adding to agent context is a separate step via `[+ Add]`.
 
 **Comment context**: when a file that came from a bug comment is added to context, `buildFileCommentMap()` in `clineCoreAgentRunner.ts` maps the file path to its comment body. `agentPrompt.ts` renders an inline `Comment:` line beside that file in the prompt so the agent sees the relevant comment without the user having to copy it.
 
@@ -170,7 +170,7 @@ File explorer endpoints:
 |----------|---------|
 | `GET /session/:id/workspace/files` | Returns `VirtualTree` JSON — `bugAttachments` + per-comment `CommentSection[]` |
 | `GET /session/:id/zip-contents?zipPath=…` | Reads zip central directory (no extraction); returns `ZipEntry[]` with `extracted` flag |
-| `POST /session/:id/extract-file` | Extracts one entry from a zip; adds the resulting path to session files |
+| `POST /session/:id/extract-file` | Extracts one entry from a zip to workspace disk (does not add to session context; use `PATCH /files` or explorer `[+ Add]`) |
 | `PATCH /session/:id/files` | Add/remove a file from session context (`{ path, selected: true/false }`) |
 | `POST /session/:id/upload` | Upload files to session (multipart, max `UPLOAD_SIZE_LIMIT_MB`) |
 
