@@ -15,6 +15,7 @@ import { createWikiEntry, listWikiEntries, readWikiEntry, buildWikiSynthesisProm
 import { loadAgentSkills } from "./agent/agentPrompt.js";
 import { runLucky } from "./agent/luckyAnalyzer.js";
 import { log } from "./logger.js";
+import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -366,7 +367,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     const updatedSession = sessions.get(req.params.id)!;
 
-    log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: question.slice(0, 80), user: user.name });
+    const questionLog = isLlmSanitizeEnabled() ? sanitizeForLlm(question).text : question;
+    log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: questionLog.slice(0, 80), user: user.name });
     let fullResponse = "";
 
     try {
@@ -539,6 +541,13 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       log.debug("wiki:bug-comments-missing", { sessionId: req.params.id, error: err.message, stack: err.stack });
     }
 
+    let transcriptForLlm = transcript;
+    let bugCommentsForLlm = bugComments;
+    if (isLlmSanitizeEnabled()) {
+      transcriptForLlm = sanitizeForLlm(transcript).text;
+      bugCommentsForLlm = sanitizeForLlm(bugComments).text;
+    }
+
     const llmCfg = settings.getLlmConfig();
     const baseUrl = llmCfg.provider === "openai"
       ? "https://api.openai.com/v1"
@@ -557,7 +566,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           model: llmCfg.model,
           stream: false,
           temperature: 0.3,
-          messages: [{ role: "user", content: await buildWikiSynthesisPrompt(transcript, bugComments, session.bug_id, rawModule) }],
+          messages: [{ role: "user", content: await buildWikiSynthesisPrompt(transcriptForLlm, bugCommentsForLlm, session.bug_id, rawModule) }],
         }),
       });
     } catch (err: any) {

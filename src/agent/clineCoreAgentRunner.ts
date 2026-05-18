@@ -5,6 +5,7 @@ import { buildPrompt, buildFollowUpPrompt, loadAgentSkills, getWikiRootIndexPath
 import { loadPrompt } from "../prompts/promptLoader.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
+import { isLlmSanitizeEnabled, sanitizeForLlm } from "../services/llmSanitize.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -260,21 +261,54 @@ export class ClineCoreAgentRunner implements AgentRunner {
 
     const cline = await getCline();
 
-    log.info("agent:start", { runtime: "cline-core", model: llmCfg.model, files: input.files.length, skills: skills.length, question: input.question.slice(0, 60), reuse: !!input.clineSessionId });
+    let questionForLlm = input.question;
+    let fileCommentsForLlm = fileComments;
+    let bugContextForLlm: string | null = bugJson ? formatBugContext(bugJson) : null;
+    let sanitizeReplacementTotal = 0;
+    if (isLlmSanitizeEnabled()) {
+      const qRes = sanitizeForLlm(input.question);
+      questionForLlm = qRes.text;
+      sanitizeReplacementTotal += qRes.replacementCount;
+      fileCommentsForLlm = {};
+      for (const [k, v] of Object.entries(fileComments)) {
+        const r = sanitizeForLlm(v);
+        fileCommentsForLlm[k] = r.text;
+        sanitizeReplacementTotal += r.replacementCount;
+      }
+      if (bugContextForLlm) {
+        const r = sanitizeForLlm(bugContextForLlm);
+        bugContextForLlm = r.text;
+        sanitizeReplacementTotal += r.replacementCount;
+      }
+    }
+
+    const logQuestion = isLlmSanitizeEnabled() ? questionForLlm : input.question;
+    log.info("agent:start", { runtime: "cline-core", model: llmCfg.model, files: input.files.length, skills: skills.length, question: logQuestion.slice(0, 60), reuse: !!input.clineSessionId });
     push({ type: "status", content: `provider: ${llmCfg.provider} | model: ${llmCfg.model} | runtime: cline-core | files: ${input.files.length}` });
     if (skills.length > 0) {
       push({ type: "status", content: `skills: ${skills.map((s) => s.name).join(", ")}` });
     }
+    if (sanitizeReplacementTotal > 0) {
+      push({ type: "status", content: `PII patterns redacted in prompt (${sanitizeReplacementTotal} substitutions)` });
+    }
 
-    const fullPrompt = buildPrompt({ ...input, fileComments, skills, wikiRootIndex, priorReports, taskContext, environmentContext });
+    const fullPrompt = buildPrompt({
+      ...input,
+      question: questionForLlm,
+      fileComments: fileCommentsForLlm,
+      skills,
+      wikiRootIndex,
+      priorReports,
+      taskContext,
+      environmentContext,
+    });
     const followUpPrompt = buildFollowUpPrompt({
       workspacePath: input.workspacePath,
       files: input.files,
-      question: input.question,
-      fileComments,
+      question: questionForLlm,
+      fileComments: fileCommentsForLlm,
     });
-    const bugContext = bugJson ? formatBugContext(bugJson) : null;
-    const startPrompt = bugContext ? `${bugContext}\n\n${fullPrompt}` : fullPrompt;
+    const startPrompt = bugContextForLlm ? `${bugContextForLlm}\n\n${fullPrompt}` : fullPrompt;
     const isFollowUp = !!input.clineSessionId;
     const sentPrompt = isFollowUp ? followUpPrompt : startPrompt;
     if (flags.promptLogging) {
