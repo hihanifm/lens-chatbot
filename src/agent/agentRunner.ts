@@ -9,6 +9,7 @@ export interface AgentRunner {
     files: string[];
     question: string;
     clineSessionId?: string;
+    mode?: "plan" | "act";
   }): AsyncIterable<AgentEvent>;
   abort(clineSessionId: string): Promise<void>;
   stop(clineSessionId: string): Promise<void>;

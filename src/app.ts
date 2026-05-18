@@ -349,6 +349,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     const question = req.query.question as string;
     if (!question) return res.status(400).json({ error: "question required" });
+    const agentMode = req.query.mode === "plan" ? "plan" : "act";
 
     const user = users.getById(req.query.userId as string);
     if (!user) return res.status(400).json({ error: "userId required" });
@@ -374,6 +375,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         files: updatedSession.selected_files,
         question,
         clineSessionId: updatedSession.cline_session_id,
+        mode: agentMode,
       })) {
         if (event.type === "session_id") {
           sessions.setClineSessionId(req.params.id, event.content);

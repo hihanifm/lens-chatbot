@@ -64,7 +64,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
     cwd: input.workspacePath,
     workspaceRoot: input.workspacePath,
-    mode: "plan" as const,
+    mode: (input.mode ?? "act") as "plan" | "act",
     systemPrompt: "", // empty → ClineCore uses its own DEFAULT_CLINE_SYSTEM_PROMPT
     maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 12),
     enableTools: true,

@@ -199,6 +199,10 @@
     #lucky-btn { background: var(--lucky); color: white; border: none; border-radius: 12px; padding: 10px 14px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; white-space: nowrap; }
     #lucky-btn:disabled { opacity: 0.4; cursor: default; }
     #lucky-btn:hover:not(:disabled) { background: var(--lucky-hover); }
+    #mode-toggle { display: inline-flex; border: 1.5px solid #e5e7eb; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+    .mode-btn { background: none; border: none; padding: 6px 10px; font-size: 11px; font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace; color: #9ca3af; cursor: pointer; transition: background 0.15s, color 0.15s; line-height: 1; }
+    .mode-btn.active { background: var(--action); color: white; }
+    .mode-btn:hover:not(.active) { background: #f3f4f6; color: #374151; }
     #abort-btn { display: none; background: #ef4444; color: white; border: none; border-radius: 12px; padding: 10px 22px; cursor: pointer; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 0.15s; white-space: nowrap; }
     #abort-btn:hover { background: #dc2626; }
     #session-menu-wrap { position: relative; display: none; }
@@ -382,6 +386,10 @@
       <div id="skill-picker"></div>
       <textarea id="question-input" placeholder="Ask a question about the log..." disabled></textarea>
       <button id="send-btn" disabled>Send</button>
+      <div id="mode-toggle" title="Agent mode: ACT executes directly, PLAN reasons first">
+        <button class="mode-btn active" id="mode-act-btn">ACT</button>
+        <button class="mode-btn" id="mode-plan-btn">PLAN</button>
+      </div>
       <button id="lucky-btn" disabled title="Automatically find root cause">🎲 Lucky</button>
       <button id="abort-btn">Stop</button>
       <div id="session-menu-wrap">
@@ -579,6 +587,7 @@
 
 <script type="module">
   let featureFlags = { promptLogging: true, llmRequestLogging: true, wiki: true, lucky: true };
+  let agentMode = 'act';
 
   async function loadFeatureFlags() {
     try {
@@ -1213,6 +1222,17 @@
     return wrapper;
   }
 
+  document.getElementById('mode-act-btn').onclick = () => {
+    agentMode = 'act';
+    document.getElementById('mode-act-btn').classList.add('active');
+    document.getElementById('mode-plan-btn').classList.remove('active');
+  };
+  document.getElementById('mode-plan-btn').onclick = () => {
+    agentMode = 'plan';
+    document.getElementById('mode-plan-btn').classList.add('active');
+    document.getElementById('mode-act-btn').classList.remove('active');
+  };
+
   document.getElementById('send-btn').onclick = sendQuestion;
 
   document.getElementById('lucky-btn').onclick = function() {
@@ -1362,7 +1382,7 @@
 
     if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
 
-    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}&userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}`;
+    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}&userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}&mode=${agentMode}`;
     const es = new EventSource(url);
     currentEs = es;
     let isDone = false;
