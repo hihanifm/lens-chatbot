@@ -2028,7 +2028,7 @@
     row.style.paddingLeft = '28px';
     const nameEl = document.createElement('span');
     nameEl.className = `exp-file-name${entry.extracted && contextFiles[entry.filePath] ? ' in-context' : ''}`;
-    nameEl.textContent = entry.innerPath.split('/').pop();
+    nameEl.textContent = entry.innerPath;
     nameEl.title = entry.innerPath;
     row.appendChild(nameEl);
     const btn = document.createElement('button');
