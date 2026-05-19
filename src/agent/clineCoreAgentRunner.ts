@@ -249,16 +249,20 @@ export class ClineCoreAgentRunner implements AgentRunner {
   async *analyze(input: Parameters<AgentRunner["analyze"]>[0]): AsyncIterable<AgentEvent> {
     egressContext.enterWith({ workspacePath: input.workspacePath, sessionId: input.clineSessionId });
     const flags = settings.getFeatureFlags();
+    const { systemPromptSource } = settings.getAgentSettings();
     const existingFiles = await filterExistingPaths(input.files);
-    const [skills, wikiRootIndex, fileComments, rules, environmentContext, baseTemplate, bugJson] = await Promise.all([
+    const [skills, wikiRootIndex, fileComments, rules, environmentContext, bugJson] = await Promise.all([
       loadAgentSkills(),
       flags.wiki ? getWikiRootIndexPath() : Promise.resolve(null),
       buildFileCommentMap(input.workspacePath, existingFiles),
       buildSystemRules(),
       loadPrompt("environment"),
-      loadPrompt(input.mode === "yolo" ? "base-yolo" : "base"),
       fs.readFile(path.join(input.workspacePath, "bug.json"), "utf8").then(JSON.parse).catch(() => null),
     ]);
+    const baseTemplate =
+      systemPromptSource === "lens"
+        ? await loadPrompt(input.mode === "yolo" ? "base-yolo" : "base")
+        : undefined;
     const systemPrompt = getClineDefaultSystemPrompt({
       rootPath: input.workspacePath,
       workspaceRoot: input.workspacePath,
@@ -267,7 +271,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       rules,
       platform: process.platform,
       ide: "Terminal Shell",
-      overridePrompt: baseTemplate,
+      ...(baseTemplate !== undefined ? { overridePrompt: baseTemplate } : {}),
     });
     const agentNotesDir = path.join(input.workspacePath, "agent_notes");
     let priorReports: string[] = [];

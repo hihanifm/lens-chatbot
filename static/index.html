@@ -573,6 +573,15 @@
       <p class="s-hint">Cline tool loop limit per analysis (default 24). Increase if you hit maxIterations errors on large bugs.</p>
     </div>
 
+    <div class="s-group">
+      <label class="s-label" for="s-system-prompt-source">System prompt</label>
+      <select id="s-system-prompt-source" class="s-input">
+        <option value="lens">Lens bug-analysis (base.md)</option>
+        <option value="cline">Cline SDK default</option>
+      </select>
+      <p class="s-hint">Lens uses base.md (base-yolo for Lucky yolo). Cline uses the SDK default template. Domain rules apply in both modes.</p>
+    </div>
+
     <div id="s-llm-error" class="s-error"></div>
 
     <div class="s-btn-row">
@@ -2044,6 +2053,7 @@
         sApikey.value = '';
         sApikey.placeholder = cfg.apiKey ? cfg.apiKey : 'sk-...';
         document.getElementById('s-max-iterations').value = cfg.maxIterations ?? 24;
+        document.getElementById('s-system-prompt-source').value = cfg.systemPromptSource ?? 'lens';
       }
     } catch {}
 
@@ -2095,6 +2105,7 @@
       baseUrl: sBaseurl.value.trim() || undefined,
       apiKey: apiKeyVal || undefined,
       maxIterations: Number(document.getElementById('s-max-iterations').value),
+      systemPromptSource: document.getElementById('s-system-prompt-source').value,
     };
 
     const res = await fetch('/settings/llm', {

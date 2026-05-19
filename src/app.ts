@@ -766,13 +766,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
   app.get("/settings/llm", (_req, res) => {
     const cfg = settings.getLlmConfig();
-    const out = { ...cfg, maxIterations: settings.getAgentMaxIterations() } as any;
+    const agent = settings.getAgentSettings();
+    const out = { ...cfg, maxIterations: agent.maxIterations, systemPromptSource: agent.systemPromptSource } as any;
     if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
     res.json(out);
   });
 
   app.put("/settings/llm", async (req, res) => {
-    const { pin, provider, model, baseUrl, apiKey, maxIterations } = req.body;
+    const { pin, provider, model, baseUrl, apiKey, maxIterations, systemPromptSource } = req.body;
     if (!pin) return res.status(400).json({ error: "pin required" });
     if (!provider || !model) return res.status(400).json({ error: "provider and model required" });
 
@@ -789,18 +790,26 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if ((provider === "openai-compatible" || provider === "ollama") && !baseUrl)
       return res.status(400).json({ error: "baseUrl required" });
 
+    const agentPartial: { maxIterations?: number; systemPromptSource?: "lens" | "cline" } = {};
     if (maxIterations !== undefined) {
       const n = Number(maxIterations);
       if (!Number.isInteger(n) || n < 1 || n > 100)
         return res.status(400).json({ error: "maxIterations must be an integer between 1 and 100" });
-      settings.setAgentMaxIterations(n);
+      agentPartial.maxIterations = n;
     }
+    if (systemPromptSource !== undefined) {
+      if (systemPromptSource !== "lens" && systemPromptSource !== "cline")
+        return res.status(400).json({ error: "systemPromptSource must be lens or cline" });
+      agentPartial.systemPromptSource = systemPromptSource;
+    }
+    if (Object.keys(agentPartial).length > 0) settings.setAgentSettings(agentPartial);
 
     const cfg: LlmConfig = { provider, model, baseUrl, apiKey: resolvedApiKey };
     settings.setLlmConfig(cfg);
     log.info("settings:llm-updated", { provider, model });
 
-    const out = { ...cfg, maxIterations: settings.getAgentMaxIterations() } as any;
+    const agent = settings.getAgentSettings();
+    const out = { ...cfg, maxIterations: agent.maxIterations, systemPromptSource: agent.systemPromptSource } as any;
     if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
     res.json(out);
   });

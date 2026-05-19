@@ -203,6 +203,29 @@ export interface LlmConfig {
   apiKey?: string;
 }
 
+export type SystemPromptSource = "lens" | "cline";
+
+export interface AgentSettings {
+  maxIterations?: number;
+  systemPromptSource?: SystemPromptSource;
+}
+
+export function resolveAgentSettings(stored: Partial<AgentSettings> | undefined): {
+  maxIterations: number;
+  systemPromptSource: SystemPromptSource;
+} {
+  const defaultSource: SystemPromptSource = process.env.SYSTEM_PROMPT_SOURCE === "cline" ? "cline" : "lens";
+  return {
+    maxIterations: stored?.maxIterations ?? Number(process.env.AGENT_MAX_ITERATIONS ?? 24),
+    systemPromptSource: stored?.systemPromptSource ?? defaultSource,
+  };
+}
+
+function readAgentSettingsRow(): Partial<AgentSettings> {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'agent'").get() as { value: string } | undefined;
+  return row ? (JSON.parse(row.value) as Partial<AgentSettings>) : {};
+}
+
 export const settings = {
   getLlmConfig(): LlmConfig {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'llm'").get() as any;
@@ -256,14 +279,21 @@ export const settings = {
     log.info("settings:feature-flags-updated", { flags });
   },
 
+  getAgentSettings() {
+    return resolveAgentSettings(readAgentSettingsRow());
+  },
+
+  setAgentSettings(partial: AgentSettings): void {
+    const merged = { ...readAgentSettingsRow(), ...partial };
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('agent', ?)").run(JSON.stringify(merged));
+    log.info("settings:agent-updated", resolveAgentSettings(merged));
+  },
+
   getAgentMaxIterations(): number {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'agent'").get() as { value: string } | undefined;
-    if (row) return (JSON.parse(row.value) as { maxIterations: number }).maxIterations;
-    return Number(process.env.AGENT_MAX_ITERATIONS ?? 24);
+    return settings.getAgentSettings().maxIterations;
   },
 
   setAgentMaxIterations(n: number): void {
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('agent', ?)").run(JSON.stringify({ maxIterations: n }));
-    log.info("settings:agent-max-iterations-updated", { maxIterations: n });
+    settings.setAgentSettings({ maxIterations: n });
   },
 };

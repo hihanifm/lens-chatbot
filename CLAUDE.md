@@ -42,6 +42,7 @@ Key env vars:
 | `ADMIN_PIN` | `"admin"` | Hashed with scrypt on first startup, stored in SQLite; ignored on restart. Required to change LLM settings. |
 | `UPLOAD_SIZE_LIMIT_MB` | `50` | Max file upload size (multer, 413 on exceed) |
 | `AGENT_MAX_ITERATIONS` | `24` | ClineCore max iterations per analysis (env fallback; Settings → LLM Provider overrides in SQLite) |
+| `SYSTEM_PROMPT_SOURCE` | `lens` | `lens` = `base.md` / `base-yolo.md` override; `cline` = SDK default (env fallback; Settings overrides in SQLite `agent` key) |
 | `LOG_LEVEL` | `info` | Server verbosity: `debug\|info\|warn\|error` |
 | `SKILLS_DIR` | `/app/skills` | Colon-separated skill directories (extra dirs also configurable via Settings UI) |
 | `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
@@ -112,7 +113,7 @@ fixtures/                ← static fixture files for tests
 **ClineCoreAgentRunner config**: defaults to `"act"` mode (`GET /session/:id/analyze?mode=plan` for plan). Max iterations from Settings UI (stored in SQLite `agent` key) or `AGENT_MAX_ITERATIONS` env (default 24). Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, all MCP settings tools; `SUBMIT_AND_EXIT` only when `mode=yolo` (Lucky). Spawn agent and agent teams disabled.
 
 **Prompt composition** (two layers):
-1. **System prompt** — `loadPrompt("base")` or `loadPrompt("base-yolo")` passed as `overridePrompt` to `getClineDefaultSystemPrompt()`. Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` (stable per session).
+1. **System prompt** — Settings / `SYSTEM_PROMPT_SOURCE`: **lens** (default) loads `base.md` or `base-yolo.md` as `overridePrompt`; **cline** omits override (SDK default). Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` in both modes (stable per session).
 2. **User turn** — `buildPrompt()` prepends `environment.md`, then composes `fragments/user/*` (workspace, file list, skills/wiki hints, prior reports, question). Follow-ups use `buildFollowUpPrompt()` (shorter file list + question only).
 
 **Ad-hoc sessions**: users can create a session without a bug tracker entry (`POST /session/adhoc` with title/description/optional bugId), then upload files (`POST /session/:id/upload`, up to 20 files, optional `commentLabel`/`commentBody` for grouping in the file explorer). Same workspace layout and analysis flow as tracker-based sessions.
