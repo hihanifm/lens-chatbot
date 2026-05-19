@@ -67,6 +67,7 @@ export async function buildPrompt(input: {
   priorReports?: string[];
   selectedSkill?: LoadedSkill;
   extras?: { count: number; attachmentsRoot: string };
+  bugContext?: string | null;
 }): Promise<string> {
   const fileList = input.files.length
     ? renderFileList(input.files, input.workspacePath, input.fileComments)
@@ -104,6 +105,7 @@ export async function buildPrompt(input: {
       fragment: "user/prior-reports",
       vars: { reports: renderReports(input.priorReports, input.workspacePath) },
     },
+    input.bugContext || false,
     { fragment: "user/question", vars: { question: input.question } },
   ]);
 }

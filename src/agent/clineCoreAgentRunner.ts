@@ -15,12 +15,15 @@ function formatLogTimestamp(d = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, "0")}`;
 }
 
+const MAX_BUG_COMMENTS = 10;
+
 function formatBugContext(bug: any): string {
+  if (!bug) return "";
   const lines: string[] = [
     `## Bug Tracker Context`,
-    `**ID:** ${bug.id}  **Title:** ${bug.title}`,
-    `**State:** ${bug.state}  **Module:** ${bug.module}  **Owner:** ${bug.owner ?? "—"}  **Author:** ${bug.author ?? "—"}`,
-    `**Created:** ${bug.created_at}  **Updated:** ${bug.updated_at}`,
+    `**ID:** ${bug.id ?? "?"}  **Title:** ${bug.title ?? "?"}`,
+    `**State:** ${bug.state ?? "?"}  **Module:** ${bug.module ?? "?"}  **Owner:** ${bug.owner ?? "—"}  **Author:** ${bug.author ?? "—"}`,
+    `**Created:** ${bug.created_at ?? "?"}  **Updated:** ${bug.updated_at ?? "?"}`,
     ``,
     `Log files are not in the workspace until you download them from the Files panel. Analysis without downloads is limited to the bug description and comments below.`,
     ``,
@@ -28,13 +31,20 @@ function formatBugContext(bug: any): string {
     bug.description || "(none)",
   ];
 
-  const comments: any[] = [...(bug.comments ?? [])].sort(
+  const allComments: any[] = [...(bug.comments ?? [])].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
-  if (comments.length > 0) {
-    lines.push(``, `**Comments (chronological):**`);
-    for (const c of comments) {
-      lines.push(``, `> **${c.author}** (${c.created_at})`, `> ${c.body}`);
+  const total = allComments.length;
+  const shown = total > MAX_BUG_COMMENTS ? allComments.slice(-MAX_BUG_COMMENTS) : allComments;
+  if (shown.length > 0) {
+    const header = total > MAX_BUG_COMMENTS
+      ? `**Comments (showing last ${MAX_BUG_COMMENTS} of ${total}, chronological):**`
+      : `**Comments (chronological):**`;
+    lines.push(``, header);
+    for (const c of shown) {
+      const attN = c.attachments?.length ?? 0;
+      const attTag = attN > 0 ? ` [${attN} attachment${attN === 1 ? "" : "s"}]` : "";
+      lines.push(``, `> **${c.author ?? "?"}** (${c.created_at ?? "?"})${attTag}`, `> ${c.body ?? ""}`);
     }
   }
 
@@ -91,19 +101,12 @@ function summarizeToolInput(toolName: string | undefined, input: unknown): strin
   return "";
 }
 
-async function buildFileCommentMap(
-  workspacePath: string,
+function buildFileCommentMap(
+  bug: any | null,
   files: string[]
-): Promise<Record<string, string>> {
+): Record<string, string> {
   const map: Record<string, string> = {};
-  let bug: any;
-  try {
-    const raw = await fs.readFile(path.join(workspacePath, "bug.json"), "utf8");
-    bug = JSON.parse(raw);
-  } catch (err: any) {
-    log.debug("agent:bug-json-missing", { workspacePath, error: err.message, stack: err.stack });
-    return map;
-  }
+  if (!bug) return map;
   // Build suffix→comment index first, then do one O(n) pass over files
   const suffixIndex = new Map<string, string>();
   for (const comment of bug.comments ?? []) {
@@ -259,14 +262,14 @@ export class ClineCoreAgentRunner implements AgentRunner {
     const flags = settings.getFeatureFlags();
     const { systemPromptSource } = settings.getAgentSettings();
     const existingFiles = await filterExistingPaths(input.files);
-    const [skills, wikiRootIndex, fileComments, rules, environmentContext, bugJson] = await Promise.all([
+    const [skills, wikiRootIndex, rules, environmentContext, bugJson] = await Promise.all([
       loadAgentSkills(),
       flags.wiki ? getWikiRootIndexPath() : Promise.resolve(null),
-      buildFileCommentMap(input.workspacePath, existingFiles),
       buildSystemRules(),
       loadPrompt("environment"),
       fs.readFile(path.join(input.workspacePath, "bug.json"), "utf8").then(JSON.parse).catch(() => null),
     ]);
+    const fileComments = buildFileCommentMap(bugJson, existingFiles);
     const baseTemplate =
       systemPromptSource === "lens"
         ? await loadPrompt(input.mode === "yolo" ? "base-yolo" : "base")
@@ -348,6 +351,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
     } else if (selectedSkill) {
       push({ type: "status", content: `selected skill: ${selectedSkill.name}` });
     }
+    const isFollowUp = !!input.clineSessionId;
     const fullPrompt = await buildPrompt({
       ...input,
       files: existingFiles,
@@ -358,6 +362,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       priorReports,
       environmentContext,
       selectedSkill,
+      bugContext: isFollowUp ? null : bugContextForLlm,
     });
     const followUpPrompt = await buildFollowUpPrompt({
       workspacePath: input.workspacePath,
@@ -366,9 +371,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       fileComments: fileCommentsForLlm,
       selectedSkill,
     });
-    const startPrompt = bugContextForLlm ? `${bugContextForLlm}\n\n${fullPrompt}` : fullPrompt;
-    const isFollowUp = !!input.clineSessionId;
-    const sentPrompt = isFollowUp ? followUpPrompt : startPrompt;
+    const sentPrompt = isFollowUp ? followUpPrompt : fullPrompt;
     if (flags.promptLogging) {
       const promptLogPath = path.join(input.workspacePath, "agent_notes", `prompt-${formatLogTimestamp()}.txt`);
       await fs.mkdir(path.dirname(promptLogPath), { recursive: true });
@@ -454,7 +457,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
           const startResult = await cline.start({
             source: SessionSource.API,
             interactive: false,
-            prompt: startPrompt,
+            prompt: fullPrompt,
             config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt),
           });
           clineSessionId = startResult.sessionId;
@@ -472,7 +475,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
           const startResult = await cline.start({
             source: SessionSource.API,
             interactive: false,
-            prompt: startPrompt,
+            prompt: fullPrompt,
             config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt),
           });
           clineSessionId = startResult.sessionId;
