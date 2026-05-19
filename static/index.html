@@ -226,6 +226,11 @@
     #reset-confirm-modal { background: white; border-radius: 14px; padding: 28px; width: 400px; max-width: 92vw; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
     #reset-confirm-modal h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 10px; }
     #reset-confirm-modal p { font-size: 13.5px; color: #6b7280; line-height: 1.6; margin: 0 0 22px; }
+    #admin-pin-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1100; align-items: center; justify-content: center; }
+    #admin-pin-overlay.open { display: flex; }
+    #admin-pin-modal { background: white; border-radius: 14px; padding: 28px; width: 380px; max-width: 92vw; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+    #admin-pin-modal h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 8px; }
+    #admin-pin-modal p { font-size: 13px; color: #6b7280; line-height: 1.5; margin: 0 0 16px; }
     .session-reset-divider { text-align: center; font-size: 11px; color: #9ca3af; padding: 14px 0; letter-spacing: 0.4px; }
 
     /* Settings */
@@ -483,6 +488,19 @@
   </div>
 </div>
 
+<div id="admin-pin-overlay">
+  <div id="admin-pin-modal">
+    <h3>Enter admin PIN</h3>
+    <p id="admin-pin-hint">Admin PIN is required to save settings.</p>
+    <input id="admin-pin-input" class="s-input" type="password" placeholder="Admin PIN" autocomplete="off" />
+    <div id="admin-pin-error" class="s-error"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+      <button type="button" id="admin-pin-cancel-btn" class="s-btn-secondary">Cancel</button>
+      <button type="button" id="admin-pin-confirm-btn" class="s-btn-primary">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <div id="reset-confirm-overlay">
   <div id="reset-confirm-modal">
     <h3>Reset agent session?</h3>
@@ -525,10 +543,6 @@
       <input id="s-apikey" class="s-input" type="password" placeholder="sk-..." autocomplete="off" />
     </div>
 
-    <div id="s-pin-row" class="s-group" style="display:none;">
-      <label class="s-label" for="s-pin">Admin PIN</label>
-      <input id="s-pin" class="s-input" type="password" placeholder="Enter admin PIN to save" autocomplete="off" />
-    </div>
     <div id="s-llm-error" class="s-error"></div>
 
     <div class="s-btn-row">
@@ -1832,12 +1846,52 @@
   const sApikey = document.getElementById('s-apikey');
   const sBaseurlGroup = document.getElementById('s-baseurl-group');
   const sApikeyGroup = document.getElementById('s-apikey-group');
-  const sPinRow = document.getElementById('s-pin-row');
-  const sPin = document.getElementById('s-pin');
   const sLlmError = document.getElementById('s-llm-error');
   const sPinError = document.getElementById('s-pin-error');
   const sPinSuccess = document.getElementById('s-pin-success');
-  let settingsPinShown = false;
+  const adminPinOverlay = document.getElementById('admin-pin-overlay');
+  const adminPinInput = document.getElementById('admin-pin-input');
+  const adminPinError = document.getElementById('admin-pin-error');
+  const adminPinHint = document.getElementById('admin-pin-hint');
+  let adminPinResolve = null;
+
+  function finishAdminPinModal(pin) {
+    adminPinOverlay.classList.remove('open');
+    const resolve = adminPinResolve;
+    adminPinResolve = null;
+    if (resolve) resolve(pin);
+  }
+
+  function promptAdminPin(hint) {
+    return new Promise((resolve) => {
+      adminPinError.textContent = '';
+      adminPinInput.value = '';
+      adminPinHint.textContent = hint || 'Admin PIN is required to save settings.';
+      adminPinResolve = resolve;
+      adminPinOverlay.classList.add('open');
+      setTimeout(() => adminPinInput.focus(), 0);
+    });
+  }
+
+  function confirmAdminPinModal() {
+    const pin = adminPinInput.value.trim();
+    if (!pin) {
+      adminPinError.textContent = 'Enter your admin PIN.';
+      adminPinInput.focus();
+      return;
+    }
+    finishAdminPinModal(pin);
+  }
+
+  document.getElementById('admin-pin-cancel-btn').addEventListener('click', () => finishAdminPinModal(null));
+  document.getElementById('admin-pin-confirm-btn').addEventListener('click', confirmAdminPinModal);
+  adminPinInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmAdminPinModal(); }
+    if (e.key === 'Escape') finishAdminPinModal(null);
+  });
+  adminPinOverlay.addEventListener('click', (e) => {
+    if (e.target === adminPinOverlay) finishAdminPinModal(null);
+  });
 
   function updateSettingsFields() {
     const p = sProvider.value;
@@ -1889,9 +1943,6 @@
     sPinError.textContent = '';
     sPinSuccess.textContent = '';
     document.getElementById('s-skills-error').textContent = '';
-    settingsPinShown = false;
-    sPinRow.style.display = 'none';
-    sPin.value = '';
     document.getElementById('s-cur-pin').value = '';
     document.getElementById('s-new-pin').value = '';
     document.getElementById('s-confirm-pin').value = '';
@@ -1933,6 +1984,7 @@
   }
 
   function closeSettings() {
+    if (adminPinResolve) finishAdminPinModal(null);
     settingsOverlay.classList.remove('open');
   }
 
@@ -1942,14 +1994,8 @@
 
   document.getElementById('s-save-btn').addEventListener('click', async () => {
     sLlmError.textContent = '';
-    if (!settingsPinShown) {
-      settingsPinShown = true;
-      sPinRow.style.display = 'block';
-      sPin.focus();
-      return;
-    }
-    const pin = sPin.value.trim();
-    if (!pin) { sLlmError.textContent = 'Enter your admin PIN to save.'; return; }
+    const pin = await promptAdminPin('Confirm your identity to save LLM provider settings.');
+    if (!pin) return;
 
     const apiKeyVal = sApikey.value.trim();
     const body = {
@@ -1981,14 +2027,8 @@
 
   document.getElementById('s-skills-save-btn').addEventListener('click', async () => {
     document.getElementById('s-skills-error').textContent = '';
-    if (!settingsPinShown) {
-      settingsPinShown = true;
-      sPinRow.style.display = 'block';
-      sPin.focus();
-      return;
-    }
-    const pin = sPin.value.trim();
-    if (!pin) { document.getElementById('s-skills-error').textContent = 'Enter your admin PIN to save.'; return; }
+    const pin = await promptAdminPin('Confirm your identity to save skills directories.');
+    if (!pin) return;
 
     const dirs = document.getElementById('s-skills-dirs').value
       .split('\n').map(d => d.trim()).filter(Boolean);
@@ -2013,14 +2053,8 @@
 
   document.getElementById('f-save-btn').addEventListener('click', async () => {
     document.getElementById('f-error').textContent = '';
-    if (!settingsPinShown) {
-      settingsPinShown = true;
-      sPinRow.style.display = 'block';
-      sPin.focus();
-      return;
-    }
-    const pin = sPin.value.trim();
-    if (!pin) { document.getElementById('f-error').textContent = 'Enter your admin PIN to save.'; return; }
+    const pin = await promptAdminPin('Confirm your identity to save feature flags.');
+    if (!pin) return;
 
     const flags = {
       promptLogging: document.getElementById('f-prompt-log').checked,
