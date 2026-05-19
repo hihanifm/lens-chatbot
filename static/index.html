@@ -127,6 +127,18 @@
     .attachment-btn.downloaded { background: #f0fdf4; border-color: #86efac; color: #15803d; box-shadow: none; transform: none; cursor: default; font-weight: 500; }
     .attachment-hint { font-size: 11px; color: #9ca3af; font-style: italic; margin-bottom: 8px; }
 
+    /* Attachment download coverage (bug header) */
+    #attachment-coverage { flex: 1; min-width: 140px; max-width: 240px; display: flex; flex-direction: column; gap: 5px; padding: 2px 0; cursor: pointer; }
+    #attachment-coverage[hidden] { display: none !important; }
+    #attachment-coverage .coverage-bar { height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+    #attachment-coverage .coverage-fill { height: 100%; background: var(--action); border-radius: 999px; transition: width 0.25s ease; width: 0; }
+    #attachment-coverage .coverage-label { font-size: 12px; color: #374151; line-height: 1.3; }
+    #attachment-coverage.coverage-low .coverage-fill { background: #d97706; }
+    #attachment-coverage.coverage-low .coverage-label { color: #92400e; }
+    #attachment-coverage.coverage-full .coverage-fill { background: #16a34a; }
+    #attachment-coverage.coverage-full .coverage-label { color: #15803d; }
+    #attachment-coverage.coverage-none .coverage-bar { display: none; }
+
     /* Comments */
     #comments { display: flex; flex-direction: column; gap: 10px; }
     .comment { background: #fafafa; border: 1px solid #f3f4f6; border-left: 3px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; }
@@ -398,6 +410,10 @@
       <div id="bug-summary">
         <h3 id="bug-title"></h3>
         <div class="bug-meta" id="bug-meta-summary"></div>
+      </div>
+      <div id="attachment-coverage" class="attachment-coverage" hidden title="Click to show attachments">
+        <div class="coverage-bar"><div class="coverage-fill"></div></div>
+        <span class="coverage-label"></span>
       </div>
       <div class="bug-info-actions">
         <button id="wiki-session-btn" type="button" title="Save troubleshooting insights to the wiki">Add to Wiki</button>
@@ -948,12 +964,63 @@
       appendMessage('error', `✗ Refresh failed: ${body.error ?? res.statusText} (HTTP ${res.status})`);
       return;
     }
-    renderBugPanel(body.bug, Object.keys(contextFiles));
+    await refreshBugPanelFromSession();
     btn.textContent = '✓ Updated';
     setTimeout(() => { btn.textContent = label; }, 2000);
   }
 
   document.getElementById('bug-refresh-btn').addEventListener('click', refreshBugFromTracker);
+
+  function attachmentCoverage(bug, downloadedFiles) {
+    const all = [
+      ...(bug.attachments ?? []),
+      ...(bug.comments ?? []).flatMap((c) => c.attachments ?? []),
+    ];
+    const total = all.length;
+    const downloaded = all.filter((a) =>
+      (downloadedFiles ?? []).some((fp) => fp.endsWith('/' + a.name))
+    ).length;
+    const percent = total ? Math.round((downloaded / total) * 100) : 100;
+    return { total, downloaded, percent };
+  }
+
+  function renderAttachmentCoverage(bug, downloadedFiles) {
+    const el = document.getElementById('attachment-coverage');
+    if (!bug || bug.state === 'adhoc') {
+      el.hidden = true;
+      return;
+    }
+    const { total, downloaded, percent } = attachmentCoverage(bug, downloadedFiles);
+    el.hidden = false;
+    el.classList.remove('coverage-low', 'coverage-full', 'coverage-none');
+    const fill = el.querySelector('.coverage-fill');
+    const label = el.querySelector('.coverage-label');
+    if (total === 0) {
+      el.classList.add('coverage-none');
+      fill.style.width = '0';
+      label.textContent = 'No tracker attachments';
+      el.title = '';
+      return;
+    }
+    fill.style.width = percent + '%';
+    label.textContent = `${downloaded} / ${total} downloaded · ${percent}%`;
+    if (downloaded === 0) {
+      el.classList.add('coverage-low');
+      label.textContent += ' — Download logs before analysis';
+      el.title = 'Click to show attachments';
+    } else if (downloaded === total) {
+      el.classList.add('coverage-full');
+      el.title = 'All tracker attachments downloaded';
+    } else {
+      el.title = 'Click to show attachments';
+    }
+  }
+
+  document.getElementById('attachment-coverage').addEventListener('click', (e) => {
+    e.stopPropagation();
+    setBugInfoExpanded(true);
+    document.getElementById('attachments-title-row')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
 
   function renderBugPanel(bug, selectedFiles = [], downloadedFiles = []) {
     currentBugId = bug.id;
@@ -1033,6 +1100,7 @@
     wikiBtn.disabled = false;
     wikiBtn.textContent = '📖 Add to wiki';
     document.getElementById('wiki-module').value = bug.module ?? '';
+    renderAttachmentCoverage(bug, downloadedFiles);
   }
 
   function maybeAppendDownloadAttachmentsNudge(bug, downloadedFiles, selectedFiles) {
@@ -1387,6 +1455,7 @@
           registerCallback();
           applyState();
           if (explorerOpen) refreshExplorerTree();
+          await refreshBugPanelFromSession();
         };
         menu.appendChild(dlItem);
       } else {
@@ -2567,8 +2636,10 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ attName: node.name }),
         });
-        if (res.ok) refreshExplorerTree();
-        else name.textContent = `⚠ ${node.name}`;
+        if (res.ok) {
+          refreshExplorerTree();
+          refreshBugPanelFromSession();
+        } else name.textContent = `⚠ ${node.name}`;
       });
       return row;
     }
