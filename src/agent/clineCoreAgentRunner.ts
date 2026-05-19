@@ -291,7 +291,10 @@ export class ClineCoreAgentRunner implements AgentRunner {
         .reverse()
         .map((e) => path.join(agentNotesDir, e));
     } catch { /* agent_notes/ missing — fine */ }
-    const llmCfg = settings.getLlmConfig();
+    const baseLlmCfg = settings.getLlmConfig();
+    const llmCfg = input.modelOverride
+      ? { ...baseLlmCfg, model: input.modelOverride }
+      : baseLlmCfg;
     const queue: AgentEvent[] = [];
     const wakeup = { fn: null as (() => void) | null };
     let done = false;

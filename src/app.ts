@@ -452,10 +452,22 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     broadcast(req.params.id, { type: "user_message", content: question, user: user.name, clientId }, clientId);
     broadcast(req.params.id, { type: "analyzing", user: user.name, clientId }, clientId);
 
-    const updatedSession = sessions.get(req.params.id)!;
+    let updatedSession = sessions.get(req.params.id)!;
+
+    const effectiveModel = users.getPreferredModel(user.id) ?? settings.getLlmConfig().model;
+    if (updatedSession.last_model && updatedSession.last_model !== effectiveModel && updatedSession.cline_session_id) {
+      log.info("analyze:model-switch-resets-session", {
+        sessionId: req.params.id,
+        from: updatedSession.last_model,
+        to: effectiveModel,
+      });
+      sessions.clearClineSessionId(req.params.id);
+      updatedSession = sessions.get(req.params.id)!;
+    }
+    sessions.setLastModel(req.params.id, effectiveModel);
 
     const questionLog = isLlmSanitizeEnabled() ? sanitizeForLlm(question).text : question;
-    log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: questionLog.slice(0, 80), user: user.name });
+    log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: questionLog.slice(0, 80), user: user.name, model: effectiveModel });
     const reportSnapshot = await snapshotAgentReportPaths(updatedSession.workspace_path);
     let fullResponse = "";
 
@@ -466,6 +478,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         question,
         clineSessionId: updatedSession.cline_session_id,
         mode: agentMode,
+        modelOverride: effectiveModel,
       })) {
         if (event.type === "session_id") {
           sessions.setClineSessionId(req.params.id, event.content);
@@ -612,10 +625,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     let fullResponse = "";
 
     try {
+      const effectiveModel = users.getPreferredModel(user.id) ?? settings.getLlmConfig().model;
       for await (const event of runLucky(
         runner,
         { workspace_path: updatedSession.workspace_path, selected_files: filesForLucky },
-        mode
+        mode,
+        effectiveModel
       )) {
         if (event.type === "text") {
           fullResponse += event.content;
@@ -839,6 +854,60 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       log.warn("settings:models-fetch-error", { url, error: err.message });
       res.status(502).json({ error: err.message });
     }
+  });
+
+  // 30s cache for upstream model list (per provider+baseUrl key)
+  let modelListCache: { key: string; models: string[]; fetchedAt: number } | null = null;
+
+  app.get("/settings/llm/models", async (_req, res) => {
+    const cfg = settings.getLlmConfig();
+    const url =
+      cfg.provider === "openai"
+        ? "https://api.openai.com/v1/models"
+        : cfg.baseUrl
+          ? `${cfg.baseUrl}/models`
+          : null;
+    if (!url) return res.status(400).json({ error: "baseUrl not configured" });
+
+    const cacheKey = `${cfg.provider}|${url}`;
+    if (modelListCache && modelListCache.key === cacheKey && Date.now() - modelListCache.fetchedAt < 30_000) {
+      return res.json({ models: modelListCache.models });
+    }
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
+      const upstream = await fetch(url, { headers });
+      if (!upstream.ok) return res.status(502).json({ error: `Provider returned ${upstream.status}` });
+      const data: any = await upstream.json();
+      const models: string[] = (data.data ?? []).map((m: any) => String(m.id)).sort();
+      modelListCache = { key: cacheKey, models, fetchedAt: Date.now() };
+      res.json({ models });
+    } catch (err: any) {
+      log.warn("settings:models-fetch-error", { url, error: err.message });
+      res.status(502).json({ error: err.message });
+    }
+  });
+
+  app.get("/settings/user/model", (req, res) => {
+    const userId = req.query.userId as string | undefined;
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    const user = users.getById(userId);
+    if (!user) return res.status(404).json({ error: "user not found" });
+    res.json({ model: users.getPreferredModel(userId) });
+  });
+
+  app.put("/settings/user/model", (req, res) => {
+    const { userId, model } = req.body ?? {};
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    const user = users.getById(String(userId));
+    if (!user) return res.status(404).json({ error: "user not found" });
+    if (model !== null && typeof model !== "string")
+      return res.status(400).json({ error: "model must be a string or null" });
+    const next = typeof model === "string" && model.trim() ? model.trim() : null;
+    users.setPreferredModel(String(userId), next);
+    log.info("settings:user-model-updated", { userId, model: next });
+    res.json({ model: next });
   });
 
   app.get("/settings/llm", (_req, res) => {

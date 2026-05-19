@@ -45,6 +45,12 @@ try {
 try {
   db.exec(`ALTER TABLE sessions ADD COLUMN cline_session_id TEXT`);
 } catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN last_model TEXT`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN preferred_model TEXT`);
+} catch { /* column already exists */ }
 
 export interface User {
   id: string;
@@ -69,6 +75,15 @@ export const users = {
     db.prepare("INSERT INTO users (id, name, pin_hash, created_at) VALUES (?, ?, ?, ?)").run(id, name, pinHash, now);
     return { id, name, created_at: now };
   },
+
+  getPreferredModel(id: string): string | null {
+    const row = db.prepare("SELECT preferred_model FROM users WHERE id = ?").get(id) as any;
+    return row?.preferred_model ?? null;
+  },
+
+  setPreferredModel(id: string, model: string | null): void {
+    db.prepare("UPDATE users SET preferred_model = ? WHERE id = ?").run(model, id);
+  },
 };
 
 export interface Session {
@@ -77,6 +92,7 @@ export interface Session {
   workspace_path: string;
   selected_files: string[];
   cline_session_id?: string;
+  last_model?: string;
   status: string;
   created_at: string;
 }
@@ -146,6 +162,10 @@ export const sessions = {
 
   clearClineSessionId(id: string): void {
     db.prepare("UPDATE sessions SET cline_session_id = NULL WHERE id = ?").run(id);
+  },
+
+  setLastModel(id: string, model: string): void {
+    db.prepare("UPDATE sessions SET last_model = ? WHERE id = ?").run(model, id);
   },
 
   findActiveByBugId(bugId: string): Session | undefined {

@@ -393,7 +393,11 @@
   <div id="header">
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
-    <button id="tab-adhoc" style="margin-left:auto;">Ad Hoc</button>
+    <label for="user-model-select" style="margin-left:auto; font-size:12px; color:#6b7280; font-weight:500;">Model</label>
+    <select id="user-model-select" title="Model used for your agent runs" style="border:1.5px solid #e5e7eb; border-radius:8px; padding:7px 10px; font-size:13px; font-family:inherit; color:#111827; background:white; outline:none; max-width:260px;">
+      <option value="">(server default)</option>
+    </select>
+    <button id="tab-adhoc">Ad Hoc</button>
   </div>
   <div id="upload-banner" hidden>
     <div id="upload-banner-text"></div>
@@ -741,6 +745,80 @@
     localStorage.removeItem('lens_user_id');
     window.location.href = '/login.html';
   };
+
+  // ── Per-user model selection ────────────────────────────────────────────────
+  const userModelSelect = document.getElementById('user-model-select');
+  let userPreferredModel = null; // null = server default
+
+  async function loadUserModelChoice() {
+    try {
+      const [modelsRes, prefRes] = await Promise.all([
+        fetch('/settings/llm/models'),
+        fetch(`/settings/user/model?userId=${encodeURIComponent(currentUser.id)}`),
+      ]);
+      const modelsJson = modelsRes.ok ? await modelsRes.json() : { models: [] };
+      const prefJson = prefRes.ok ? await prefRes.json() : { model: null };
+      userPreferredModel = prefJson.model ?? null;
+
+      const models = Array.isArray(modelsJson.models) ? modelsJson.models : [];
+      // Ensure preferred is present even if not in upstream list (so it stays selected)
+      if (userPreferredModel && !models.includes(userPreferredModel)) models.unshift(userPreferredModel);
+
+      userModelSelect.innerHTML = '';
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = '(server default)';
+      userModelSelect.appendChild(defaultOpt);
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        userModelSelect.appendChild(opt);
+      }
+      userModelSelect.value = userPreferredModel ?? '';
+    } catch (err) {
+      console.warn('model list fetch failed', err);
+    }
+  }
+
+  async function applyUserModelChoice(newValue) {
+    const payload = newValue ? newValue : null;
+    const res = await fetch('/settings/user/model', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id, model: payload }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      appendMessage('error', `Failed to save model: ${err.error || res.status}`);
+      userModelSelect.value = userPreferredModel ?? '';
+      return;
+    }
+    userPreferredModel = payload;
+  }
+
+  userModelSelect.addEventListener('change', async () => {
+    const newValue = userModelSelect.value;
+    if ((userPreferredModel ?? '') === newValue) return;
+
+    // Warn only if an active session has at least one prior user/assistant turn
+    const hasOngoingConversation = !!currentSessionId && !!document.querySelector('#chat .msg-row');
+    if (hasOngoingConversation) {
+      const label = newValue || '(server default)';
+      const ok = window.confirm(
+        `Switching model to "${label}" starts a fresh agent conversation for this session.\n\n` +
+        `Prior chat will remain visible here but is no longer in the agent's context.\n\nContinue?`
+      );
+      if (!ok) {
+        userModelSelect.value = userPreferredModel ?? '';
+        return;
+      }
+    }
+    await applyUserModelChoice(newValue);
+  });
+
+  loadUserModelChoice();
+
 
   let presenceUsers = [];
   function renderPresence(users) {

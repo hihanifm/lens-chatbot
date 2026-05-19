@@ -19,6 +19,7 @@ export interface AgentRunner {
     question: string;
     clineSessionId?: string;
     mode?: "plan" | "act" | "yolo";
+    modelOverride?: string;
   }): AsyncIterable<AgentEvent>;
   abort(clineSessionId: string): Promise<void>;
   stop(clineSessionId: string): Promise<void>;
