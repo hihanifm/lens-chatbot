@@ -289,6 +289,8 @@
     .exp-file-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 14px 5px 20px; font-size: 12px; cursor: default; }
     .exp-file-row:hover { background: var(--navy-muted); }
     .exp-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .exp-file-name.exp-file-openable { cursor: pointer; }
+    .exp-file-name.exp-file-openable:hover { color: var(--sky-border); text-decoration: underline; }
     .exp-file-name.not-downloaded { color: #4b5563; font-style: italic; cursor: pointer; }
     .exp-file-name.in-context { color: var(--sky-border); }
     .exp-add-btn { flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #374151; background: none; color: #9ca3af; cursor: pointer; font-family: inherit; }
@@ -2055,51 +2057,47 @@
     return `${(bytes / 1024).toFixed(1)} KB`;
   }
 
-  function reportFileUrl(relativePath, inline) {
-    const q = new URLSearchParams({ filePath: relativePath });
+  function workspaceFileUrl(filePath, inline) {
+    const q = new URLSearchParams({ filePath });
     if (inline) {
       return `/session/${currentSessionId}/workspace/file?${q}&disposition=inline`;
     }
     return `/session/${currentSessionId}/workspace/download?${q}`;
   }
 
-  async function fetchReportBlob(relativePath, inline) {
-    const res = await fetch(reportFileUrl(relativePath, inline));
-    if (!res.ok) {
-      let msg = res.statusText;
-      try {
-        const body = await res.json();
-        if (body.error) msg = body.error;
-      } catch { /* not JSON */ }
-      appendMessage('error', `✗ Could not load report: ${msg}`);
-      return null;
-    }
-    return res.blob();
+  function openWorkspaceFile(filePath) {
+    if (!currentSessionId || !filePath) return;
+    const tab = window.open(workspaceFileUrl(filePath, true), '_blank', 'noopener');
+    if (!tab) appendMessage('error', '✗ Pop-up blocked — allow pop-ups to open the file.');
   }
 
-  async function openReport(relativePath) {
-    if (!currentSessionId) return;
-    const blob = await fetchReportBlob(relativePath, true);
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const tab = window.open(url, '_blank', 'noopener');
-    if (!tab) appendMessage('error', '✗ Pop-up blocked — allow pop-ups to open the report.');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }
-
-  async function downloadReport(relativePath, name) {
-    if (!currentSessionId) return;
-    const blob = await fetchReportBlob(relativePath, false);
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
+  function downloadWorkspaceFile(filePath, name) {
+    if (!currentSessionId || !filePath) return;
     const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
+    a.href = workspaceFileUrl(filePath, false);
+    a.download = name || filePath.split('/').pop();
     a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function wireExplorerFileOpen(nameEl, filePath) {
+    nameEl.classList.add('exp-file-openable');
+    const baseTitle = nameEl.title || filePath;
+    nameEl.title = `${baseTitle}\nDouble-click to open in browser`;
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      openWorkspaceFile(filePath);
+    });
+  }
+
+  function openReport(relativePath) {
+    openWorkspaceFile(relativePath);
+  }
+
+  function downloadReport(relativePath, name) {
+    downloadWorkspaceFile(relativePath, name);
   }
 
   function attachReportBubbles(bubbleWrap, reports) {
@@ -2904,6 +2902,7 @@
     const nameEl = document.createElement('span');
     nameEl.className = `exp-file-name${entry.extracted && contextFiles[entry.filePath] ? ' in-context' : ''}`;
     nameEl.textContent = entry.innerPath;
+    if (entry.extracted && entry.filePath) wireExplorerFileOpen(nameEl, entry.filePath);
     row.appendChild(nameEl);
     const btn = document.createElement('button');
     btn.className = 'exp-add-btn';
@@ -2941,6 +2940,7 @@
         const { filePath } = await res.json();
         entry.extracted = true;
         entry.filePath = filePath;
+        wireExplorerFileOpen(nameEl, filePath);
         btn.textContent = '+ Add';
         btn.disabled = false;
         btn.onclick = async (ev) => {
@@ -2962,7 +2962,7 @@
     const nameEl = document.createElement('span');
     nameEl.className = `exp-file-name${contextFiles[filePath] ? ' in-context' : ''}`;
     nameEl.textContent = name;
-    nameEl.title = filePath;
+    wireExplorerFileOpen(nameEl, filePath);
     const btn = document.createElement('button');
     btn.className = `exp-add-btn${contextFiles[filePath] ? ' in-context' : ''}`;
     btn.textContent = contextFiles[filePath] ? '✓' : '+ Add';
@@ -2978,7 +2978,7 @@
     dl.className = 'exp-dl-btn';
     dl.textContent = '⬇';
     dl.title = 'Download';
-    dl.href = `/session/${currentSessionId}/workspace/download?filePath=${encodeURIComponent(filePath)}`;
+    dl.href = workspaceFileUrl(filePath, false);
     dl.download = name;
     row.appendChild(nameEl);
     row.appendChild(btn);
