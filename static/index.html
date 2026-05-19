@@ -31,7 +31,7 @@
 
     /* Sidebar */
     #sidebar { width: 256px; background: var(--navy); color: var(--sidebar-text); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; transition: width 0.2s ease; }
-    #sidebar.collapsed { width: 48px; }
+    #sidebar.collapsed { width: 48px; cursor: pointer; }
     #sidebar-scroll { flex: 1; overflow-y: auto; padding: 20px 14px; }
     #sidebar.collapsed #sidebar-scroll { overflow: hidden; }
     #sidebar-brand { font-size: 18px; font-weight: 700; letter-spacing: 1px; color: #ffffff; padding: 0 8px 20px; border-bottom: 1px solid var(--sidebar-border); margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
@@ -2707,6 +2707,11 @@
   setSidebarCollapsed(localStorage.getItem('sidebar_collapsed') === '1');
   sidebarCollapseBtn.addEventListener('click', () => {
     setSidebarCollapsed(!sidebar.classList.contains('collapsed'));
+  });
+  sidebar.addEventListener('click', () => {
+    if (sidebar.classList.contains('collapsed')) {
+      setSidebarCollapsed(false);
+    }
   });
 
   document.getElementById('question-input').addEventListener('focus', () => {

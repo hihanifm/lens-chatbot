@@ -751,7 +751,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const resolvedApiKey = apiKey?.trim() || settings.getLlmConfig().apiKey;
+      if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
       const upstream = await fetch(url, { headers });
       if (!upstream.ok) return res.status(502).json({ error: `Provider returned ${upstream.status}` });
       const data: any = await upstream.json();
@@ -779,7 +780,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!stored) return res.status(503).json({ error: "Admin PIN not configured — set ADMIN_PIN in .env" });
     if (!(await verifyPin(String(pin), stored))) return res.status(401).json({ error: "Invalid PIN" });
 
-    if (provider === "openai" && !apiKey) return res.status(400).json({ error: "apiKey required for OpenAI" });
+    const existing = settings.getLlmConfig();
+    const resolvedApiKey =
+      typeof apiKey === "string" && apiKey.trim() ? apiKey.trim() : existing.apiKey;
+
+    if (provider === "openai" && !resolvedApiKey)
+      return res.status(400).json({ error: "apiKey required for OpenAI" });
     if ((provider === "openai-compatible" || provider === "ollama") && !baseUrl)
       return res.status(400).json({ error: "baseUrl required" });
 
@@ -790,7 +796,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       settings.setAgentMaxIterations(n);
     }
 
-    const cfg: LlmConfig = { provider, model, baseUrl, apiKey };
+    const cfg: LlmConfig = { provider, model, baseUrl, apiKey: resolvedApiKey };
     settings.setLlmConfig(cfg);
     log.info("settings:llm-updated", { provider, model });
 
