@@ -210,6 +210,10 @@
     #input-row { display: flex; gap: 10px; align-items: flex-end; position: relative; }
     #context-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     #context-bar:empty { display: none; }
+    #composer-skill-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #eef2ff; border: 1px solid #c7d2fe; color: #3730a3; font-size: 12px; font-weight: 600; width: fit-content; }
+    #composer-skill-chip .x { cursor: pointer; color: #6366f1; font-weight: 700; padding: 0 2px; }
+    #composer-skill-chip .x:hover { color: #312e81; }
+    .msg-skill-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: #eef2ff; border: 1px solid #c7d2fe; color: #3730a3; font-size: 11px; font-weight: 600; margin-bottom: 4px; width: fit-content; }
     .context-label { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
     .context-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--sky-chip); border: 1px solid var(--sky-border); border-radius: 999px; padding: 3px 10px 3px 8px; font-size: 12px; color: var(--sky-text); font-weight: 500; }
     .context-chip-remove { background: none; border: none; cursor: pointer; color: var(--action); font-size: 12px; padding: 0; line-height: 1; margin-left: 2px; font-family: inherit; }
@@ -444,6 +448,7 @@
 
   <div id="input-area">
     <div id="context-bar"></div>
+    <div id="composer-skill-chip" style="display:none;"></div>
     <div id="input-row">
       <div id="skill-picker"></div>
       <textarea id="question-input" placeholder="Ask a question about the log..." disabled></textarea>
@@ -849,7 +854,7 @@
       } else if (data.type === 'analyzing') {
         appendMessage('status', `· ${data.user} is analyzing…`);
       } else if (data.type === 'user_message') {
-        appendMessage('user', data.content, false, null, data.user);
+        appendMessage('user', data.content, false, null, data.user, data.skill || null);
       } else if (data.type === 'text') {
         let el = remoteStreams.get(data.clientId);
         if (!el) {
@@ -1223,7 +1228,10 @@
 
     const chat = document.getElementById('chat');
     chat.innerHTML = '';
-    for (const m of messages) appendMessage(m.role, m.content, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null);
+    for (const m of messages) {
+      const parsed = m.role === 'user' ? parseSkillTag(m.content) : { skill: null, text: m.content };
+      appendMessage(m.role, parsed.text, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null, parsed.skill);
+    }
 
     maybeAppendDownloadAttachmentsNudge(bug, downloaded_files, session.selected_files ?? []);
     maybeAppendAdhocUploadHint(bug, session.selected_files ?? []);
@@ -1693,7 +1701,30 @@
   // ── Skill picker ───────────────────────────────────────────────────────────────
 
   let skillsData = [];
+  let pendingSkill = null;
   fetch('/skills').then(r => r.ok ? r.json() : []).then(d => { skillsData = d; }).catch(() => {});
+
+  function renderComposerSkillChip() {
+    const el = document.getElementById('composer-skill-chip');
+    if (!pendingSkill) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'inline-flex';
+    el.innerHTML = '';
+    const label = document.createElement('span');
+    label.textContent = `🧩 ${pendingSkill.name}`;
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.textContent = '×';
+    x.title = 'Clear selected skill';
+    x.addEventListener('click', () => { pendingSkill = null; renderComposerSkillChip(); });
+    el.append(label, x);
+  }
+
+  // Strip `[skill:NAME]\n` sentinel from stored message text. Returns { skill, text }.
+  function parseSkillTag(content) {
+    const m = /^\[skill:([^\]]+)\]\n?/.exec(content || '');
+    if (!m) return { skill: null, text: content };
+    return { skill: m[1], text: content.slice(m[0].length) };
+  }
 
   function renderSkillPicker(skills) {
     const el = document.getElementById('skill-picker');
@@ -1722,10 +1753,13 @@
     const val = qi.value;
     const before = val.slice(0, pos);
     const after = val.slice(pos);
-    const wordStart = before.search(/\S+$/);
-    qi.value = (wordStart === -1 ? '' : before.slice(0, wordStart)) + name + after;
-    const newPos = (wordStart === -1 ? 0 : wordStart) + name.length;
+    const wordStart = before.search(/\/\S*$/);
+    qi.value = (wordStart === -1 ? before : before.slice(0, wordStart)) + after;
+    const newPos = wordStart === -1 ? before.length : wordStart;
     qi.setSelectionRange(newPos, newPos);
+    const meta = skillsData.find((s) => s.name === name);
+    pendingSkill = { name, description: meta?.description || '' };
+    renderComposerSkillChip();
     closeSkillPicker();
     qi.focus();
   }
@@ -1771,13 +1805,18 @@
     document.getElementById('send-btn').disabled = true;
     document.getElementById('abort-btn').style.display = 'block';
 
-    appendMessage('user', question);
+    const skillForTurn = pendingSkill;
+    pendingSkill = null;
+    renderComposerSkillChip();
+
+    appendMessage('user', question, false, null, null, skillForTurn?.name || null);
     const assistantEl = appendMessage('assistant', '', true);
     beginEngineeringLog();
 
     if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
 
-    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}&userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}&mode=${agentMode}`;
+    const skillParam = skillForTurn ? `&skill=${encodeURIComponent(skillForTurn.name)}` : '';
+    const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}&userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}&mode=${agentMode}${skillParam}`;
     const es = new EventSource(url);
     currentEs = es;
     let isDone = false;
@@ -2137,7 +2176,7 @@
     bubbleWrap.closest('.msg-row')?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 
-  function appendMessage(role, content, streaming = false, createdAt = null, userName = null) {
+  function appendMessage(role, content, streaming = false, createdAt = null, userName = null, skillName = null) {
     const chat = document.getElementById('chat');
     if (role !== 'user' && role !== 'assistant') {
       const el = document.createElement('div');
@@ -2159,6 +2198,12 @@
       label.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:3px; padding: 0 4px;';
       label.textContent = userName;
       wrap.appendChild(label);
+    }
+    if (skillName && role === 'user') {
+      const chip = document.createElement('div');
+      chip.className = 'msg-skill-chip';
+      chip.textContent = `🧩 ${skillName}`;
+      wrap.appendChild(chip);
     }
     const el = document.createElement('div');
     el.className = `msg ${role}${streaming ? ' streaming' : ''}`;
