@@ -182,7 +182,7 @@ function resultText(result: any): string {
 
 let clineInstance: ClineCore | null = null;
 
-async function getCline(): Promise<ClineCore> {
+export async function getCline(): Promise<ClineCore> {
   if (!clineInstance) {
     clineInstance = await ClineCore.create({ backendMode: "local", clientName: "lens-chatbot" });
   }

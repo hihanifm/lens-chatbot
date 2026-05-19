@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
 import { getOrCreateWorkspace, downloadAttachment, saveBugSummary, listZipContents, extractZipEntry, saveAdHocFiles } from "./services/attachmentService.js";
+import { synthesizeBugSummary } from "./services/bugSummarizer.js";
 import multer from "multer";
 import { buildVirtualTree } from "./services/workspaceExplorer.js";
 import type { AgentRunner } from "./agent/agentRunner.js";
@@ -159,6 +160,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     log.info("session:adhoc:create", { bugId });
     const workspacePath = await getOrCreateWorkspace(bugId);
     await saveBugSummary(workspacePath, bug);
+    synthesizeBugSummary(workspacePath, bug).catch((err) =>
+      log.warn("bugSummary:bg-failed", { workspacePath, error: err.message }),
+    );
     const session = sessions.create(bugId, workspacePath);
     log.info("session:adhoc:created", { sessionId: session.id, workspace: workspacePath });
     res.json({ session, bug });
@@ -208,6 +212,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const existing = sessions.findActiveByBugId(bugId);
     if (existing) {
       await saveBugSummary(existing.workspace_path, bug);
+      synthesizeBugSummary(existing.workspace_path, bug).catch((err) =>
+        log.warn("bugSummary:bg-failed", { workspacePath: existing.workspace_path, error: err.message }),
+      );
       log.info("session:reused", { sessionId: existing.id });
       const downloaded_files = await listDownloadedAttachmentPaths(existing.workspace_path);
       return res.json({ session: existing, bug, downloaded_files });
@@ -215,6 +222,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     const workspacePath = await getOrCreateWorkspace(bugId);
     await saveBugSummary(workspacePath, bug);
+    synthesizeBugSummary(workspacePath, bug).catch((err) =>
+      log.warn("bugSummary:bg-failed", { workspacePath, error: err.message }),
+    );
     const session = sessions.create(bugId, workspacePath);
     log.info("session:created", { sessionId: session.id, workspace: workspacePath });
     const downloaded_files = await listDownloadedAttachmentPaths(workspacePath);
@@ -249,6 +259,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     try {
       const bug = await tracker.getBug(session.bug_id);
       await saveBugSummary(session.workspace_path, bug);
+      synthesizeBugSummary(session.workspace_path, bug, { force: true }).catch((err) =>
+        log.warn("bugSummary:bg-failed", { workspacePath: session.workspace_path, error: err.message }),
+      );
       log.debug("bug:refreshed", { bugId: session.bug_id, state: bug.state, comments: bug.comments.length });
       res.json({ bug });
     } catch (err: any) {
