@@ -196,7 +196,7 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     workspaceRoot: input.workspacePath,
     mode: ((input.mode ?? "act") === "yolo" ? "act" : (input.mode ?? "act")) as "plan" | "act",
     systemPrompt,
-    maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 12),
+    maxIterations: settings.getAgentMaxIterations(),
     enableTools: true,
     enableSpawnAgent: false,
     enableAgentTeams: false,

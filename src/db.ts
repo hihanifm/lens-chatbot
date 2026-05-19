@@ -255,4 +255,15 @@ export const settings = {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('feature_flags', ?)").run(JSON.stringify(flags));
     log.info("settings:feature-flags-updated", { flags });
   },
+
+  getAgentMaxIterations(): number {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'agent'").get() as { value: string } | undefined;
+    if (row) return (JSON.parse(row.value) as { maxIterations: number }).maxIterations;
+    return Number(process.env.AGENT_MAX_ITERATIONS ?? 24);
+  },
+
+  setAgentMaxIterations(n: number): void {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('agent', ?)").run(JSON.stringify({ maxIterations: n }));
+    log.info("settings:agent-max-iterations-updated", { maxIterations: n });
+  },
 };

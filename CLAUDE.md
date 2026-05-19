@@ -41,7 +41,7 @@ Key env vars:
 |-----|---------|---------|
 | `ADMIN_PIN` | `"admin"` | Hashed with scrypt on first startup, stored in SQLite; ignored on restart. Required to change LLM settings. |
 | `UPLOAD_SIZE_LIMIT_MB` | `50` | Max file upload size (multer, 413 on exceed) |
-| `AGENT_MAX_ITERATIONS` | `12` | ClineCore max iterations per analysis |
+| `AGENT_MAX_ITERATIONS` | `24` | ClineCore max iterations per analysis (env fallback; Settings → LLM Provider overrides in SQLite) |
 | `LOG_LEVEL` | `info` | Server verbosity: `debug\|info\|warn\|error` |
 | `SKILLS_DIR` | `/app/skills` | Colon-separated skill directories (extra dirs also configurable via Settings UI) |
 | `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
@@ -109,7 +109,7 @@ fixtures/                ← static fixture files for tests
 
 **Agent sessions persist across turns.** `cline_session_id` is stored in SQLite and passed back on follow-up turns so `ClineCoreAgentRunner` calls `cline.send()` instead of `cline.start()`, preserving ClineCore's native context. If the session is no longer found (e.g. after Docker restart), the runner falls back to `cline.start()` automatically.
 
-**ClineCoreAgentRunner config**: defaults to `"act"` mode (`GET /session/:id/analyze?mode=plan` for plan). Max `AGENT_MAX_ITERATIONS` iterations. Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, all MCP settings tools; `SUBMIT_AND_EXIT` only when `mode=yolo` (Lucky). Spawn agent and agent teams disabled.
+**ClineCoreAgentRunner config**: defaults to `"act"` mode (`GET /session/:id/analyze?mode=plan` for plan). Max iterations from Settings UI (stored in SQLite `agent` key) or `AGENT_MAX_ITERATIONS` env (default 24). Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, all MCP settings tools; `SUBMIT_AND_EXIT` only when `mode=yolo` (Lucky). Spawn agent and agent teams disabled.
 
 **Prompt composition** (two layers):
 1. **System prompt** — `loadPrompt("base")` or `loadPrompt("base-yolo")` passed as `overridePrompt` to `getClineDefaultSystemPrompt()`. Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` (stable per session).
@@ -158,7 +158,7 @@ DATA_DIR/workspaces/BUG-ID/
 
 ## File explorer
 
-A 🗂 Files drawer in the UI lets users browse all workspace files grouped by the bug comment that uploaded them, and toggle individual files into or out of the agent context.
+A 🗂 Files drawer in the UI lets users browse all workspace files grouped by the bug comment that uploaded them, and toggle individual files into or out of the agent context. **Workspace Internals** lists `bug.json`, `bug_summary.md`, and a collapsible `agent_notes/` tree (`internalRoots` on `GET /workspace/files`) — not a flat file list; `attachments/` stays under Bug Attachments only.
 
 **Upload progress**: local file uploads (adhoc create or Files drawer) show a global `#upload-banner` below the header with bug ID, filename, MB progress, and phase (`Uploading` / `Saving on server…`). Progress stays visible when switching sessions or with the drawer closed. Only one in-flight upload per session. Server streams multipart bodies to `workspace/.upload-tmp/` via multer `diskStorage`, then renames into `attachments/` (not memory buffers).
 
@@ -170,7 +170,7 @@ File explorer endpoints:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /session/:id/workspace/files` | Returns `VirtualTree` JSON — `bugAttachments` + per-comment `CommentSection[]` |
+| `GET /session/:id/workspace/files` | Returns `VirtualTree` JSON — `bugAttachments`, per-comment `CommentSection[]`, `internalRoots` + `internalFileCount` |
 | `GET /session/:id/zip-contents?zipPath=…` | Reads zip central directory (no extraction); returns `ZipEntry[]` with `extracted` flag |
 | `POST /session/:id/extract-file` | Extracts one entry from a zip to workspace disk (does not add to session context; use `PATCH /files` or explorer `[+ Add]`) |
 | `PATCH /session/:id/files` | Add/remove a file from session context (`{ path, selected: true/false }`) |

@@ -567,6 +567,12 @@
       <input id="s-apikey" class="s-input" type="password" placeholder="sk-..." autocomplete="off" />
     </div>
 
+    <div class="s-group">
+      <label class="s-label" for="s-max-iterations">Max agent iterations</label>
+      <input id="s-max-iterations" class="s-input" type="number" min="1" max="100" step="1" value="24" />
+      <p class="s-hint">Cline tool loop limit per analysis (default 24). Increase if you hit maxIterations errors on large bugs.</p>
+    </div>
+
     <div id="s-llm-error" class="s-error"></div>
 
     <div class="s-btn-row">
@@ -2037,6 +2043,7 @@
         sBaseurl.value = cfg.baseUrl || '';
         sApikey.value = '';
         sApikey.placeholder = cfg.apiKey ? cfg.apiKey : 'sk-...';
+        document.getElementById('s-max-iterations').value = cfg.maxIterations ?? 24;
       }
     } catch {}
 
@@ -2087,6 +2094,7 @@
       model: sModel.value.trim(),
       baseUrl: sBaseurl.value.trim() || undefined,
       apiKey: apiKeyVal || undefined,
+      maxIterations: Number(document.getElementById('s-max-iterations').value),
     };
 
     const res = await fetch('/settings/llm', {
@@ -2440,7 +2448,9 @@
       }
     }
 
-    if (tree.internalFiles && tree.internalFiles.length > 0) {
+    const internalRoots = tree.internalRoots ?? { files: [], folders: [] };
+    const internalCount = tree.internalFileCount ?? countInternalFilesClient(internalRoots);
+    if (internalCount > 0) {
       const internHeader = document.createElement('div');
       internHeader.className = 'exp-collapsible-header';
       const internToggle = document.createElement('span');
@@ -2448,20 +2458,12 @@
       internToggle.textContent = '▶';
       internHeader.appendChild(internToggle);
       const internLabel = document.createElement('span');
-      internLabel.textContent = `Workspace Internals (${tree.internalFiles.length})`;
+      internLabel.textContent = `Workspace Internals (${internalCount})`;
       internHeader.appendChild(internLabel);
       const internBody = document.createElement('div');
       internBody.className = 'exp-collapsible-body';
-      for (const f of tree.internalFiles) {
-        const wrapper = document.createElement('div');
-        const fileRow = makeFileRow(f.filePath, f.name, null);
-        const desc = document.createElement('div');
-        desc.style.cssText = 'padding:0 20px 4px 20px;font-size:11px;color:#6b7280;';
-        desc.textContent = f.description;
-        wrapper.appendChild(fileRow);
-        wrapper.appendChild(desc);
-        internBody.appendChild(wrapper);
-      }
+      for (const f of internalRoots.files) appendInternalFileRow(internBody, f, 0);
+      for (const folder of internalRoots.folders) renderInternalFolder(internBody, folder, 0);
       internHeader.addEventListener('click', () => {
         const open = internBody.style.display === 'block';
         internBody.style.display = open ? 'none' : 'block';
@@ -2470,6 +2472,53 @@
       body.appendChild(internHeader);
       body.appendChild(internBody);
     }
+  }
+
+  function countInternalFilesClient(roots) {
+    let n = (roots.files ?? []).length;
+    function walkFolder(folder) {
+      n += (folder.files ?? []).length;
+      for (const sub of folder.folders ?? []) walkFolder(sub);
+    }
+    for (const folder of roots.folders ?? []) walkFolder(folder);
+    return n;
+  }
+
+  function appendInternalFileRow(parent, f, depth) {
+    const wrapper = document.createElement('div');
+    const fileRow = makeFileRow(f.filePath, f.relativePath || f.name, null);
+    fileRow.style.paddingLeft = `${20 + depth * 12}px`;
+    const desc = document.createElement('div');
+    desc.style.cssText = `padding:0 20px 4px ${20 + depth * 12}px;font-size:11px;color:#6b7280;`;
+    desc.textContent = f.description;
+    wrapper.appendChild(fileRow);
+    wrapper.appendChild(desc);
+    parent.appendChild(wrapper);
+  }
+
+  function renderInternalFolder(parent, folder, depth) {
+    const folderHeader = document.createElement('div');
+    folderHeader.className = 'exp-collapsible-header';
+    folderHeader.style.paddingLeft = `${14 + depth * 12}px`;
+    const folderToggle = document.createElement('span');
+    folderToggle.className = 'exp-collapsible-toggle';
+    folderToggle.textContent = '▶';
+    folderHeader.appendChild(folderToggle);
+    const folderLabel = document.createElement('span');
+    folderLabel.textContent = `${folder.relativePath || folder.name}/`;
+    folderHeader.appendChild(folderLabel);
+    const folderBody = document.createElement('div');
+    folderBody.className = 'exp-collapsible-body';
+    for (const f of folder.files ?? []) appendInternalFileRow(folderBody, f, depth + 1);
+    for (const sub of folder.folders ?? []) renderInternalFolder(folderBody, sub, depth + 1);
+    folderHeader.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = folderBody.style.display === 'block';
+      folderBody.style.display = open ? 'none' : 'block';
+      folderToggle.textContent = open ? '▶' : '▼';
+    });
+    parent.appendChild(folderHeader);
+    parent.appendChild(folderBody);
   }
 
   function makeAttNode(node, commentBody) {
