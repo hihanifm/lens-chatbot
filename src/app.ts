@@ -435,6 +435,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const question = req.query.question as string;
     if (!question) return res.status(400).json({ error: "question required" });
     const agentMode = req.query.mode === "plan" ? "plan" : "act";
+    const rawSkill = (req.query.skill as string | undefined)?.trim();
+    let selectedSkillName: string | undefined;
+    if (rawSkill) {
+      const known = await loadAgentSkills();
+      if (known.some((s) => s.name === rawSkill)) selectedSkillName = rawSkill;
+    }
 
     const user = users.getById(req.query.userId as string);
     if (!user) return res.status(400).json({ error: "userId required" });
@@ -444,9 +450,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    messages.add(req.params.id, "user", question, user.name);
+    const storedQuestion = selectedSkillName ? `[skill:${selectedSkillName}]\n${question}` : question;
+    messages.add(req.params.id, "user", storedQuestion, user.name);
 
-    broadcast(req.params.id, { type: "user_message", content: question, user: user.name, clientId }, clientId);
+    broadcast(req.params.id, { type: "user_message", content: question, skill: selectedSkillName, user: user.name, clientId }, clientId);
     broadcast(req.params.id, { type: "analyzing", user: user.name, clientId }, clientId);
 
     let updatedSession = sessions.get(req.params.id)!;
@@ -476,6 +483,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         clineSessionId: updatedSession.cline_session_id,
         mode: agentMode,
         modelOverride: effectiveModel,
+        selectedSkillName,
       })) {
         if (event.type === "session_id") {
           sessions.setClineSessionId(req.params.id, event.content);

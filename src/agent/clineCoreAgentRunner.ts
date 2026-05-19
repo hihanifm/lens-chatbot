@@ -340,6 +340,14 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `PII patterns redacted in prompt (${sanitizeReplacementTotal} substitutions)` });
     }
 
+    const selectedSkill = input.selectedSkillName
+      ? skills.find((s) => s.name === input.selectedSkillName)
+      : undefined;
+    if (input.selectedSkillName && !selectedSkill) {
+      log.warn("agent:selected-skill-not-found", { name: input.selectedSkillName });
+    } else if (selectedSkill) {
+      push({ type: "status", content: `selected skill: ${selectedSkill.name}` });
+    }
     const fullPrompt = await buildPrompt({
       ...input,
       files: existingFiles,
@@ -349,12 +357,14 @@ export class ClineCoreAgentRunner implements AgentRunner {
       wikiRootIndex,
       priorReports,
       environmentContext,
+      selectedSkill,
     });
     const followUpPrompt = await buildFollowUpPrompt({
       workspacePath: input.workspacePath,
       files: existingFiles,
       question: questionForLlm,
       fileComments: fileCommentsForLlm,
+      selectedSkill,
     });
     const startPrompt = bugContextForLlm ? `${bugContextForLlm}\n\n${fullPrompt}` : fullPrompt;
     const isFollowUp = !!input.clineSessionId;

@@ -65,6 +65,7 @@ export async function buildPrompt(input: {
   environmentContext: string;
   fileComments?: Record<string, string>;
   priorReports?: string[];
+  selectedSkill?: LoadedSkill;
 }): Promise<string> {
   const fileList = input.files.length
     ? renderFileList(input.files, input.workspacePath, input.fileComments)
@@ -78,6 +79,14 @@ export async function buildPrompt(input: {
     input.files.length
       ? { fragment: "user/files-present" }
       : { fragment: "user/files-empty", vars: { workspace: input.workspacePath } },
+    input.selectedSkill && {
+      fragment: "user/selected-skill",
+      vars: {
+        skillName: input.selectedSkill.name,
+        skillPath: input.selectedSkill.filePath,
+        skillBody: input.selectedSkill.instructions,
+      },
+    },
     input.skills.length > 0 && {
       fragment: "user/skills-hint",
       vars: { skills: renderSkills(input.skills) },
@@ -99,6 +108,7 @@ export async function buildFollowUpPrompt(input: {
   files: string[];
   question: string;
   fileComments?: Record<string, string>;
+  selectedSkill?: LoadedSkill;
 }): Promise<string> {
   const fileList = input.files.length
     ? renderFileList(input.files, input.workspacePath, input.fileComments)
@@ -106,6 +116,14 @@ export async function buildFollowUpPrompt(input: {
 
   return composePrompt([
     { fragment: "user/followup-files", vars: { fileList } },
+    input.selectedSkill && {
+      fragment: "user/selected-skill",
+      vars: {
+        skillName: input.selectedSkill.name,
+        skillPath: input.selectedSkill.filePath,
+        skillBody: input.selectedSkill.instructions,
+      },
+    },
     { fragment: "user/question", vars: { question: input.question } },
   ]);
 }
