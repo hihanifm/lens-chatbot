@@ -252,6 +252,8 @@ Why: skills load on demand (the model picks via frontmatter `triggers`), fragmen
 
 What stays as always-on fragments: identity (`role`), output contracts that apply to every reply (`citation-format`), runtime constraints (`budget`, `no-modify`, `path-policy`).
 
+**Skills are read-only at runtime.** The app never writes to `SKILLS_DIR`. Updates flow through the `skill-author` skill: the agent elicits intent from the user with a few focused questions, then proposes a complete new or revised skill body in chat. The user commits it to the team skills repo, and the backend's scheduled sync pulls it in for everyone. This keeps git as the source of truth, preserves revert/audit, and avoids the auth and destruction risks of in-app skill writes.
+
 ## User-editable skill data principle
 
 When a skill carries a **machine-parsed data block** (e.g. the JSON rules in `skills/attachment-filter.md`), treat it like config that ships with the app:
