@@ -191,7 +191,7 @@ export interface FeatureFlags {
 const DEFAULT_FLAGS: FeatureFlags = {
   promptLogging: true,
   llmRequestLogging: true,
-  httpEgressLogging: false,
+  httpEgressLogging: true,
   wiki: true,
   lucky: true,
 };
