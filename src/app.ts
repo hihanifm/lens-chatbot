@@ -508,9 +508,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     // Auto-download top-level bug attachments (not comment attachments — those can be 300+ MB)
     let bugJson: any = null;
+    let luckyFiles: string[] = [];
     try {
       bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
-    } catch { /* no bug.json — proceed with existing selected_files */ }
+    } catch { /* no bug.json — use user-selected_files for Lucky */ }
 
     if (bugJson) {
       const maxLuckyAttachments = Number(process.env.MAX_LUCKY_ATTACHMENTS ?? 20);
@@ -552,10 +553,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         }
       }
 
-      // Apply attachment-filter skill — keep priority/useful, drop skip/oversize.
+      // Apply attachment-filter skill — keep priority/useful, drop skip/oversize (ephemeral; not selected_files).
       const classified = await classifyBatch(candidatePaths, session.workspace_path);
       for (const c of classified) {
-        if (shouldAutoSelect(c.classification)) sessions.addFile(req.params.id, c.absPath);
+        if (shouldAutoSelect(c.classification)) luckyFiles.push(c.absPath);
       }
       const summary = summarizeBatch(classified);
       writeStatus(`[Lucky] Filter: kept ${summary.kept} of ${classified.length} files (priority ${summary.priority}, useful ${summary.useful}, skipped noise ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}). Override via file explorer.`);
@@ -564,7 +565,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     }
 
     const updatedSession = sessions.get(req.params.id)!;
-    log.info("lucky:start", { sessionId: req.params.id, mode, files: updatedSession.selected_files });
+    const filesForLucky = bugJson ? luckyFiles : updatedSession.selected_files;
+    log.info("lucky:start", { sessionId: req.params.id, mode, files: filesForLucky });
     const luckyStartedAt = Date.now();
 
     const luckyUserLabel = `🎲 I'm Feeling Lucky${mode === "yolo" ? " (yolo)" : ""} — finding root cause automatically...`;
@@ -572,7 +574,11 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     let fullResponse = "";
 
     try {
-      for await (const event of runLucky(runner, updatedSession, mode)) {
+      for await (const event of runLucky(
+        runner,
+        { workspace_path: updatedSession.workspace_path, selected_files: filesForLucky },
+        mode
+      )) {
         if (event.type === "text") {
           fullResponse += event.content;
           writeLucky({ type: "text", content: event.content, user: user.name, clientId });

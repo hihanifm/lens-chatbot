@@ -120,7 +120,7 @@ fixtures/                ← static fixture files for tests
 
 **Lucky analyzer** (`luckyAnalyzer.ts`): passes `lucky.md` as the user question through the normal `analyze()` path (same system prompt stack as chat). Ephemeral — no `cline_session_id` persisted. `app.ts` auto-downloads top-level bug attachments (not comment attachments; cap `MAX_LUCKY_ATTACHMENTS`) and **fully extracts zips** into context before `runLucky` — unlike the file explorer, which lists zip contents lazily. Triggered via `GET /session/:id/lucky` (SSE). Gated by feature flag `lucky`.
 
-**Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act (`base.md`). `?mode=yolo` uses `base-yolo.md` and enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to finish (vs act, where a tool-call-less reply ends the task). UI: "yolo" checkbox beside 🎲. Reports: `agent_notes/lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md`.
+**Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act (`base.md`). `?mode=yolo` uses `base-yolo.md` and enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to finish (vs act, where a tool-call-less reply ends the task). UI: 🎲 Lucky button (act); session menu **Lucky YOLO** (one-shot `?mode=yolo`). Reports: `agent_notes/lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md`.
 
 **Externalized prompts**: all LLM-facing text lives under `PROMPTS_DIR` (default bundled `src/prompts/`). Edit without rebuild, or mount a volume in Docker.
 

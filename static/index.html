@@ -86,13 +86,19 @@
     #bug-info-header { display: flex; gap: 12px; align-items: flex-start; background: var(--sky-chip); padding: 12px 24px; margin: -14px -24px 14px; cursor: pointer; transition: background 0.15s; }
     #bug-info-header:hover { background: #c7e2fe; }
     #bug-summary { flex: 1; min-width: 0; }
-    #bug-info-toggle { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; line-height: 1.2; transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s; }
-    #bug-info-toggle:hover { background: var(--sky-chip); border-color: var(--sky-border); color: var(--sky-text); }
-    #bug-info-toggle:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
-    .bug-info-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: flex-start; }
-    #bug-refresh-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: white; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+    #bug-info-header:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+    .bug-info-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: flex-start; flex-wrap: wrap; }
+    #bug-refresh-btn,
+    #upload-logs-btn,
+    #explorer-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: white; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; color: #374151; font-size: 12px; font-weight: 600; font-family: inherit; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+    #upload-logs-btn:hover,
+    #explorer-btn:hover { background: #f9fafb; border-color: #9ca3af; }
+    #explorer-btn.active,
+    #upload-logs-btn.active { background: var(--sky-chip); color: var(--sky-text); border-color: var(--sky-border); }
     #bug-refresh-btn:hover:not(:disabled) { background: #f0fdf4; border-color: #86efac; color: #15803d; }
-    #bug-refresh-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+    #bug-refresh-btn:focus-visible,
+    #upload-logs-btn:focus-visible,
+    #explorer-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
     #bug-refresh-btn:disabled { opacity: 0.65; cursor: wait; }
     #wiki-session-btn { display: none; align-items: center; gap: 5px; margin-top: 2px; padding: 7px 12px; min-height: 36px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; cursor: pointer; color: #15803d; font-size: 12px; font-weight: 600; font-family: inherit; transition: background 0.15s, border-color 0.15s, opacity 0.15s; }
     #wiki-session-btn:hover:not(:disabled) { background: #dcfce7; border-color: #4ade80; }
@@ -102,8 +108,6 @@
     #wiki-modal { background: white; border-radius: 14px; padding: 28px; width: 420px; max-width: 92vw; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
     #wiki-modal h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 16px; }
     #wiki-error { color: #dc2626; font-size: 12px; min-height: 18px; margin-top: 4px; }
-    .bug-info-toggle-icon { font-size: 11px; line-height: 1; opacity: 0.85; }
-    .bug-info-toggle-label { white-space: nowrap; }
     #bug-info h3 { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 8px; line-height: 1.4; }
     .bug-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12px; }
     #bug-info-details { margin-top: 12px; }
@@ -231,8 +235,6 @@
     .session-menu-item:hover { background: #f9fafb; }
     .session-menu-item.danger { color: #dc2626; }
     .session-menu-item.danger:hover { background: #fff5f5; }
-    .session-menu-item.session-menu-check label { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; }
-    .session-menu-item.session-menu-check input { width: 14px; height: 14px; accent-color: var(--lucky); cursor: pointer; flex-shrink: 0; }
     #skill-picker { display: none; position: absolute; bottom: calc(100% + 6px); left: 0; background: white; border: 1.5px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); min-width: 240px; max-height: 220px; overflow-y: auto; z-index: 100; }
     #skill-picker.open { display: block; }
     .skill-item { padding: 9px 13px; cursor: pointer; transition: background 0.12s; }
@@ -252,14 +254,6 @@
     .session-reset-divider { text-align: center; font-size: 11px; color: #9ca3af; padding: 14px 0; letter-spacing: 0.4px; }
 
     /* Settings */
-
-    /* Explorer + upload shortcuts */
-    #explorer-btn,
-    #upload-logs-btn { background: none; border: 1px solid #e5e7eb; cursor: pointer; font-size: 13px; color: #6b7280; padding: 4px 10px; border-radius: 8px; transition: background 0.15s, color 0.15s, border-color 0.15s; font-family: inherit; }
-    #explorer-btn:hover,
-    #upload-logs-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
-    #explorer-btn.active,
-    #upload-logs-btn.active { background: var(--sky-chip); color: var(--sky-text); border-color: var(--sky-border); }
 
     /* Explorer drawer */
     #explorer-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 300px; min-width: 220px; max-width: 600px; background: var(--explorer-bg); color: var(--sidebar-text); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.2s ease; z-index: 200; box-shadow: -4px 0 20px rgba(0,0,0,0.25); }
@@ -393,8 +387,6 @@
     <input id="bug-id-input" type="text" placeholder="Enter Bug ID (e.g. BUG-123)" />
     <button id="load-bug-btn">Load Bug</button>
     <button id="tab-adhoc" style="margin-left:auto;">Ad Hoc</button>
-    <button id="upload-logs-btn" type="button" title="Open Files drawer → upload local logs">Upload logs…</button>
-    <button id="explorer-btn" title="Browse workspace files, zips, and upload extra logs">Files</button>
   </div>
   <div id="upload-banner" hidden>
     <div id="upload-banner-text"></div>
@@ -406,7 +398,7 @@
   </div>
 
   <div id="bug-info" class="expanded">
-    <div id="bug-info-header">
+    <div id="bug-info-header" role="button" tabindex="0" aria-expanded="true" aria-controls="bug-info-details" aria-label="Toggle bug details">
       <div id="bug-summary">
         <h3 id="bug-title"></h3>
         <div class="bug-meta" id="bug-meta-summary"></div>
@@ -416,12 +408,10 @@
         <span class="coverage-label"></span>
       </div>
       <div class="bug-info-actions">
-        <button id="wiki-session-btn" type="button" title="Save troubleshooting insights to the wiki">Add to Wiki</button>
+        <button id="upload-logs-btn" type="button" title="Open Files drawer → upload local logs">Upload logs…</button>
+        <button id="explorer-btn" type="button" title="Browse workspace files, zips, and upload extra logs">Files</button>
         <button id="bug-refresh-btn" type="button" title="Refresh status and comments from the bug tracker">↻ Refresh</button>
-        <button id="bug-info-toggle" type="button" aria-expanded="true" aria-controls="bug-info-details" aria-label="Collapse bug details">
-          <span class="bug-info-toggle-icon" aria-hidden="true">▼</span>
-          <span class="bug-info-toggle-label">Hide details</span>
-        </button>
+        <button id="wiki-session-btn" type="button" title="Save troubleshooting insights to the wiki">Add to Wiki</button>
       </div>
     </div>
     <div id="bug-info-details">
@@ -451,8 +441,8 @@
         <button id="session-menu-btn" title="Session options">⋮</button>
         <div id="session-menu">
           <div class="session-menu-item" id="plan-mode-item">Use Plan mode</div>
-          <div class="session-menu-item session-menu-check" id="lucky-yolo-item" title="YOLO mode: agent must call submit_and_exit to terminate — A/B test against default Lucky">
-            <label for="lucky-yolo"><input type="checkbox" id="lucky-yolo"> Lucky YOLO</label>
+          <div class="session-menu-item" id="lucky-yolo-item" title="YOLO mode: agent must call submit_and_exit to terminate — one-shot run">
+            Lucky YOLO
           </div>
           <div class="session-menu-item danger" id="reset-session-item">Reset agent session</div>
         </div>
@@ -931,23 +921,28 @@
 
   function setBugInfoExpanded(expanded) {
     const panel = document.getElementById('bug-info');
-    const toggle = document.getElementById('bug-info-toggle');
+    const header = document.getElementById('bug-info-header');
     panel.classList.toggle('expanded', expanded);
-    toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.setAttribute('aria-label', expanded ? 'Collapse bug details' : 'Expand bug details');
-    toggle.querySelector('.bug-info-toggle-icon').textContent = expanded ? '▼' : '▶';
-    toggle.querySelector('.bug-info-toggle-label').textContent = expanded ? 'Hide details' : 'Show details';
+    header.setAttribute('aria-expanded', String(expanded));
+    header.setAttribute('aria-label', expanded ? 'Collapse bug details' : 'Expand bug details');
   }
 
-  document.getElementById('bug-info-toggle').addEventListener('click', () => {
+  function toggleBugInfoExpanded() {
     const panel = document.getElementById('bug-info');
     setBugInfoExpanded(!panel.classList.contains('expanded'));
-  });
+  }
 
   document.getElementById('bug-info-header').addEventListener('click', (e) => {
     if (e.target.closest('.bug-info-actions')) return;
-    const panel = document.getElementById('bug-info');
-    setBugInfoExpanded(!panel.classList.contains('expanded'));
+    toggleBugInfoExpanded();
+  });
+
+  document.getElementById('bug-info-header').addEventListener('keydown', (e) => {
+    if (e.target.closest('.bug-info-actions')) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleBugInfoExpanded();
+    }
   });
 
   async function refreshBugFromTracker() {
@@ -1514,16 +1509,17 @@
 
   document.getElementById('send-btn').onclick = sendQuestion;
 
-  document.getElementById('lucky-btn').onclick = function() {
+  // Lucky uses ephemeral files server-side; context bar only reflects user + Add / Add to chat (toggleFileInChat).
+  function startLuckyAnalysis(yolo) {
     const luckyBtn = document.getElementById('lucky-btn');
     const sendBtn = document.getElementById('send-btn');
     const input = document.getElementById('question-input');
+    if (luckyBtn.disabled) return;
 
     luckyBtn.disabled = true;
     sendBtn.disabled = true;
     input.disabled = true;
 
-    const yolo = document.getElementById('lucky-yolo').checked;
     appendMessage('user', `🎲 I'm Feeling Lucky${yolo ? ' (yolo)' : ''} — finding root cause automatically...`);
     const assistantEl = appendMessage('assistant', '', true);
     beginEngineeringLog();
@@ -1581,7 +1577,9 @@
       sendBtn.disabled = false;
       input.disabled = false;
     };
-  };
+  }
+
+  document.getElementById('lucky-btn').onclick = () => startLuckyAnalysis(false);
 
   document.getElementById('bug-id-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('load-bug-btn').click();
@@ -1757,7 +1755,10 @@
     sessionMenuEl.classList.remove('open');
   });
 
-  document.getElementById('lucky-yolo-item').addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('lucky-yolo-item').addEventListener('click', () => {
+    sessionMenuEl.classList.remove('open');
+    startLuckyAnalysis(true);
+  });
 
   document.getElementById('reset-session-item').addEventListener('click', () => {
     sessionMenuEl.classList.remove('open');
