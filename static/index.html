@@ -2033,17 +2033,31 @@
     if (e.target === adminPinOverlay) finishAdminPinModal(null);
   });
 
-  function updateSettingsFields() {
-    const p = sProvider.value;
-    sBaseurlGroup.style.display = (p === 'openai') ? 'none' : 'block';
-    sApikeyGroup.style.display = (p === 'ollama') ? 'none' : 'block';
-    if (sModelList) { sModelList.innerHTML = ''; sModelStatus.textContent = ''; }
-  }
-
-  sProvider.addEventListener('change', updateSettingsFields);
+  const PROVIDER_DEFAULT_BASE_URL = {
+    ollama: 'http://host.docker.internal:11434/v1',
+    openai: 'https://api.openai.com/v1',
+    'openai-compatible': 'http://localhost:11434/v1',
+  };
 
   const sModelList = document.getElementById('s-model-list');
   const sModelStatus = document.getElementById('s-model-status');
+
+  function applyProviderFieldState() {
+    const p = sProvider.value;
+    sBaseurlGroup.style.display = 'block';
+    sApikeyGroup.style.display = (p === 'ollama') ? 'none' : 'block';
+    sBaseurl.readOnly = (p === 'openai');
+    sBaseurl.placeholder = PROVIDER_DEFAULT_BASE_URL[p] || 'https://your-api/v1';
+  }
+
+  function onProviderChange() {
+    sBaseurl.value = PROVIDER_DEFAULT_BASE_URL[sProvider.value] ?? '';
+    applyProviderFieldState();
+    sModelList.innerHTML = '';
+    sModelStatus.textContent = '';
+  }
+
+  sProvider.addEventListener('change', onProviderChange);
 
   async function fetchModels() {
     const provider = sProvider.value;
@@ -2117,9 +2131,10 @@
       const res = await fetch('/settings/llm');
       if (res.ok) {
         const cfg = await res.json();
-        sProvider.value = cfg.provider || 'ollama';
+        const provider = cfg.provider || 'ollama';
+        sProvider.value = provider;
         sModel.value = cfg.model || '';
-        sBaseurl.value = cfg.baseUrl || '';
+        sBaseurl.value = cfg.baseUrl || PROVIDER_DEFAULT_BASE_URL[provider] || '';
         sApikey.value = '';
         sApikey.placeholder = cfg.apiKey ? cfg.apiKey : 'sk-...';
         document.getElementById('s-max-iterations').value = cfg.maxIterations ?? 24;
@@ -2149,7 +2164,7 @@
       }
     } catch {}
 
-    updateSettingsFields();
+    applyProviderFieldState();
     settingsOverlay.classList.add('open');
   }
 
