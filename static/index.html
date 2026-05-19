@@ -173,6 +173,11 @@
     .msg-row.user .copy-btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.4); color: #fff; }
     .copy-btn-icon { font-size: 13px; line-height: 1; opacity: 0.85; }
     .copy-btn-label { line-height: 1; }
+    .skill-proposal-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 10px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 500; color: #047857; transition: background 0.15s, border-color 0.15s; }
+    .skill-proposal-badge:hover { background: #dcfce7; border-color: #4ade80; }
+    .skill-proposal-badge.copied { background: #bbf7d0; border-color: #22c55e; color: #065f46; }
+    .skill-proposal-badge-icon { font-size: 14px; line-height: 1; }
+    .skill-proposal-badge-meta { color: #6b7280; font-weight: 400; font-size: 11px; margin-left: 4px; }
     .msg { max-width: 100%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
     .msg.user { background: linear-gradient(135deg, #003087, var(--action)); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 2px 8px rgba(0,48,135,0.25); }
     .msg.assistant { background: white; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
@@ -870,6 +875,7 @@
           el.closest('.msg-row')?.classList.remove('streaming');
           if (el.msgTime) setMsgTime(el.msgTime, new Date());
           attachReportBubbles(el.closest('.msg-bubble-wrap'), data.reports);
+          maybeAttachSkillProposal(el);
           remoteStreams.delete(data.clientId);
         }
       } else if (data.type === 'error') {
@@ -1230,7 +1236,8 @@
     chat.innerHTML = '';
     for (const m of messages) {
       const parsed = m.role === 'user' ? parseSkillTag(m.content) : { skill: null, text: m.content };
-      appendMessage(m.role, parsed.text, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null, parsed.skill);
+      const el = appendMessage(m.role, parsed.text, false, m.created_at, m.user_name !== 'User' && m.role === 'user' ? m.user_name : null, parsed.skill);
+      if (m.role === 'assistant') maybeAttachSkillProposal(el);
     }
 
     maybeAppendDownloadAttachmentsNudge(bug, downloaded_files, session.selected_files ?? []);
@@ -1652,6 +1659,7 @@
         assistantEl.closest('.msg-row')?.classList.remove('streaming');
         if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
         attachReportBubbles(assistantEl.closest('.msg-bubble-wrap'), data.reports);
+        maybeAttachSkillProposal(assistantEl);
         finishEngineeringLog();
         es.close();
         luckyBtn.disabled = false;
@@ -1849,6 +1857,7 @@
         assistantEl.closest('.msg-row')?.classList.remove('streaming');
         if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
         attachReportBubbles(assistantEl.closest('.msg-bubble-wrap'), data.reports);
+        maybeAttachSkillProposal(assistantEl);
         finishEngineeringLog();
         es.close(); currentEs = null;
         finishAnalysis();
@@ -2009,6 +2018,51 @@
       copyText(getText(), btn);
     });
     return btn;
+  }
+
+  // Detect a skill-author proposal in an assistant message and surface a
+  // "Copy proposed skill" badge that extracts the fenced block to clipboard.
+  // Pattern: a header containing "Proposed skill update" followed (anywhere
+  // later) by a fenced code block (```markdown or plain ```). We extract the
+  // first fenced block after the header.
+  function extractSkillProposal(text) {
+    if (!text) return null;
+    const headerMatch = text.match(/#{1,6}\s*Proposed skill update/i);
+    if (!headerMatch) return null;
+    const rest = text.slice(headerMatch.index + headerMatch[0].length);
+    const fenceMatch = rest.match(/```(?:markdown|md)?\s*\n([\s\S]*?)\n```/);
+    if (!fenceMatch) return null;
+    const body = fenceMatch[1].trim();
+    if (!body.startsWith('---')) return null; // must look like a skill frontmatter
+    // Try to pull the suggested filename from the surrounding metadata.
+    const saveTo = text.match(/\*\*Save to\*\*\s*:\s*`?([^`\n]+?)`?\s*(?:in|$)/i);
+    return { body, saveTo: saveTo ? saveTo[1].trim() : null };
+  }
+
+  function maybeAttachSkillProposal(messageEl) {
+    if (!messageEl || messageEl.dataset.skillProposalAttached === '1') return;
+    const proposal = extractSkillProposal(messageEl.textContent);
+    if (!proposal) return;
+    const wrap = messageEl.closest('.msg-bubble-wrap');
+    if (!wrap) return;
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'skill-proposal-badge';
+    badge.title = 'Copy the proposed skill body to clipboard';
+    const filenameLabel = proposal.saveTo ? ` <span class="skill-proposal-badge-meta">${proposal.saveTo}</span>` : '';
+    badge.innerHTML = `<span class="skill-proposal-badge-icon" aria-hidden="true">📋</span><span class="skill-proposal-badge-label">Copy proposed skill</span>${filenameLabel}`;
+    badge.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await copyText(proposal.body, badge);
+      const label = badge.querySelector('.skill-proposal-badge-label');
+      if (label) {
+        const original = label.textContent;
+        label.textContent = 'Copied — paste into your team skills repo';
+        setTimeout(() => { label.textContent = original; }, 2400);
+      }
+    });
+    wrap.appendChild(badge);
+    messageEl.dataset.skillProposalAttached = '1';
   }
 
   function beginEngineeringLog() {
