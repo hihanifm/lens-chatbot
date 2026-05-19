@@ -81,7 +81,15 @@ test("explorer bulk download and collapsed internals", async ({ page }) => {
   await page.locator("#explorer-btn").click();
   await expect(page.locator("#explorer-drawer")).toHaveClass(/open/);
 
-  const internalsBody = page.locator(".exp-collapsible-body");
+  await page.locator("#main").click();
+  await expect(page.locator("#explorer-drawer")).not.toHaveClass(/open/);
+
+  await page.locator("#explorer-btn").click();
+  await expect(page.locator("#explorer-drawer")).toHaveClass(/open/);
+
+  const internalsBody = page.locator(
+    '.exp-collapsible-header:has-text("Workspace Internals") + .exp-collapsible-body'
+  );
   await expect(internalsBody).toBeHidden();
 
   const bugDownloadAll = page.locator(".exp-section-header-row .exp-bulk-btn").first();
@@ -91,7 +99,7 @@ test("explorer bulk download and collapsed internals", async ({ page }) => {
     timeout: 90_000,
   });
 
-  await page.locator(".exp-collapsible-header").click();
+  await page.locator('.exp-collapsible-header:has-text("Workspace Internals")').click();
   await expect(internalsBody).toBeVisible();
 });
 

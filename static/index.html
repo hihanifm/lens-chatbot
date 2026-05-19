@@ -2307,6 +2307,16 @@
     if (explorerOpen && currentSessionId) refreshExplorerTree();
   }
 
+  document.addEventListener('mousedown', (e) => {
+    if (!explorerOpen) return;
+    const drawer = document.getElementById('explorer-drawer');
+    const explorerBtn = document.getElementById('explorer-btn');
+    const uploadLogsBtn = document.getElementById('upload-logs-btn');
+    if (drawer.contains(e.target)) return;
+    if (explorerBtn.contains(e.target) || uploadLogsBtn.contains(e.target)) return;
+    toggleExplorer(false);
+  });
+
   // Explorer resize handle
   (function() {
     const drawer = document.getElementById('explorer-drawer');
