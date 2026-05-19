@@ -186,9 +186,17 @@ async function getCline(): Promise<ClineCore> {
   return clineInstance;
 }
 
+/** Lens UI provider ids → Cline built-in provider ids (@cline/llms BUILT_IN_PROVIDER). */
+function toClineProviderId(provider: ReturnType<typeof settings.getLlmConfig>["provider"]): string {
+  if (provider === "openai") return "openai-native";
+  // "openai-compatible" is a protocol family in Cline, not a provider id; ollama uses that family + custom baseUrl.
+  if (provider === "openai-compatible" || provider === "ollama") return "ollama";
+  return provider;
+}
+
 function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>, enableLlmLog: boolean, systemPrompt: string) {
   return {
-    providerId: (llmCfg.provider === "openai" ? "openai-native" : llmCfg.provider === "openai-compatible" ? "openai-compatible" : llmCfg.provider) as any,
+    providerId: toClineProviderId(llmCfg.provider) as any,
     modelId: llmCfg.model,
     apiKey: llmCfg.apiKey || "none",
     baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
