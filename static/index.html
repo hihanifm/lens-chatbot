@@ -2067,6 +2067,7 @@
       });
       const data = await res.json();
       if (!res.ok) { sModelStatus.textContent = data.error || 'Fetch failed.'; return; }
+      sModel.value = '';
       sModelList.innerHTML = data.models.map(m => `<option value="${m}"></option>`).join('');
       sModelStatus.textContent = `${data.models.length} model${data.models.length !== 1 ? 's' : ''} found`;
     } catch {
