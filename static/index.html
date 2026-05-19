@@ -1526,25 +1526,44 @@
     const yolo = document.getElementById('lucky-yolo').checked;
     appendMessage('user', `🎲 I'm Feeling Lucky${yolo ? ' (yolo)' : ''} — finding root cause automatically...`);
     const assistantEl = appendMessage('assistant', '', true);
+    beginEngineeringLog();
 
-    const es = new EventSource(`/session/${currentSessionId}/lucky${yolo ? '?mode=yolo' : ''}`);
+    const luckyParams = new URLSearchParams({
+      userId: String(currentUser.id),
+      clientId: myClientId,
+    });
+    if (yolo) luckyParams.set('mode', 'yolo');
+    const es = new EventSource(`/session/${currentSessionId}/lucky?${luckyParams}`);
+
+    let luckyDone = false;
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.type === 'text') {
+      if (data.type === 'status') {
+        appendEngineeringLogLine(data.content);
+      } else if (data.type === 'tool_error') {
+        appendEngineeringLogLine(data.content, true);
+      } else if (data.type === 'tool_command') {
+        appendEngineeringToolCommands(data.commands);
+      } else if (data.type === 'text') {
         assistantEl.textContent += data.content;
-        assistantEl.scrollIntoView({ behavior: 'smooth' });
-      } else if (data.type === 'status') {
-        appendMessage('status', data.content);
+        assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
       } else if (data.type === 'done') {
+        luckyDone = true;
         assistantEl.classList.remove('streaming');
+        assistantEl.closest('.msg-row')?.classList.remove('streaming');
+        if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
+        finishEngineeringLog();
         es.close();
         luckyBtn.disabled = false;
         sendBtn.disabled = false;
         input.disabled = false;
         input.placeholder = 'Ask a follow-up question...';
       } else if (data.type === 'error') {
+        luckyDone = true;
+        finishEngineeringLog();
         appendMessage('error', '✗ ' + data.content);
+        removeMsgRow(assistantEl);
         es.close();
         luckyBtn.disabled = false;
         sendBtn.disabled = false;
@@ -1553,7 +1572,10 @@
     };
 
     es.onerror = () => {
+      if (luckyDone) return;
+      finishEngineeringLog();
       appendMessage('error', '✗ Lucky analysis failed — check connection.');
+      removeMsgRow(assistantEl);
       es.close();
       luckyBtn.disabled = false;
       sendBtn.disabled = false;

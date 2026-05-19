@@ -488,11 +488,23 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!session.workspace_path) return res.status(400).json({ error: "no workspace loaded" });
     const mode: "act" | "yolo" = req.query.mode === "yolo" ? "yolo" : "act";
 
+    const user = users.getById(req.query.userId as string);
+    if (!user) return res.status(400).json({ error: "userId required" });
+    const clientId = (req.query.clientId as string) || randomUUID();
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    broadcast(req.params.id, { type: "analyzing", mode: "lucky" }, undefined);
+    const writeLucky = (payload: object) => {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      broadcast(req.params.id, payload, clientId);
+    };
+    const writeStatus = (content: string) => {
+      writeLucky({ type: "status", content, user: user.name, clientId });
+    };
+
+    broadcast(req.params.id, { type: "analyzing", user: user.name, clientId, mode: "lucky" }, clientId);
 
     // Auto-download top-level bug attachments (not comment attachments — those can be 300+ MB)
     let bugJson: any = null;
@@ -504,7 +516,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       const maxLuckyAttachments = Number(process.env.MAX_LUCKY_ATTACHMENTS ?? 20);
       const allAttachments: any[] = bugJson.attachments ?? [];
       if (allAttachments.length > maxLuckyAttachments) {
-        res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] ${allAttachments.length} attachments found — processing first ${maxLuckyAttachments} (set MAX_LUCKY_ATTACHMENTS to override).` })}\n\n`);
+        writeStatus(`[Lucky] ${allAttachments.length} attachments found — processing first ${maxLuckyAttachments} (set MAX_LUCKY_ATTACHMENTS to override).`);
       }
       const candidatePaths: string[] = [];
       for (const att of allAttachments.slice(0, maxLuckyAttachments)) {
@@ -512,10 +524,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         let downloaded = true;
         try { await fs.access(attPath); } catch {
           try {
-            res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Downloading ${att.name}...` })}\n\n`);
+            writeStatus(`[Lucky] Downloading ${att.name}...`);
             await downloadAttachment(tracker, session.bug_id, att.id, att.name, session.workspace_path);
           } catch (err: any) {
-            res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Skipping ${att.name}: ${err.message}` })}\n\n`);
+            writeStatus(`[Lucky] Skipping ${att.name}: ${err.message}`);
             downloaded = false;
           }
         }
@@ -527,7 +539,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
             for (const entry of entries) {
               if (!entry.extracted) {
                 try {
-                  res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Extracting ${entry.innerPath}...` })}\n\n`);
+                  writeStatus(`[Lucky] Extracting ${entry.innerPath}...`);
                   candidatePaths.push(await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
                 } catch { /* skip bad entry */ }
               } else if (entry.filePath) {
@@ -546,24 +558,24 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         if (shouldAutoSelect(c.classification)) sessions.addFile(req.params.id, c.absPath);
       }
       const summary = summarizeBatch(classified);
-      res.write(`data: ${JSON.stringify({ type: "status", content: `[Lucky] Filter: kept ${summary.kept} of ${classified.length} files (priority ${summary.priority}, useful ${summary.useful}, skipped noise ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}). Override via file explorer.` })}\n\n`);
+      writeStatus(`[Lucky] Filter: kept ${summary.kept} of ${classified.length} files (priority ${summary.priority}, useful ${summary.useful}, skipped noise ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}). Override via file explorer.`);
       log.info("lucky:filter", { sessionId: req.params.id, candidates: classified.length, ...summary });
-      res.write(`data: ${JSON.stringify({ type: "status", content: "[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed." })}\n\n`);
+      writeStatus("[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed.");
     }
 
     const updatedSession = sessions.get(req.params.id)!;
     log.info("lucky:start", { sessionId: req.params.id, mode, files: updatedSession.selected_files });
     const luckyStartedAt = Date.now();
 
-    messages.add(req.params.id, "user", `[Lucky:${mode}] Automated root cause analysis`);
+    const luckyUserLabel = `🎲 I'm Feeling Lucky${mode === "yolo" ? " (yolo)" : ""} — finding root cause automatically...`;
+    messages.add(req.params.id, "user", luckyUserLabel, user.name);
     let fullResponse = "";
 
     try {
       for await (const event of runLucky(runner, updatedSession, mode)) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
-        broadcast(req.params.id, event, undefined);
         if (event.type === "text") {
           fullResponse += event.content;
+          writeLucky({ type: "text", content: event.content, user: user.name, clientId });
         } else if (event.type === "done") {
           log.info("lucky:done", { sessionId: req.params.id, mode, durationMs: Date.now() - luckyStartedAt, responseLen: fullResponse.length });
           if (fullResponse) {
@@ -577,17 +589,29 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
             }
           }
           messages.add(req.params.id, "assistant", fullResponse || "[Lucky analysis produced no output]");
+          writeLucky({ type: "done", user: user.name, clientId });
           break;
         } else if (event.type === "error") {
           messages.add(req.params.id, "assistant", `[Analysis error: ${event.content}]`);
+          writeLucky({ type: "error", content: event.content, user: user.name, clientId });
           break;
+        } else if (event.type === "status") {
+          writeLucky({ type: "status", content: event.content, user: user.name, clientId });
+        } else if (event.type === "tool_error") {
+          writeLucky({ type: "tool_error", content: event.content, user: user.name, clientId });
+        } else if (event.type === "tool_command") {
+          writeLucky({
+            type: "tool_command",
+            commands: event.toolCommands ?? [],
+            user: user.name,
+            clientId,
+          });
         }
       }
     } catch (err: any) {
       log.error("lucky:exception", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
       messages.add(req.params.id, "assistant", `[Analysis error: ${err.message}]`);
-      const payload = { type: "error", content: err.message };
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      writeLucky({ type: "error", content: err.message, user: user.name, clientId });
     }
 
     res.end();
