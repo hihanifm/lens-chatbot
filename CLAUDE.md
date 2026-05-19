@@ -240,6 +240,18 @@ Skill frontmatter fields: `name`, `description`, `triggers` (hint list for the L
 
 Reserve backend code for things the LLM cannot do: I/O, persistence, streaming, auth, routing.
 
+## Prompt-vs-skill decoupling principle
+
+**Prompt fragments carry state. Skills carry verbs.**
+
+- A fragment should be **data the agent didn't know exists**: the workspace path, the file list, the wiki path, the list of prior reports, the user's question.
+- A skill is **how to use that state**: "to navigate the wiki, do X"; "to reuse prior reports, do Y"; "to cite evidence, format Z".
+- If a fragment contains more than one sentence of instruction prose, it's probably a skill in disguise — extract the verbs to a skill and leave only the data line in the fragment (e.g. `Wiki: <path>\n(Use the \`wiki-lookup\` skill.)`).
+
+Why: skills load on demand (the model picks via frontmatter `triggers`), fragments load every turn. Moving verbs to skills lowers per-turn token cost, removes always-on instruction noise, and keeps domain knowledge portable to the future Cline CLI (`skills/` ports as-is; fragments are this product's prompt fork).
+
+What stays as always-on fragments: identity (`role`), output contracts that apply to every reply (`citation-format`), runtime constraints (`budget`, `no-modify`, `path-policy`).
+
 ## User-editable skill data principle
 
 When a skill carries a **machine-parsed data block** (e.g. the JSON rules in `skills/attachment-filter.md`), treat it like config that ships with the app:
