@@ -240,6 +240,17 @@ Skill frontmatter fields: `name`, `description`, `triggers` (hint list for the L
 
 Reserve backend code for things the LLM cannot do: I/O, persistence, streaming, auth, routing.
 
+## User-editable skill data principle
+
+When a skill carries a **machine-parsed data block** (e.g. the JSON rules in `skills/attachment-filter.md`), treat it like config that ships with the app:
+
+- Backend must tolerate it missing/malformed and fall back to a baked-in `DEFAULT` constant — never crash, never block agent startup.
+- Add a CI guard in `npm run prompts:check` (or a sibling script) that parses the block and validates shape. Bad edit → fail in CI, not silently in prod.
+- The skill body itself documents the schema for human editors; the validator enforces it for the machine.
+- Cache reads (short TTL, e.g. 30s) so live edits to a mounted `SKILLS_DIR` take effect without a restart.
+
+This keeps domain heuristics in portable `.md` skills (CLI-ready) while preventing silent regressions when teammates tune them.
+
 ## Transparency principle — show everything to the user
 
 This tool is for engineers. Surface all agent lifecycle events to the UI — more is better. Every meaningful internal state change should appear as a `status` event in the SSE stream and render inline in the chat. In `clineCoreAgentRunner.ts`, the default `else` branch already emits any unknown Cline SDK event as a `· event.type` status line. Preserve this behaviour. When adding new routes or error paths:
