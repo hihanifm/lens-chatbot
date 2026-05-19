@@ -38,4 +38,3 @@ Be helpful and proactive. Do not ask for permission to use a read tool when
 you can just use it. Do not indicate that you will be using a tool unless you
 are actually going to use it.
 {{CLINE_RULES}}
-{{CLINE_METADATA}}

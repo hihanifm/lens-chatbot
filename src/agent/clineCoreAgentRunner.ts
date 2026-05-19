@@ -2,7 +2,7 @@ import { ClineCore, DefaultToolNames, SessionSource, getClineDefaultSystemPrompt
 import type { CoreSessionEvent } from "@cline/sdk";
 import type { AgentEvent, AgentRunner, ToolCommandLine } from "./agentRunner.js";
 import { buildPrompt, buildFollowUpPrompt, buildSystemRules, loadAgentSkills, getWikiRootIndexPath } from "./agentPrompt.js";
-import { loadPrompt } from "../prompts/promptLoader.js";
+import { loadPrompt, renderPrompt } from "../prompts/promptLoader.js";
 import { settings } from "../db.js";
 import { log } from "../logger.js";
 import { isLlmSanitizeEnabled, sanitizeForLlm } from "../services/llmSanitize.js";
@@ -270,10 +270,24 @@ export class ClineCoreAgentRunner implements AgentRunner {
       fs.readFile(path.join(input.workspacePath, "bug.json"), "utf8").then(JSON.parse).catch(() => null),
     ]);
     const fileComments = buildFileCommentMap(bugJson, existingFiles);
-    const baseTemplate =
+    const rawBaseTemplate =
       systemPromptSource === "lens"
         ? await loadPrompt(input.mode === "yolo" ? "base-yolo" : "base")
         : undefined;
+    // ClineCore's getClineDefaultSystemPrompt only substitutes placeholders into
+    // its own DEFAULT_CLINE_SYSTEM_PROMPT. When overridePrompt is set the SDK
+    // passes the string through verbatim, so we must render {{...}} ourselves.
+    // Mirrors the values the SDK fills into its default (see docs/reference/
+    // cline-shared-system-prompts.md).
+    const baseTemplate = rawBaseTemplate
+      ? renderPrompt(rawBaseTemplate, {
+          PLATFORM_NAME: process.platform,
+          CURRENT_DATE: new Date().toLocaleDateString("en-US"),
+          IDE_NAME: "Terminal Shell",
+          CWD: input.workspacePath,
+          CLINE_RULES: rules,
+        })
+      : undefined;
     const systemPrompt = getClineDefaultSystemPrompt({
       rootPath: input.workspacePath,
       workspaceRoot: input.workspacePath,

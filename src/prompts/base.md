@@ -31,4 +31,3 @@ When you have completed the task, provide a concise summary of what you found.
 Cite log evidence so the user can verify. Do not claim to have performed an
 action you did not perform.
 {{CLINE_RULES}}
-{{CLINE_METADATA}}
