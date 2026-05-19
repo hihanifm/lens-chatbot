@@ -228,15 +228,17 @@ export const settings = {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_pin_hash', ?)").run(hash);
   },
 
+  getEnvSkillsDirs(): string[] {
+    return (process.env.SKILLS_DIR ?? join(process.cwd(), "skills")).split(":").filter(Boolean);
+  },
+
   getExtraSkillsDirs(): string[] {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'skills_dirs'").get() as { value: string } | undefined;
     return row ? (JSON.parse(row.value) as string[]) : [];
   },
 
   getSkillsDirs(): string[] {
-    const envDirs = (process.env.SKILLS_DIR ?? join(process.cwd(), "skills")).split(":").filter(Boolean);
-    const extraDirs = settings.getExtraSkillsDirs();
-    return [...new Set([...envDirs, ...extraDirs])];
+    return [...new Set([...settings.getEnvSkillsDirs(), ...settings.getExtraSkillsDirs()])];
   },
 
   setSkillsDirs(dirs: string[]): void {

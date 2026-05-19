@@ -219,7 +219,7 @@ Wiki endpoints:
 | `GET /settings/llm` | Current LLM config (API key redacted to last 4 chars) |
 | `PUT /settings/llm` | Update LLM config (requires PIN) |
 | `POST /settings/llm/models` | List available models from the upstream LLM provider |
-| `GET /settings/skills` | List extra skill directories stored in DB |
+| `GET /settings/skills` | Skills dirs: `configured` (env + DB merge), `env`, `extra`, `dirs` (alias for `extra`) |
 | `PUT /settings/skills` | Update extra skill directories (requires PIN, paths must exist) |
 | `PUT /settings/admin/pin` | Change admin PIN (requires current PIN) |
 

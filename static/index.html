@@ -114,6 +114,11 @@
     .bug-meta .state { background: #d1fae5; color: #065f46; font-weight: 600; font-size: 11px; padding: 2px 9px; border-radius: 999px; }
     #bug-description { font-size: 13px; color: #4b5563; line-height: 1.65; margin-bottom: 14px; }
     .section-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: #9ca3af; margin: 14px 0 8px; }
+    .section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
+    .section-title-row .section-title { margin: 0; }
+    .panel-bulk-btn { font-size: 11px; padding: 3px 10px; border-radius: 6px; border: 1px solid #d1d5db; background: #f9fafb; color: #374151; cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+    .panel-bulk-btn:hover:not(:disabled) { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+    .panel-bulk-btn:disabled { opacity: 0.5; cursor: default; }
     #attachments { display: flex; flex-wrap: wrap; gap: 8px; }
 
     /* Attachment buttons — pill shape */
@@ -125,7 +130,8 @@
     /* Comments */
     #comments { display: flex; flex-direction: column; gap: 10px; }
     .comment { background: #fafafa; border: 1px solid #f3f4f6; border-left: 3px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; }
-    .comment-header { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .comment-header { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; }
+    .comment-header-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .comment-author { font-size: 13px; font-weight: 600; color: #1f2937; }
     .comment-date { font-size: 11px; color: #9ca3af; }
     .comment-body { font-size: 13px; color: #4b5563; line-height: 1.6; margin-bottom: 8px; }
@@ -253,6 +259,17 @@
     #explorer-header button:hover { color: #e5e7eb; }
     #explorer-body { flex: 1; overflow-y: auto; padding: 8px 0; }
     .exp-section-header { padding: 10px 14px 4px; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; }
+    .exp-section-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 4px; }
+    .exp-section-header-row .exp-section-header { padding: 0; flex: 1; }
+    .exp-bulk-btn { flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #374151; background: none; color: #9ca3af; cursor: pointer; font-family: inherit; text-transform: none; font-weight: 500; letter-spacing: 0; }
+    .exp-bulk-btn:hover:not(:disabled) { border-color: var(--action); color: var(--sky-border); }
+    .exp-bulk-btn:disabled { opacity: 0.45; cursor: default; }
+    .exp-collapsible-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px 4px; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; cursor: pointer; user-select: none; }
+    .exp-collapsible-header:hover { color: #9ca3af; }
+    .exp-collapsible-toggle { font-size: 10px; width: 12px; flex-shrink: 0; }
+    .exp-collapsible-body { display: none; }
+    .exp-comment-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 8px 14px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: 4px; }
+    .exp-comment-header-row .exp-comment-text { flex: 1; min-width: 0; }
     .exp-comment-header { padding: 8px 14px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: 4px; }
     .exp-comment-author { font-size: 12px; font-weight: 600; color: var(--sky-border); }
     .exp-comment-body { font-size: 11px; color: #6b7280; margin-top: 2px; }
@@ -286,6 +303,13 @@
     .s-btn-secondary:hover { background: #e5e7eb; }
     .s-error { color: #dc2626; font-size: 12px; margin-top: 6px; min-height: 18px; }
     .s-success { color: #059669; font-size: 12px; margin-top: 6px; min-height: 18px; }
+    .s-hint { font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0 0 10px; }
+    .s-skills-list { list-style: none; margin: 0; padding: 0; border: 1.5px solid #e5e7eb; border-radius: 8px; background: #f9fafb; font-family: monospace; font-size: 12px; }
+    .s-skills-list li { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #111827; word-break: break-all; }
+    .s-skills-list li:last-child { border-bottom: none; }
+    .s-skills-tag { flex-shrink: 0; font-family: inherit; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; padding: 2px 6px; border-radius: 4px; background: #e5e7eb; color: #4b5563; }
+    .s-skills-tag.extra { background: #dbeafe; color: #1d4ed8; }
+    .s-skills-empty { font-size: 12px; color: #9ca3af; font-style: italic; padding: 8px 0; }
 
     /* session mode tabs */
     #tab-adhoc { background: transparent; color: #6b7280; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-family: inherit; transition: color 0.15s, border-color 0.15s; }
@@ -387,7 +411,7 @@
     <div id="bug-info-details">
       <div class="bug-meta" id="bug-meta-extra"></div>
     <div id="bug-description"></div>
-    <div class="section-title">Attachments</div>
+    <div id="attachments-title-row" class="section-title-row"></div>
     <div class="attachment-hint">Click a file to download it before running analysis</div>
     <div id="attachments"></div>
     <div class="section-title" id="comments-title" style="display:none"></div>
@@ -554,9 +578,16 @@
 
     <div class="s-section">Skills Directories</div>
     <div class="s-group">
-      <label class="s-label" for="s-skills-dirs">Extra directories (one per line)</label>
+      <label class="s-label">Active on this server</label>
+      <p class="s-hint">Paths must exist where lens-chatbot runs — not on your laptop. Ask an admin to mount or copy a folder (e.g. <code style="font-size:11px;">USER_SKILLS_DIR</code> in Docker).</p>
+      <ul id="s-skills-configured" class="s-skills-list" aria-label="Configured skills directories"></ul>
+      <div id="s-skills-configured-empty" class="s-skills-empty" style="display:none;">No skills directories configured.</div>
+    </div>
+    <div class="s-group">
+      <label class="s-label" for="s-skills-dirs">Additional directories (admin)</label>
+      <p class="s-hint">Server paths only, one per line. Saved extras are merged with <code style="font-size:11px;">SKILLS_DIR</code> from the environment.</p>
       <textarea id="s-skills-dirs" class="s-input" rows="3" style="resize:vertical; font-family:monospace; font-size:12px;"
-        placeholder="/mnt/user-skills&#10;/mnt/team-skills&#10;(env SKILLS_DIR dirs always included)"></textarea>
+        placeholder="/mnt/user-skills&#10;/mnt/team-skills"></textarea>
     </div>
     <div id="s-skills-error" class="s-error"></div>
     <div class="s-btn-row">
@@ -924,6 +955,21 @@
     `;
     document.getElementById('bug-description').textContent = bug.description;
 
+    const attTitleRow = document.getElementById('attachments-title-row');
+    attTitleRow.innerHTML = '';
+    const attTitle = document.createElement('div');
+    attTitle.className = 'section-title';
+    attTitle.textContent = 'Attachments';
+    attTitleRow.appendChild(attTitle);
+    if (bug.state !== 'adhoc') {
+      attTitleRow.appendChild(
+        makePanelBulkBtn(
+          pendingAttachmentsFromList(bug.attachments, downloadedFiles),
+          'Bug attachments'
+        )
+      );
+    }
+
     const attDiv = document.getElementById('attachments');
     attDiv.innerHTML = '';
     for (const att of bug.attachments ?? []) attDiv.appendChild(makeAttachmentBtn(att, selectedFiles, downloadedFiles));
@@ -939,12 +985,22 @@
         el.className = 'comment';
         el.innerHTML = `
           <div class="comment-header">
-            <span class="comment-author">${c.author}</span>
-            <span class="comment-date">${fmt(c.created_at)}</span>
+            <div class="comment-header-meta">
+              <span class="comment-author">${c.author}</span>
+              <span class="comment-date">${fmt(c.created_at)}</span>
+            </div>
           </div>
           <div class="comment-body">${c.body}</div>
-          ${c.attachments?.length ? `<div class="comment-attachments"></div>` : ''}
+          ${c.attachments?.length ? '<div class="comment-attachments"></div>' : ''}
         `;
+        if (c.attachments?.length && bug.state !== 'adhoc') {
+          el.querySelector('.comment-header').appendChild(
+            makePanelBulkBtn(
+              pendingAttachmentsFromList(c.attachments, downloadedFiles),
+              `Comment by ${c.author}`
+            )
+          );
+        }
         if (c.attachments?.length) {
           const attContainer = el.querySelector('.comment-attachments');
           for (const a of c.attachments) attContainer.appendChild(makeAttachmentBtn(a, selectedFiles, downloadedFiles));
@@ -1938,6 +1994,31 @@
 
   document.getElementById('s-fetch-models-btn').addEventListener('click', fetchModels);
 
+  function renderSkillsConfigured(configured, env, extra) {
+    const list = document.getElementById('s-skills-configured');
+    const empty = document.getElementById('s-skills-configured-empty');
+    const envSet = new Set(env);
+    const extraSet = new Set(extra);
+    list.innerHTML = '';
+    if (!configured.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    for (const dir of configured) {
+      const li = document.createElement('li');
+      const path = document.createElement('span');
+      path.textContent = dir;
+      path.style.flex = '1';
+      li.appendChild(path);
+      const tag = document.createElement('span');
+      tag.className = 's-skills-tag' + (envSet.has(dir) ? '' : ' extra');
+      tag.textContent = envSet.has(dir) ? 'env' : 'admin';
+      li.appendChild(tag);
+      list.appendChild(li);
+    }
+  }
+
   async function openSettings() {
     sLlmError.textContent = '';
     sPinError.textContent = '';
@@ -1962,8 +2043,10 @@
     try {
       const res = await fetch('/settings/skills');
       if (res.ok) {
-        const { dirs } = await res.json();
-        document.getElementById('s-skills-dirs').value = dirs.join('\n');
+        const { dirs, extra, env, configured } = await res.json();
+        const extras = extra ?? dirs ?? [];
+        document.getElementById('s-skills-dirs').value = extras.join('\n');
+        renderSkillsConfigured(configured ?? [], env ?? [], extras);
       }
     } catch {}
 
@@ -2043,6 +2126,14 @@
       document.getElementById('s-skills-error').textContent = data.error || 'Save failed.';
       return;
     }
+    try {
+      const skillsRes = await fetch('/settings/skills');
+      if (skillsRes.ok) {
+        const { dirs, extra, env, configured } = await skillsRes.json();
+        const extras = extra ?? dirs ?? data.dirs ?? [];
+        renderSkillsConfigured(configured ?? [], env ?? [], extras);
+      }
+    } catch {}
     closeSettings();
     const toast = document.createElement('div');
     toast.textContent = 'Skills directories saved';
@@ -2155,6 +2246,101 @@
     });
   })();
 
+  function isAttachmentOnDisk(attName, downloadedFiles) {
+    return (downloadedFiles ?? []).some((fp) => fp.endsWith('/' + attName));
+  }
+
+  function pendingAttachmentsFromList(atts, downloadedFiles) {
+    return (atts ?? [])
+      .filter((a) => !isAttachmentOnDisk(a.name, downloadedFiles))
+      .map((a) => ({ attId: a.id, attName: a.name }));
+  }
+
+  function pendingAttachmentsFromNodes(nodes) {
+    return (nodes ?? [])
+      .filter((n) => !n.downloaded)
+      .map((n) => ({ attId: n.attId, attName: n.name }));
+  }
+
+  async function refreshBugPanelFromSession() {
+    if (!currentSessionId) return;
+    const res = await fetch(`/session/${currentSessionId}`);
+    if (!res.ok) return;
+    const { bug, session, downloaded_files } = await res.json();
+    if (bug) renderBugPanel(bug, session.selected_files ?? [], downloaded_files ?? []);
+  }
+
+  async function downloadAttachmentsBatch(items, { label, triggerBtn } = {}) {
+    if (!currentSessionId || !items.length) return { ok: 0, fail: 0 };
+    const btn = triggerBtn;
+    const origText = btn?.textContent;
+    let ok = 0;
+    let fail = 0;
+    if (btn) btn.disabled = true;
+    for (let i = 0; i < items.length; i++) {
+      const { attId, attName } = items[i];
+      if (btn) btn.textContent = `Downloading ${i + 1}/${items.length}…`;
+      const res = await fetch(`/session/${currentSessionId}/attachment/${attId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attName }),
+      });
+      if (!res.ok) {
+        fail++;
+        const body = await res.json().catch(() => ({}));
+        appendMessage('error', `✗ ${label ? label + ': ' : ''}${attName}: ${body.error ?? res.statusText}`);
+        continue;
+      }
+      ok++;
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+    if (explorerOpen) await refreshExplorerTree();
+    await refreshBugPanelFromSession();
+    if (ok > 0) {
+      appendMessage('status', `✓ Downloaded ${ok} file${ok > 1 ? 's' : ''}${fail ? ` (${fail} failed)` : ''}`);
+    }
+    return { ok, fail };
+  }
+
+  function makeExpBulkBtn(pendingItems, label) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'exp-bulk-btn';
+    btn.textContent = 'Download all';
+    if (!pendingItems.length) {
+      btn.disabled = true;
+      btn.title = 'All downloaded';
+    } else {
+      btn.title = `Download ${pendingItems.length} attachment(s)`;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        downloadAttachmentsBatch(pendingItems, { label, triggerBtn: btn });
+      };
+    }
+    return btn;
+  }
+
+  function makePanelBulkBtn(pendingItems, label) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panel-bulk-btn';
+    btn.textContent = 'Download all';
+    if (!pendingItems.length) {
+      btn.disabled = true;
+      btn.title = 'All downloaded';
+    } else {
+      btn.title = `Download ${pendingItems.length} attachment(s)`;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        downloadAttachmentsBatch(pendingItems, { label, triggerBtn: btn });
+      };
+    }
+    return btn;
+  }
+
   async function refreshExplorerTree() {
     if (!currentSessionId) return;
     const res = await fetch(`/session/${currentSessionId}/workspace/files`);
@@ -2214,21 +2400,37 @@
     const body = document.getElementById('explorer-body');
     body.innerHTML = '';
 
-    const bugHeader = document.createElement('div');
-    bugHeader.className = 'exp-section-header';
-    bugHeader.textContent = 'Bug Attachments';
-    body.appendChild(bugHeader);
+    const bugHeaderRow = document.createElement('div');
+    bugHeaderRow.className = 'exp-section-header-row';
+    const bugTitle = document.createElement('div');
+    bugTitle.className = 'exp-section-header';
+    bugTitle.textContent = 'Bug Attachments';
+    bugHeaderRow.appendChild(bugTitle);
+    if (!isAdhocSession && tree.bugAttachments.length) {
+      bugHeaderRow.appendChild(
+        makeExpBulkBtn(pendingAttachmentsFromNodes(tree.bugAttachments), 'Bug attachments')
+      );
+    }
+    body.appendChild(bugHeaderRow);
     for (const node of tree.bugAttachments) body.appendChild(makeAttNode(node, null));
 
     for (const section of tree.comments) {
-      const commentEl = document.createElement('div');
-      commentEl.className = 'exp-comment-header';
+      const commentRow = document.createElement('div');
+      commentRow.className = 'exp-comment-header-row';
+      const commentText = document.createElement('div');
+      commentText.className = 'exp-comment-text';
       const truncated = section.body.length > 80 ? section.body.slice(0, 80) + '…' : section.body;
-      commentEl.innerHTML = `
+      commentText.innerHTML = `
         <div class="exp-comment-author">${escHtml(section.author)} · ${fmtDate(section.created_at)}</div>
         <div class="exp-comment-body" title="${escHtml(section.body)}">"${escHtml(truncated)}"</div>
       `;
-      body.appendChild(commentEl);
+      commentRow.appendChild(commentText);
+      if (!isAdhocSession && section.nodes.length) {
+        commentRow.appendChild(
+          makeExpBulkBtn(pendingAttachmentsFromNodes(section.nodes), `Comment by ${section.author}`)
+        );
+      }
+      body.appendChild(commentRow);
       for (const node of section.nodes) body.appendChild(makeAttNode(node, section.body));
       if (!section.nodes.length) {
         const empty = document.createElement('div');
@@ -2239,10 +2441,17 @@
     }
 
     if (tree.internalFiles && tree.internalFiles.length > 0) {
-      const internalsHeader = document.createElement('div');
-      internalsHeader.className = 'exp-section-header';
-      internalsHeader.textContent = 'Workspace Internals';
-      body.appendChild(internalsHeader);
+      const internHeader = document.createElement('div');
+      internHeader.className = 'exp-collapsible-header';
+      const internToggle = document.createElement('span');
+      internToggle.className = 'exp-collapsible-toggle';
+      internToggle.textContent = '▶';
+      internHeader.appendChild(internToggle);
+      const internLabel = document.createElement('span');
+      internLabel.textContent = `Workspace Internals (${tree.internalFiles.length})`;
+      internHeader.appendChild(internLabel);
+      const internBody = document.createElement('div');
+      internBody.className = 'exp-collapsible-body';
       for (const f of tree.internalFiles) {
         const wrapper = document.createElement('div');
         const fileRow = makeFileRow(f.filePath, f.name, null);
@@ -2251,8 +2460,15 @@
         desc.textContent = f.description;
         wrapper.appendChild(fileRow);
         wrapper.appendChild(desc);
-        body.appendChild(wrapper);
+        internBody.appendChild(wrapper);
       }
+      internHeader.addEventListener('click', () => {
+        const open = internBody.style.display === 'block';
+        internBody.style.display = open ? 'none' : 'block';
+        internToggle.textContent = open ? '▶' : '▼';
+      });
+      body.appendChild(internHeader);
+      body.appendChild(internBody);
     }
   }
 

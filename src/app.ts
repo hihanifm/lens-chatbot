@@ -793,7 +793,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   });
 
   app.get("/settings/skills", (_req, res) => {
-    res.json({ dirs: settings.getExtraSkillsDirs() });
+    const env = settings.getEnvSkillsDirs();
+    const extra = settings.getExtraSkillsDirs();
+    res.json({
+      dirs: extra,
+      env,
+      extra,
+      configured: settings.getSkillsDirs(),
+    });
   });
 
   app.put("/settings/skills", async (req, res) => {

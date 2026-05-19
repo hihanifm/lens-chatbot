@@ -70,6 +70,31 @@ test("home loads", async ({ page }) => {
   await expect(page.locator("#load-bug-btn")).toBeVisible();
 });
 
+test("explorer bulk download and collapsed internals", async ({ page }) => {
+  test.setTimeout(120_000);
+  await seedAuth(page);
+  await page.goto("/");
+  await page.locator("#bug-id-input").fill("BUG-123");
+  await page.locator("#load-bug-btn").click();
+  await expect(page.locator("#bug-title")).toContainText("IMS Registration Failure");
+
+  await page.locator("#explorer-btn").click();
+  await expect(page.locator("#explorer-drawer")).toHaveClass(/open/);
+
+  const internalsBody = page.locator(".exp-collapsible-body");
+  await expect(internalsBody).toBeHidden();
+
+  const bugDownloadAll = page.locator(".exp-section-header-row .exp-bulk-btn").first();
+  await expect(bugDownloadAll).toBeEnabled();
+  await bugDownloadAll.click();
+  await expect(page.locator("#chat .msg.status").filter({ hasText: /Downloaded \d+ file/ })).toBeVisible({
+    timeout: 90_000,
+  });
+
+  await page.locator(".exp-collapsible-header").click();
+  await expect(internalsBody).toBeVisible();
+});
+
 test("load bug shows details", async ({ page }) => {
   await seedAuth(page);
   await page.goto("/");
