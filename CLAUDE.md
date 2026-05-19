@@ -122,6 +122,8 @@ fixtures/                ← static fixture files for tests
 
 **Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act (`base.md`). `?mode=yolo` uses `base-yolo.md` and enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to finish (vs act, where a tool-call-less reply ends the task). UI: 🎲 Lucky button (act); session menu **Lucky YOLO** (one-shot `?mode=yolo`). Reports: `agent_notes/lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md`.
 
+**Lucky TLDR split**: `lucky.md` instructs the agent to end the report with a trailing `## TLDR` paragraph (5–10 lines). The full report is still streamed (so the user watches progress) and saved to `agent_notes/`, but on `done` the server extracts that section via `extractTldr()` in `app.ts`, emits a `{ type: "tldr" }` SSE event, and uses the TLDR for both the chat bubble and `messages.add` history. If the heading is missing, falls back to the full text (logged as `lucky:no-tldr-section`). The full report stays one click away via the existing report attachment chip.
+
 **Externalized prompts**: all LLM-facing text lives under `PROMPTS_DIR` (default bundled `src/prompts/`). Edit without rebuild, or mount a volume in Docker.
 
 | File / dir | Role |

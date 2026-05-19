@@ -36,6 +36,19 @@ async function listDownloadedAttachmentPaths(workspacePath: string): Promise<str
 
 let skillsCache: { name: string; description: string; triggers: string[] }[] | null = null;
 
+// Pull the trailing `## TLDR` paragraph out of a Lucky report. Returns null if
+// the heading is missing or the section is empty so callers can fall back to
+// the full text.
+function extractTldr(text: string): string | null {
+  if (!text) return null;
+  const matches = [...text.matchAll(/^#{2,}\s*TL;?DR\b.*$/gim)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1];
+  const start = (last.index ?? 0) + last[0].length;
+  const body = text.slice(start).trim();
+  return body || null;
+}
+
 export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const hash = await new Promise<string>((resolve, reject) => {
@@ -620,7 +633,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
               log.error("lucky:report-write-error", { reportPath, error: writeErr.message });
             }
           }
-          messages.add(req.params.id, "assistant", fullResponse || "[Lucky analysis produced no output]");
+          const tldrText = extractTldr(fullResponse);
+          if (tldrText) {
+            writeLucky({ type: "tldr", content: tldrText, user: user.name, clientId });
+          } else if (fullResponse) {
+            log.warn("lucky:no-tldr-section", { sessionId: req.params.id, mode });
+          }
+          const bubbleText = tldrText || fullResponse || "[Lucky analysis produced no output]";
+          messages.add(req.params.id, "assistant", bubbleText);
           const reports = await listNewAgentReports(updatedSession.workspace_path, reportSnapshot);
           writeLucky({ type: "done", user: user.name, clientId, reports });
           break;

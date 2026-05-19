@@ -1540,6 +1540,7 @@
     const es = new EventSource(`/session/${currentSessionId}/lucky?${luckyParams}`);
 
     let luckyDone = false;
+    let luckyTldr = null;
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
@@ -1552,8 +1553,13 @@
       } else if (data.type === 'text') {
         assistantEl.textContent += data.content;
         assistantEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else if (data.type === 'tldr') {
+        luckyTldr = data.content;
       } else if (data.type === 'done') {
         luckyDone = true;
+        if (luckyTldr) {
+          assistantEl.textContent = luckyTldr;
+        }
         assistantEl.classList.remove('streaming');
         assistantEl.closest('.msg-row')?.classList.remove('streaming');
         if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
