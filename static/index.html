@@ -2063,20 +2063,43 @@
     return `/session/${currentSessionId}/workspace/download?${q}`;
   }
 
-  function openReport(relativePath) {
-    if (!currentSessionId) return;
-    window.open(reportFileUrl(relativePath, true), '_blank', 'noopener');
+  async function fetchReportBlob(relativePath, inline) {
+    const res = await fetch(reportFileUrl(relativePath, inline));
+    if (!res.ok) {
+      let msg = res.statusText;
+      try {
+        const body = await res.json();
+        if (body.error) msg = body.error;
+      } catch { /* not JSON */ }
+      appendMessage('error', `✗ Could not load report: ${msg}`);
+      return null;
+    }
+    return res.blob();
   }
 
-  function downloadReport(relativePath, name) {
+  async function openReport(relativePath) {
     if (!currentSessionId) return;
+    const blob = await fetchReportBlob(relativePath, true);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const tab = window.open(url, '_blank', 'noopener');
+    if (!tab) appendMessage('error', '✗ Pop-up blocked — allow pop-ups to open the report.');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  async function downloadReport(relativePath, name) {
+    if (!currentSessionId) return;
+    const blob = await fetchReportBlob(relativePath, false);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = reportFileUrl(relativePath, false);
+    a.href = url;
     a.download = name;
     a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   function attachReportBubbles(bubbleWrap, reports) {

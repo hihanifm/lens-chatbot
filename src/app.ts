@@ -19,6 +19,7 @@ import { log } from "./logger.js";
 import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js";
 import { classifyBatch, shouldAutoSelect, summarizeBatch } from "./services/attachmentFilter.js";
 import { snapshotAgentReportPaths, listNewAgentReports } from "./services/agentReports.js";
+import { resolveWorkspaceFilePath } from "./services/workspacePaths.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -266,9 +267,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.get("/session/:id/zip-contents", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
-    const zipPath = path.resolve(String(req.query.zipPath ?? ""));
-    if (!zipPath.startsWith(path.resolve(session.workspace_path) + path.sep))
-      return res.status(403).json({ error: "path outside workspace" });
+    const zipPath = resolveWorkspaceFilePath(session.workspace_path, String(req.query.zipPath ?? ""));
+    if (!zipPath) return res.status(403).json({ error: "path outside workspace" });
     const zipBaseName = path.basename(zipPath, ".zip");
     const extractBaseDir = path.join(session.workspace_path, "attachments", zipBaseName);
     const entries = await listZipContents(zipPath, extractBaseDir);
@@ -281,9 +281,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const { zipPath, innerPath } = req.body;
     if (!zipPath || !innerPath)
       return res.status(400).json({ error: "zipPath and innerPath required" });
-    const resolvedZip = path.resolve(String(zipPath));
-    if (!resolvedZip.startsWith(path.resolve(session.workspace_path) + path.sep))
-      return res.status(403).json({ error: "path outside workspace" });
+    const resolvedZip = resolveWorkspaceFilePath(session.workspace_path, String(zipPath));
+    if (!resolvedZip) return res.status(403).json({ error: "path outside workspace" });
     const zipBaseName = path.basename(resolvedZip, ".zip");
     const extractBaseDir = path.join(session.workspace_path, "attachments", zipBaseName);
     try {
@@ -312,9 +311,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.get("/session/:id/workspace/download", (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
-    const filePath = path.resolve(String(req.query.filePath ?? ""));
-    if (!filePath.startsWith(path.resolve(session.workspace_path) + path.sep))
-      return res.status(403).json({ error: "path outside workspace" });
+    const filePath = resolveWorkspaceFilePath(session.workspace_path, String(req.query.filePath ?? ""));
+    if (!filePath) return res.status(403).json({ error: "path outside workspace" });
     res.download(filePath, path.basename(filePath), (err) => {
       if (err) log.error("workspace:download-error", { filePath, error: err.message });
     });
@@ -323,9 +321,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.get("/session/:id/workspace/file", (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
-    const filePath = path.resolve(String(req.query.filePath ?? ""));
-    if (!filePath.startsWith(path.resolve(session.workspace_path) + path.sep))
-      return res.status(403).json({ error: "path outside workspace" });
+    const filePath = resolveWorkspaceFilePath(session.workspace_path, String(req.query.filePath ?? ""));
+    if (!filePath) return res.status(403).json({ error: "path outside workspace" });
     const name = path.basename(filePath);
     const inline = req.query.disposition !== "attachment";
     const ext = path.extname(name).toLowerCase();
