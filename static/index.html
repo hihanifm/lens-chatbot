@@ -177,6 +177,13 @@
     .msg.user { background: linear-gradient(135deg, #003087, var(--action)); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 2px 8px rgba(0,48,135,0.25); }
     .msg.assistant { background: white; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
     .msg.streaming { opacity: 0.88; }
+    .msg-reports { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-width: 100%; }
+    .report-chip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; font-size: 12px; }
+    .report-chip-name { font-family: 'SF Mono', 'Fira Code', monospace; color: #374151; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+    .report-chip-meta { color: #9ca3af; font-size: 11px; flex-shrink: 0; }
+    .report-chip-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .report-chip-btn { background: white; border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600; font-family: inherit; color: var(--action); cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+    .report-chip-btn:hover { background: var(--sky-chip); border-color: var(--sky-border); }
     .msg.status { align-self: flex-start; background: none; padding: 1px 6px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #9ca3af; max-width: 100%; border-radius: 4px; }
     .eng-log { align-self: flex-start; max-width: 100%; margin: -4px 0 4px; }
     .eng-log-header { display: flex; align-items: center; gap: 6px; }
@@ -777,6 +784,7 @@
           el.classList.remove('streaming');
           el.closest('.msg-row')?.classList.remove('streaming');
           if (el.msgTime) setMsgTime(el.msgTime, new Date());
+          attachReportBubbles(el.closest('.msg-bubble-wrap'), data.reports);
           remoteStreams.delete(data.clientId);
         }
       } else if (data.type === 'error') {
@@ -1549,6 +1557,7 @@
         assistantEl.classList.remove('streaming');
         assistantEl.closest('.msg-row')?.classList.remove('streaming');
         if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
+        attachReportBubbles(assistantEl.closest('.msg-bubble-wrap'), data.reports);
         finishEngineeringLog();
         es.close();
         luckyBtn.disabled = false;
@@ -1714,6 +1723,7 @@
         assistantEl.classList.remove('streaming');
         assistantEl.closest('.msg-row')?.classList.remove('streaming');
         if (assistantEl.msgTime) setMsgTime(assistantEl.msgTime, new Date());
+        attachReportBubbles(assistantEl.closest('.msg-bubble-wrap'), data.reports);
         finishEngineeringLog();
         es.close(); currentEs = null;
         finishAnalysis();
@@ -1954,6 +1964,72 @@
     summary.textContent = `· ${n} event${n === 1 ? '' : 's'}`;
     group.classList.remove('expanded');
     group.querySelector('.eng-log-toggle').setAttribute('aria-expanded', 'false');
+  }
+
+  function formatReportSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  function reportFileUrl(relativePath, inline) {
+    const q = new URLSearchParams({ filePath: relativePath });
+    if (inline) {
+      return `/session/${currentSessionId}/workspace/file?${q}&disposition=inline`;
+    }
+    return `/session/${currentSessionId}/workspace/download?${q}`;
+  }
+
+  function openReport(relativePath) {
+    if (!currentSessionId) return;
+    window.open(reportFileUrl(relativePath, true), '_blank', 'noopener');
+  }
+
+  function downloadReport(relativePath, name) {
+    if (!currentSessionId) return;
+    const a = document.createElement('a');
+    a.href = reportFileUrl(relativePath, false);
+    a.download = name;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function attachReportBubbles(bubbleWrap, reports) {
+    if (!bubbleWrap || !reports?.length) return;
+    bubbleWrap.querySelector('.msg-reports')?.remove();
+    const container = document.createElement('div');
+    container.className = 'msg-reports';
+    for (const r of reports) {
+      const chip = document.createElement('div');
+      chip.className = 'report-chip';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'report-chip-name';
+      nameEl.textContent = r.name;
+      nameEl.title = r.relativePath;
+      const meta = document.createElement('span');
+      meta.className = 'report-chip-meta';
+      meta.textContent = formatReportSize(r.size ?? 0);
+      const actions = document.createElement('span');
+      actions.className = 'report-chip-actions';
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'report-chip-btn';
+      openBtn.textContent = 'Open';
+      openBtn.onclick = () => openReport(r.relativePath);
+      const dlBtn = document.createElement('button');
+      dlBtn.type = 'button';
+      dlBtn.className = 'report-chip-btn';
+      dlBtn.textContent = 'Download';
+      dlBtn.onclick = () => downloadReport(r.relativePath, r.name);
+      actions.append(openBtn, dlBtn);
+      chip.append(nameEl, meta, actions);
+      container.appendChild(chip);
+    }
+    const msgEl = bubbleWrap.querySelector('.msg');
+    if (msgEl) msgEl.after(container);
+    else bubbleWrap.appendChild(container);
+    bubbleWrap.closest('.msg-row')?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 
   function appendMessage(role, content, streaming = false, createdAt = null, userName = null) {

@@ -18,6 +18,7 @@ import { runLucky } from "./agent/luckyAnalyzer.js";
 import { log } from "./logger.js";
 import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js";
 import { classifyBatch, shouldAutoSelect, summarizeBatch } from "./services/attachmentFilter.js";
+import { snapshotAgentReportPaths, listNewAgentReports } from "./services/agentReports.js";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -306,6 +307,27 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     });
   });
 
+  app.get("/session/:id/workspace/file", (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const filePath = path.resolve(String(req.query.filePath ?? ""));
+    if (!filePath.startsWith(path.resolve(session.workspace_path) + path.sep))
+      return res.status(403).json({ error: "path outside workspace" });
+    const name = path.basename(filePath);
+    const inline = req.query.disposition !== "attachment";
+    const ext = path.extname(name).toLowerCase();
+    const contentType =
+      ext === ".md" ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `${inline ? "inline" : "attachment"}; filename="${name.replace(/"/g, "%22")}"`,
+    );
+    res.sendFile(filePath, (err) => {
+      if (err) log.error("workspace:file-error", { filePath, error: err.message });
+    });
+  });
+
   app.post("/session/:id/attachment/:attId", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
@@ -421,6 +443,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     const questionLog = isLlmSanitizeEnabled() ? sanitizeForLlm(question).text : question;
     log.info("analyze:start", { sessionId: req.params.id, files: updatedSession.selected_files, question: questionLog.slice(0, 80), user: user.name });
+    const reportSnapshot = await snapshotAgentReportPaths(updatedSession.workspace_path);
     let fullResponse = "";
 
     try {
@@ -441,7 +464,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         } else if (event.type === "done") {
           log.info("analyze:done", { sessionId: req.params.id, responseLen: fullResponse.length });
           messages.add(req.params.id, "assistant", fullResponse, "Assistant");
-          const payload = { type: "done", user: user.name, clientId };
+          const reports = await listNewAgentReports(updatedSession.workspace_path, reportSnapshot);
+          const payload = { type: "done", user: user.name, clientId, reports };
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
           broadcast(req.params.id, payload, clientId);
           res.end();
@@ -571,6 +595,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     const luckyUserLabel = `🎲 I'm Feeling Lucky${mode === "yolo" ? " (yolo)" : ""} — finding root cause automatically...`;
     messages.add(req.params.id, "user", luckyUserLabel, user.name);
+    const reportSnapshot = await snapshotAgentReportPaths(updatedSession.workspace_path);
     let fullResponse = "";
 
     try {
@@ -588,6 +613,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
             const reportName = `lucky-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.md`;
             const reportPath = path.join(updatedSession.workspace_path, "agent_notes", reportName);
             try {
+              await fs.mkdir(path.dirname(reportPath), { recursive: true });
               await fs.writeFile(reportPath, fullResponse);
               log.info("lucky:report-saved", { reportPath });
             } catch (writeErr: any) {
@@ -595,7 +621,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
             }
           }
           messages.add(req.params.id, "assistant", fullResponse || "[Lucky analysis produced no output]");
-          writeLucky({ type: "done", user: user.name, clientId });
+          const reports = await listNewAgentReports(updatedSession.workspace_path, reportSnapshot);
+          writeLucky({ type: "done", user: user.name, clientId, reports });
           break;
         } else if (event.type === "error") {
           messages.add(req.params.id, "assistant", `[Analysis error: ${event.content}]`);
