@@ -3,15 +3,17 @@ import path from "node:path";
 import { settings } from "../db.js";
 
 export type FilterRules = {
+  critical: string[];
   priority: string[];
   useful: string[];
   skip: string[];
   size_cap_mb: number;
 };
 
-export type FileClass = "priority" | "useful" | "skip" | "oversize" | "other";
+export type FileClass = "critical" | "priority" | "useful" | "skip" | "oversize" | "other";
 
 const DEFAULT_RULES: FilterRules = {
+  critical: [],
   priority: [],
   useful: ["**/*.log", "**/*.txt", "**/*.json"],
   skip: ["**/*.png", "**/*.jpg", "**/*.mp4", "**/*.bin", "**/*.so", "**/*.dex"],
@@ -24,6 +26,7 @@ let cached: { rules: FilterRules; matchers: CompiledMatchers; loadedAt: number }
 const CACHE_TTL_MS = 30_000;
 
 type CompiledMatchers = {
+  critical: RegExp[];
   priority: RegExp[];
   useful: RegExp[];
   skip: RegExp[];
@@ -57,6 +60,7 @@ function globToRegex(glob: string): RegExp {
 
 function compile(rules: FilterRules): CompiledMatchers {
   return {
+    critical: rules.critical.map(globToRegex),
     priority: rules.priority.map(globToRegex),
     useful: rules.useful.map(globToRegex),
     skip: rules.skip.map(globToRegex),
@@ -75,7 +79,7 @@ async function findFilterSkillPath(): Promise<string | null> {
   return null;
 }
 
-function extractFirstJsonBlock(md: string): unknown | null {
+export function extractFirstJsonBlock(md: string): unknown | null {
   const m = md.match(/```json\s*\n([\s\S]*?)\n```/);
   if (!m) return null;
   try {
@@ -85,11 +89,12 @@ function extractFirstJsonBlock(md: string): unknown | null {
   }
 }
 
-function coerceRules(parsed: unknown): FilterRules {
+export function coerceRules(parsed: unknown): FilterRules {
   const p = (parsed ?? {}) as Partial<FilterRules>;
   const arr = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   return {
+    critical: arr(p.critical),
     priority: arr(p.priority),
     useful: arr(p.useful),
     skip: arr(p.skip),
@@ -123,8 +128,8 @@ export function clearAttachmentFilterCache(): void {
 
 /**
  * Classify one file. `relPath` is workspace-relative (forward slashes).
- * Rule precedence: skip > priority > useful > other. Size cap overrides
- * everything below (a priority file over the cap returns "oversize").
+ * Precedence: skip > critical > priority > useful > other. Size cap returns
+ * "oversize" for anything over the cap that wasn't already skipped.
  */
 export function classify(
   relPath: string,
@@ -135,14 +140,20 @@ export function classify(
   const p = relPath.replace(/\\/g, "/");
   if (matchers.skip.some((r) => r.test(p))) return "skip";
   if (sizeBytes !== undefined && sizeBytes > rules.size_cap_mb * 1024 * 1024) return "oversize";
+  if (matchers.critical.some((r) => r.test(p))) return "critical";
   if (matchers.priority.some((r) => r.test(p))) return "priority";
   if (matchers.useful.some((r) => r.test(p))) return "useful";
   return "other";
 }
 
-/** True if the file should be auto-selected into the agent context. */
+/** True if the file should be auto-selected into the agent context (chat/upload paths). */
 export function shouldAutoSelect(c: FileClass): boolean {
-  return c === "priority" || c === "useful";
+  return c === "critical" || c === "priority" || c === "useful";
+}
+
+/** True if the file is critical — Lucky uses this to pick its minimal file set. */
+export function isCritical(c: FileClass): boolean {
+  return c === "critical";
 }
 
 /**
@@ -170,8 +181,8 @@ export async function classifyBatch(
 /** Summarize a batch for status logging. */
 export function summarizeBatch(
   classified: Array<{ classification: FileClass }>,
-): { priority: number; useful: number; skip: number; oversize: number; other: number; kept: number } {
-  const counts = { priority: 0, useful: 0, skip: 0, oversize: 0, other: 0 };
+): { critical: number; priority: number; useful: number; skip: number; oversize: number; other: number; kept: number } {
+  const counts = { critical: 0, priority: 0, useful: 0, skip: 0, oversize: 0, other: 0 };
   for (const c of classified) counts[c.classification]++;
-  return { ...counts, kept: counts.priority + counts.useful };
+  return { ...counts, kept: counts.critical + counts.priority + counts.useful };
 }

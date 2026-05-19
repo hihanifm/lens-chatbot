@@ -17,7 +17,7 @@ import { loadAgentSkills } from "./agent/agentPrompt.js";
 import { runLucky } from "./agent/luckyAnalyzer.js";
 import { log } from "./logger.js";
 import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js";
-import { classifyBatch, shouldAutoSelect, summarizeBatch } from "./services/attachmentFilter.js";
+import { classifyBatch, shouldAutoSelect, summarizeBatch, isCritical } from "./services/attachmentFilter.js";
 import { snapshotAgentReportPaths, listNewAgentReports } from "./services/agentReports.js";
 import { resolveWorkspaceFilePath } from "./services/workspacePaths.js";
 
@@ -564,6 +564,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     // Auto-download top-level bug attachments (not comment attachments — those can be 300+ MB)
     let bugJson: any = null;
     let luckyFiles: string[] = [];
+    let luckyExtrasOnDisk = 0;
     try {
       bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
     } catch { /* no bug.json — use user-selected_files for Lucky */ }
@@ -608,14 +609,25 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         }
       }
 
-      // Apply attachment-filter skill — keep priority/useful, drop skip/oversize (ephemeral; not selected_files).
+      // Apply attachment-filter skill. Lucky sends ONLY `critical` files into the prompt;
+      // anything else stays on disk for the agent to discover via shell if it needs more.
+      // If `critical` is empty (skill missing or no critical globs match), fall back to
+      // priority+useful so we never send zero files.
       const classified = await classifyBatch(candidatePaths, session.workspace_path);
-      for (const c of classified) {
-        if (shouldAutoSelect(c.classification)) luckyFiles.push(c.absPath);
+      const criticalFiles = classified.filter((c) => isCritical(c.classification)).map((c) => c.absPath);
+      const autoSelectFiles = classified.filter((c) => shouldAutoSelect(c.classification)).map((c) => c.absPath);
+      if (criticalFiles.length > 0) {
+        luckyFiles.push(...criticalFiles);
+        luckyExtrasOnDisk = autoSelectFiles.length - criticalFiles.length;
+      } else {
+        luckyFiles.push(...autoSelectFiles);
+        if (autoSelectFiles.length > 0) {
+          writeStatus("[Lucky] No `critical` matches — falling back to priority+useful (consider tuning the attachment-filter skill).");
+        }
       }
       const summary = summarizeBatch(classified);
-      writeStatus(`[Lucky] Filter: kept ${summary.kept} of ${classified.length} files (priority ${summary.priority}, useful ${summary.useful}, skipped noise ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}). Override via file explorer.`);
-      log.info("lucky:filter", { sessionId: req.params.id, candidates: classified.length, ...summary });
+      writeStatus(`[Lucky] Filter: prompting ${luckyFiles.length} of ${classified.length} files (critical ${summary.critical}, priority ${summary.priority}, useful ${summary.useful}, skipped ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}).${luckyExtrasOnDisk > 0 ? ` ${luckyExtrasOnDisk} more on disk — agent can discover via shell.` : ""}`);
+      log.info("lucky:filter", { sessionId: req.params.id, candidates: classified.length, prompted: luckyFiles.length, extrasOnDisk: luckyExtrasOnDisk, ...summary });
       writeStatus("[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed.");
     }
 
@@ -635,7 +647,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         runner,
         { workspace_path: updatedSession.workspace_path, selected_files: filesForLucky },
         mode,
-        effectiveModel
+        effectiveModel,
+        luckyExtrasOnDisk > 0
+          ? { count: luckyExtrasOnDisk, attachmentsRoot: path.join(updatedSession.workspace_path, "attachments") }
+          : undefined
       )) {
         if (event.type === "text") {
           fullResponse += event.content;

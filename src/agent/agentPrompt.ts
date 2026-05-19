@@ -66,6 +66,7 @@ export async function buildPrompt(input: {
   fileComments?: Record<string, string>;
   priorReports?: string[];
   selectedSkill?: LoadedSkill;
+  extras?: { count: number; attachmentsRoot: string };
 }): Promise<string> {
   const fileList = input.files.length
     ? renderFileList(input.files, input.workspacePath, input.fileComments)
@@ -79,6 +80,10 @@ export async function buildPrompt(input: {
     input.files.length
       ? { fragment: "user/files-present" }
       : { fragment: "user/files-empty", vars: { workspace: input.workspacePath } },
+    input.extras && input.extras.count > 0 && {
+      fragment: "user/lucky-extras",
+      vars: { count: String(input.extras.count), root: input.extras.attachmentsRoot },
+    },
     input.selectedSkill && {
       fragment: "user/selected-skill",
       vars: {

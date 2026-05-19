@@ -39,12 +39,28 @@ export interface ZipEntry {
   filePath?: string;
 }
 
+/**
+ * Sanitize each segment of a zip-internal path:
+ *   - Replace runs of whitespace with a single `-`.
+ *   - Trim leading/trailing `-` and `.` from each segment.
+ * Folder nesting is preserved. Empty segments after trimming are dropped.
+ */
+function sanitizeZipPath(innerPath: string): string {
+  return innerPath
+    .split("/")
+    .map((seg) => seg.replace(/\s+/g, "-").replace(/^[-.]+|[-.]+$/g, ""))
+    .filter((seg) => seg.length > 0)
+    .join("/");
+}
+
 export async function listZipContents(zipPath: string, extractBaseDir: string): Promise<ZipEntry[]> {
   const directory = await unzipper.Open.file(zipPath);
   const entries: ZipEntry[] = [];
   for (const file of directory.files) {
     if (file.type === "Directory") continue;
-    const destPath = path.join(extractBaseDir, file.path);
+    const safeInner = sanitizeZipPath(file.path);
+    if (!safeInner) continue;
+    const destPath = path.join(extractBaseDir, safeInner);
     const resolved = path.resolve(destPath);
     if (!resolved.startsWith(path.resolve(extractBaseDir) + path.sep)) continue;
     let extracted = false, filePath: string | undefined;
@@ -57,7 +73,9 @@ export async function listZipContents(zipPath: string, extractBaseDir: string): 
 }
 
 export async function extractZipEntry(zipPath: string, innerPath: string, extractBaseDir: string): Promise<string> {
-  const destPath = path.resolve(path.join(extractBaseDir, innerPath));
+  const safeInner = sanitizeZipPath(innerPath);
+  if (!safeInner) throw new Error(`Zip entry path is empty after sanitization: ${innerPath}`);
+  const destPath = path.resolve(path.join(extractBaseDir, safeInner));
   if (!destPath.startsWith(path.resolve(extractBaseDir) + path.sep))
     throw new Error("path traversal detected");
   await fs.mkdir(path.dirname(destPath), { recursive: true });

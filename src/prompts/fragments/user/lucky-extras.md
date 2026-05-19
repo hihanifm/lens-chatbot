@@ -1,0 +1,1 @@
+Additional {{count}} attachment file(s) exist on disk under {{root}} but are NOT pre-listed above. If the critical files above are insufficient, use `ls -R`, `find`, or `rg` from the workspace to discover them, then read what you need with the file-reading tool.

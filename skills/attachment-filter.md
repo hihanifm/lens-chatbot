@@ -26,19 +26,32 @@ The backend parses the first `json` fenced block below. Globs are matched
 against the path **relative to the workspace** (e.g.
 `attachments/bugreport-x/FS/data/anr/traces.txt`).
 
-- `priority` — almost always worth reading. Auto-selected.
-- `useful` — usually worth reading. Auto-selected.
+- `critical` — must-read for any first-pass RCA. The Lucky analyzer sends
+  ONLY these into the prompt; everything else is left on disk for the agent
+  to discover via shell (`ls -R`, `find`, `rg`) if it needs more. Keep this
+  list small and high-signal.
+- `priority` — almost always worth reading. Auto-selected for chat/uploads.
+- `useful` — usually worth reading. Auto-selected for chat/uploads.
 - `skip` — rarely useful (binaries, media, dumps). Not auto-selected.
 - `size_cap_mb` — any single file above this is excluded from auto-selection
   regardless of classification (user can still manually add via file
   explorer).
 
-Order: `skip` wins over `useful`, `useful` wins over `priority` only if both
-match — list specific patterns last. (Implementation: first matching rule
-in the order `skip → priority → useful` decides.)
+Order: `skip` wins over everything (binaries are noise even if they match a
+glob below); then `critical` → `priority` → `useful`. (Implementation: first
+matching rule in the order `skip → critical → priority → useful` decides.)
 
 ```json
 {
+  "critical": [
+    "**/anr/traces*.txt",
+    "**/tombstones/tombstone_*",
+    "**/main_log*",
+    "**/system_log*",
+    "**/kernel_log*",
+    "**/dumpstate-*.txt",
+    "**/bugreport-*.txt"
+  ],
   "priority": [
     "**/bugreport-*.txt",
     "**/bugreport-*.zip",

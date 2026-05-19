@@ -5,7 +5,8 @@ export async function* runLucky(
   runner: AgentRunner,
   session: { workspace_path: string; selected_files: string[] },
   mode: "act" | "yolo" = "act",
-  modelOverride?: string
+  modelOverride?: string,
+  extras?: { count: number; attachmentsRoot: string }
 ): AsyncIterable<AgentEvent> {
   yield { type: "status", content: `[Lucky:${mode}] Starting evidence-first root cause analysis...` };
 
@@ -17,6 +18,7 @@ export async function* runLucky(
     question: luckyPrompt,
     mode,
     modelOverride,
+    extras,
     // No clineSessionId → fresh ephemeral session
   })) {
     if (event.type === "session_id") continue; // don't persist lucky sessions to DB
