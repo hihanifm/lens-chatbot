@@ -23,6 +23,8 @@ export interface AgentRunner {
     selectedSkillName?: string;
     /** Lucky-only: count of additional non-critical files left on disk + their root. */
     extras?: { count: number; attachmentsRoot: string };
+    /** Lucky-only: skip reading agent_notes/ priors so the run starts fresh. */
+    skipPriorReports?: boolean;
   }): AsyncIterable<AgentEvent>;
   abort(clineSessionId: string): Promise<void>;
   stop(clineSessionId: string): Promise<void>;

@@ -1,7 +1,6 @@
-Apply the `three-phase-rca` skill to this workspace. Follow its three phases
-strictly — Evidence Collection, then Hypothesis, then Targeted Interrogation —
-and write the final structured report to `agent_notes/` using the
-`android-rca-report` answer template.
+Follow the **Three-Phase RCA** skill above strictly — Evidence Collection,
+then Hypothesis, then Targeted Interrogation — and write the final structured
+report to `agent_notes/` using the `android-rca-report` answer template.
 
 **Final section — required.** End the report with a heading `## TLDR` followed
 by a 5–10 line plain-English summary covering: what is broken, who/what is

@@ -48,6 +48,7 @@ Key env vars:
 | `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
 | `PROMPTS_DIR` | `src/prompts` (bundled) | Top-level `.md` prompts plus `fragments/`; mount as a volume to edit at runtime without rebuild |
 | `MAX_LUCKY_ATTACHMENTS` | `20` | Lucky route: max top-level bug attachments to auto-download |
+| `PRIOR_REPORTS_LIMIT` | `3` | Cap on prior `agent_notes/*.md` reports loaded into each chat-path analyze turn (newest first). Set `0` to disable. Lucky always skips priors regardless. |
 | `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
 
 Additional make targets:

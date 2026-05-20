@@ -300,14 +300,18 @@ export class ClineCoreAgentRunner implements AgentRunner {
     });
     const agentNotesDir = path.join(input.workspacePath, "agent_notes");
     let priorReports: string[] = [];
-    try {
-      const entries = await fs.readdir(agentNotesDir);
-      priorReports = entries
-        .filter((e) => e.endsWith(".md"))
-        .sort()
-        .reverse()
-        .map((e) => path.join(agentNotesDir, e));
-    } catch { /* agent_notes/ missing — fine */ }
+    if (!input.skipPriorReports) {
+      const priorReportsLimit = Number(process.env.PRIOR_REPORTS_LIMIT ?? 3);
+      try {
+        const entries = await fs.readdir(agentNotesDir);
+        priorReports = entries
+          .filter((e) => e.endsWith(".md"))
+          .sort()
+          .reverse()
+          .slice(0, Math.max(0, priorReportsLimit))
+          .map((e) => path.join(agentNotesDir, e));
+      } catch { /* agent_notes/ missing — fine */ }
+    }
     const baseLlmCfg = settings.getLlmConfig();
     const llmCfg = input.modelOverride
       ? { ...baseLlmCfg, model: input.modelOverride }
@@ -362,6 +366,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       : undefined;
     if (input.selectedSkillName && !selectedSkill) {
       log.warn("agent:selected-skill-not-found", { name: input.selectedSkillName });
+      push({ type: "status", content: `selected skill not found: ${input.selectedSkillName} (continuing without preload)` });
     } else if (selectedSkill) {
       push({ type: "status", content: `selected skill: ${selectedSkill.name}` });
     }
