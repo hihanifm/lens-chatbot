@@ -38,6 +38,9 @@ async function listDownloadedAttachmentPaths(workspacePath: string): Promise<str
 
 let skillsCache: { name: string; description: string; triggers: string[] }[] | null = null;
 
+/** Lucky runs do not persist cline_session_id; map lens session id → active Cline id for abort. */
+const ephemeralClineSessions = new Map<string, string>();
+
 // Pull the trailing `## TLDR` paragraph out of a Lucky report. Returns null if
 // the heading is missing or the section is empty so callers can fall back to
 // the full text.
@@ -415,10 +418,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.post("/session/:id/abort", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
-    if (!session.cline_session_id) return res.status(400).json({ error: "no active agent session" });
+    const clineId = session.cline_session_id ?? ephemeralClineSessions.get(req.params.id);
+    if (!clineId) return res.status(400).json({ error: "no active agent session" });
     try {
-      await runner.abort(session.cline_session_id);
-      log.info("agent:aborted", { sessionId: req.params.id, clineSessionId: session.cline_session_id });
+      await runner.abort(clineId);
+      ephemeralClineSessions.delete(req.params.id);
+      log.info("agent:aborted", { sessionId: req.params.id, clineSessionId: clineId });
       res.json({ ok: true });
     } catch (err: any) {
       log.error("session:abort-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
@@ -572,89 +577,103 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       writeLucky({ type: "status", content, user: user.name, clientId });
     };
 
+    const lensSessionId = req.params.id;
+    let clientDisconnected = false;
+    req.on("close", () => {
+      clientDisconnected = true;
+    });
+
+    writeStatus("[Lucky] Starting…");
     broadcast(req.params.id, { type: "analyzing", user: user.name, clientId, mode: "lucky" }, clientId);
 
-    // Auto-download top-level bug attachments (not comment attachments — those can be 300+ MB)
-    let bugJson: any = null;
-    let luckyFiles: string[] = [];
-    let luckyExtrasOnDisk = 0;
     try {
-      bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
-    } catch { /* no bug.json — use user-selected_files for Lucky */ }
+      // Auto-download top-level bug attachments (not comment attachments — those can be 300+ MB)
+      let bugJson: any = null;
+      let luckyFiles: string[] = [];
+      let luckyExtrasOnDisk = 0;
+      try {
+        bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+      } catch { /* no bug.json — use user-selected_files for Lucky */ }
 
-    if (bugJson) {
-      const maxLuckyAttachments = Number(process.env.MAX_LUCKY_ATTACHMENTS ?? 20);
-      const allAttachments: any[] = bugJson.attachments ?? [];
-      if (allAttachments.length > maxLuckyAttachments) {
-        writeStatus(`[Lucky] ${allAttachments.length} attachments found — processing first ${maxLuckyAttachments} (set MAX_LUCKY_ATTACHMENTS to override).`);
-      }
-      const candidatePaths: string[] = [];
-      for (const att of allAttachments.slice(0, maxLuckyAttachments)) {
-        const attPath = path.join(session.workspace_path, "attachments", att.name);
-        let downloaded = true;
-        try { await fs.access(attPath); } catch {
-          try {
-            writeStatus(`[Lucky] Downloading ${att.name}...`);
-            await downloadAttachment(tracker, session.bug_id, att.id, att.name, session.workspace_path);
-          } catch (err: any) {
-            writeStatus(`[Lucky] Skipping ${att.name}: ${err.message}`);
-            downloaded = false;
+      if (bugJson && !clientDisconnected) {
+        const maxLuckyAttachments = Number(process.env.MAX_LUCKY_ATTACHMENTS ?? 20);
+        const allAttachments: any[] = bugJson.attachments ?? [];
+        if (allAttachments.length > maxLuckyAttachments) {
+          writeStatus(`[Lucky] ${allAttachments.length} attachments found — processing first ${maxLuckyAttachments} (set MAX_LUCKY_ATTACHMENTS to override).`);
+        }
+        const candidatePaths: string[] = [];
+        for (const att of allAttachments.slice(0, maxLuckyAttachments)) {
+          if (clientDisconnected) break;
+          const attPath = path.join(session.workspace_path, "attachments", att.name);
+          let downloaded = true;
+          try { await fs.access(attPath); } catch {
+            if (clientDisconnected) break;
+            try {
+              writeStatus(`[Lucky] Downloading ${att.name}...`);
+              await downloadAttachment(tracker, session.bug_id, att.id, att.name, session.workspace_path);
+            } catch (err: any) {
+              writeStatus(`[Lucky] Skipping ${att.name}: ${err.message}`);
+              downloaded = false;
+            }
+          }
+          if (!downloaded) continue;
+          if (att.name.endsWith(".zip")) {
+            const extractBaseDir = path.join(session.workspace_path, "attachments", path.basename(att.name, ".zip"));
+            try {
+              const entries = await listZipContents(attPath, extractBaseDir);
+              for (const entry of entries) {
+                if (clientDisconnected) break;
+                if (!entry.extracted) {
+                  try {
+                    writeStatus(`[Lucky] Extracting ${entry.innerPath}...`);
+                    candidatePaths.push(await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
+                  } catch { /* skip bad entry */ }
+                } else if (entry.filePath) {
+                  candidatePaths.push(entry.filePath);
+                }
+              }
+            } catch { /* skip unreadable zip */ }
+          } else {
+            candidatePaths.push(attPath);
           }
         }
-        if (!downloaded) continue;
-        if (att.name.endsWith(".zip")) {
-          const extractBaseDir = path.join(session.workspace_path, "attachments", path.basename(att.name, ".zip"));
-          try {
-            const entries = await listZipContents(attPath, extractBaseDir);
-            for (const entry of entries) {
-              if (!entry.extracted) {
-                try {
-                  writeStatus(`[Lucky] Extracting ${entry.innerPath}...`);
-                  candidatePaths.push(await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
-                } catch { /* skip bad entry */ }
-              } else if (entry.filePath) {
-                candidatePaths.push(entry.filePath);
-              }
+
+        if (!clientDisconnected) {
+          // Apply attachment-filter skill. Lucky sends ONLY `critical` files into the prompt;
+          // anything else stays on disk for the agent to discover via shell if it needs more.
+          // If `critical` is empty (skill missing or no critical globs match), fall back to
+          // priority+useful so we never send zero files.
+          const classified = await classifyBatch(candidatePaths, session.workspace_path);
+          const criticalFiles = classified.filter((c) => isCritical(c.classification)).map((c) => c.absPath);
+          const autoSelectFiles = classified.filter((c) => shouldAutoSelect(c.classification)).map((c) => c.absPath);
+          if (criticalFiles.length > 0) {
+            luckyFiles.push(...criticalFiles);
+            luckyExtrasOnDisk = autoSelectFiles.length - criticalFiles.length;
+          } else {
+            luckyFiles.push(...autoSelectFiles);
+            if (autoSelectFiles.length > 0) {
+              writeStatus("[Lucky] No `critical` matches — falling back to priority+useful (consider tuning the attachment-filter skill).");
             }
-          } catch { /* skip unreadable zip */ }
-        } else {
-          candidatePaths.push(attPath);
+          }
+          const summary = summarizeBatch(classified);
+          writeStatus(`[Lucky] Filter: prompting ${luckyFiles.length} of ${classified.length} files (critical ${summary.critical}, priority ${summary.priority}, useful ${summary.useful}, skipped ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}).${luckyExtrasOnDisk > 0 ? ` ${luckyExtrasOnDisk} more on disk — agent can discover via shell.` : ""}`);
+          log.info("lucky:filter", { sessionId: lensSessionId, candidates: classified.length, prompted: luckyFiles.length, extrasOnDisk: luckyExtrasOnDisk, ...summary });
+          writeStatus("[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed.");
         }
       }
 
-      // Apply attachment-filter skill. Lucky sends ONLY `critical` files into the prompt;
-      // anything else stays on disk for the agent to discover via shell if it needs more.
-      // If `critical` is empty (skill missing or no critical globs match), fall back to
-      // priority+useful so we never send zero files.
-      const classified = await classifyBatch(candidatePaths, session.workspace_path);
-      const criticalFiles = classified.filter((c) => isCritical(c.classification)).map((c) => c.absPath);
-      const autoSelectFiles = classified.filter((c) => shouldAutoSelect(c.classification)).map((c) => c.absPath);
-      if (criticalFiles.length > 0) {
-        luckyFiles.push(...criticalFiles);
-        luckyExtrasOnDisk = autoSelectFiles.length - criticalFiles.length;
-      } else {
-        luckyFiles.push(...autoSelectFiles);
-        if (autoSelectFiles.length > 0) {
-          writeStatus("[Lucky] No `critical` matches — falling back to priority+useful (consider tuning the attachment-filter skill).");
-        }
-      }
-      const summary = summarizeBatch(classified);
-      writeStatus(`[Lucky] Filter: prompting ${luckyFiles.length} of ${classified.length} files (critical ${summary.critical}, priority ${summary.priority}, useful ${summary.useful}, skipped ${summary.skip}, oversize ${summary.oversize}, other ${summary.other}).${luckyExtrasOnDisk > 0 ? ` ${luckyExtrasOnDisk} more on disk — agent can discover via shell.` : ""}`);
-      log.info("lucky:filter", { sessionId: req.params.id, candidates: classified.length, prompted: luckyFiles.length, extrasOnDisk: luckyExtrasOnDisk, ...summary });
-      writeStatus("[Lucky] Comment attachments not auto-downloaded — add large log files manually via the file explorer if needed.");
-    }
+      if (clientDisconnected) return;
 
-    const updatedSession = sessions.get(req.params.id)!;
-    const filesForLucky = bugJson ? luckyFiles : updatedSession.selected_files;
-    log.info("lucky:start", { sessionId: req.params.id, mode, files: filesForLucky });
-    const luckyStartedAt = Date.now();
+      const updatedSession = sessions.get(lensSessionId)!;
+      const filesForLucky = bugJson ? luckyFiles : updatedSession.selected_files;
+      log.info("lucky:start", { sessionId: lensSessionId, mode, files: filesForLucky });
+      const luckyStartedAt = Date.now();
 
-    const luckyUserLabel = `🎲 I'm Feeling Lucky${mode === "yolo" ? " (yolo)" : ""} — finding root cause automatically...`;
-    messages.add(req.params.id, "user", luckyUserLabel, user.name);
-    const reportSnapshot = await snapshotAgentReportPaths(updatedSession.workspace_path);
-    let fullResponse = "";
+      const luckyUserLabel = `🎲 I'm Feeling Lucky${mode === "yolo" ? " (yolo)" : ""} — finding root cause automatically...`;
+      messages.add(lensSessionId, "user", luckyUserLabel, user.name);
+      const reportSnapshot = await snapshotAgentReportPaths(updatedSession.workspace_path);
+      let fullResponse = "";
 
-    try {
       const effectiveModel = users.getPreferredModel(user.id) ?? settings.getLlmConfig().model;
       for await (const event of runLucky(
         runner,
@@ -665,6 +684,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           ? { count: luckyExtrasOnDisk, attachmentsRoot: path.join(updatedSession.workspace_path, "attachments") }
           : undefined
       )) {
+        if (event.type === "session_id") {
+          ephemeralClineSessions.set(lensSessionId, event.content);
+          continue;
+        }
         if (event.type === "text") {
           fullResponse += event.content;
           writeLucky({ type: "text", content: event.content, user: user.name, clientId });
@@ -710,12 +733,13 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         }
       }
     } catch (err: any) {
-      log.error("lucky:exception", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
-      messages.add(req.params.id, "assistant", `[Analysis error: ${err.message}]`);
+      log.error("lucky:exception", { sessionId: lensSessionId, error: err.message, stack: err instanceof Error ? err.stack : undefined });
+      messages.add(lensSessionId, "assistant", `[Analysis error: ${err.message}]`);
       writeLucky({ type: "error", content: err.message, user: user.name, clientId });
+    } finally {
+      ephemeralClineSessions.delete(lensSessionId);
+      if (!res.writableEnded) res.end();
     }
-
-    res.end();
   });
 
   // ── Wiki routes ──────────────────────────────────────────────────────────────

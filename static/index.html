@@ -734,6 +734,7 @@
   }
   let contextFiles = {};
   let currentEs = null;
+  let inFlight = null;
   let currentListenEs = null;
   let currentEngLog = null;
   let currentUser = null;
@@ -905,6 +906,24 @@
     const enabled = !!currentSessionId;
     document.getElementById('question-input').disabled = !enabled;
     document.getElementById('send-btn').disabled = !enabled;
+  }
+
+  function beginInFlight(es, assistantEl, statusLine) {
+    inFlight = { es, assistantEl };
+    currentEs = es;
+    document.getElementById('question-input').disabled = true;
+    document.getElementById('send-btn').disabled = true;
+    document.getElementById('lucky-btn').disabled = true;
+    document.getElementById('abort-btn').style.display = 'block';
+    if (statusLine) appendMessage('status', statusLine);
+  }
+
+  function endInFlight() {
+    inFlight = null;
+    currentEs = null;
+    document.getElementById('abort-btn').style.display = 'none';
+    syncChatInputEnabled();
+    if (featureFlags.lucky) document.getElementById('lucky-btn').disabled = false;
   }
 
   function updateContextBar() {
@@ -1221,7 +1240,11 @@
   }
 
   async function resumeSession(sessionId) {
-    if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
+    if (inFlight) {
+      inFlight.es.close();
+      finishEngineeringLog();
+      endInFlight();
+    }
     const res = await fetch(`/session/${sessionId}`);
     if (!res.ok) { appendMessage('error', `✗ Failed to load session (HTTP ${res.status})`); return; }
     const { session, messages, bug, downloaded_files } = await res.json();
@@ -1620,14 +1643,8 @@
 
   // Lucky uses ephemeral files server-side; context bar only reflects user + Add / Add to chat (toggleFileInChat).
   function startLuckyAnalysis(yolo) {
-    const luckyBtn = document.getElementById('lucky-btn');
-    const sendBtn = document.getElementById('send-btn');
     const input = document.getElementById('question-input');
-    if (luckyBtn.disabled) return;
-
-    luckyBtn.disabled = true;
-    sendBtn.disabled = true;
-    input.disabled = true;
+    if (!currentSessionId || inFlight) return;
 
     appendMessage('user', `🎲 I'm Feeling Lucky${yolo ? ' (yolo)' : ''} — finding root cause automatically...`);
     const assistantEl = appendMessage('assistant', '', true);
@@ -1639,6 +1656,7 @@
     });
     if (yolo) luckyParams.set('mode', 'yolo');
     const es = new EventSource(`/session/${currentSessionId}/lucky?${luckyParams}`);
+    beginInFlight(es, assistantEl, '· Lucky analysis in progress…');
 
     let luckyDone = false;
     let luckyTldr = null;
@@ -1669,9 +1687,7 @@
         maybeAttachSkillProposal(assistantEl);
         finishEngineeringLog();
         es.close();
-        luckyBtn.disabled = false;
-        sendBtn.disabled = false;
-        input.disabled = false;
+        endInFlight();
         input.placeholder = 'Ask a follow-up question...';
         refreshBugPanelFromSession();
       } else if (data.type === 'error') {
@@ -1680,9 +1696,7 @@
         appendMessage('error', '✗ ' + data.content);
         removeMsgRow(assistantEl);
         es.close();
-        luckyBtn.disabled = false;
-        sendBtn.disabled = false;
-        input.disabled = false;
+        endInFlight();
         refreshBugPanelFromSession();
       }
     };
@@ -1693,9 +1707,7 @@
       appendMessage('error', '✗ Lucky analysis failed — check connection.');
       removeMsgRow(assistantEl);
       es.close();
-      luckyBtn.disabled = false;
-      sendBtn.disabled = false;
-      input.disabled = false;
+      endInFlight();
       refreshBugPanelFromSession();
     };
   }
@@ -1820,8 +1832,6 @@
     if (!question || !currentSessionId) return;
 
     input.value = '';
-    document.getElementById('send-btn').disabled = true;
-    document.getElementById('abort-btn').style.display = 'block';
 
     const skillForTurn = pendingSkill;
     pendingSkill = null;
@@ -1831,18 +1841,17 @@
     const assistantEl = appendMessage('assistant', '', true);
     beginEngineeringLog();
 
-    if (currentEs) { currentEs.close(); currentEs = null; finishEngineeringLog(); }
+    if (inFlight) {
+      inFlight.es.close();
+      finishEngineeringLog();
+      endInFlight();
+    }
 
     const skillParam = skillForTurn ? `&skill=${encodeURIComponent(skillForTurn.name)}` : '';
     const url = `/session/${currentSessionId}/analyze?question=${encodeURIComponent(question)}&userId=${currentUser.id}&clientId=${encodeURIComponent(myClientId)}&mode=${agentMode}${skillParam}`;
     const es = new EventSource(url);
-    currentEs = es;
+    beginInFlight(es, assistantEl);
     let isDone = false;
-
-    const finishAnalysis = () => {
-      syncChatInputEnabled();
-      document.getElementById('abort-btn').style.display = 'none';
-    };
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
@@ -1859,8 +1868,8 @@
         finishEngineeringLog();
         appendMessage('error', '✗ ' + data.content);
         removeMsgRow(assistantEl);
-        es.close(); currentEs = null;
-        finishAnalysis();
+        es.close();
+        endInFlight();
       } else if (data.type === 'done') {
         isDone = true;
         assistantEl.classList.remove('streaming');
@@ -1869,8 +1878,8 @@
         attachReportBubbles(assistantEl.closest('.msg-bubble-wrap'), data.reports);
         maybeAttachSkillProposal(assistantEl);
         finishEngineeringLog();
-        es.close(); currentEs = null;
-        finishAnalysis();
+        es.close();
+        endInFlight();
       }
     };
 
@@ -1879,18 +1888,22 @@
       finishEngineeringLog();
       appendMessage('error', '✗ SSE connection lost — check server logs');
       removeMsgRow(assistantEl);
-      es.close(); currentEs = null;
-      finishAnalysis();
-    };
-
-    document.getElementById('abort-btn').onclick = async () => {
-      es.close(); currentEs = null;
-      finishEngineeringLog();
-      finishAnalysis();
-      removeMsgRow(assistantEl);
-      await fetch(`/session/${currentSessionId}/abort`, { method: 'POST' });
+      es.close();
+      endInFlight();
     };
   }
+
+  document.getElementById('abort-btn').onclick = async () => {
+    if (!inFlight) return;
+    const { es, assistantEl } = inFlight;
+    es.close();
+    finishEngineeringLog();
+    endInFlight();
+    removeMsgRow(assistantEl);
+    if (currentSessionId) {
+      await fetch(`/session/${currentSessionId}/abort`, { method: 'POST' });
+    }
+  };
 
   // Session menu (⋮) — reset session
   const sessionMenuWrap = document.getElementById('session-menu-wrap');
