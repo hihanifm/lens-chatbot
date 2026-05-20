@@ -197,7 +197,16 @@ function toClineProviderId(provider: ReturnType<typeof settings.getLlmConfig>["p
   return provider;
 }
 
-function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg: ReturnType<typeof settings.getLlmConfig>, enableLlmLog: boolean, systemPrompt: string) {
+/** Updated each analyze() so beforeModel (registered at start()) targets the current SSE push. */
+type AgentStatusSink = { push: ((event: AgentEvent) => void) | null };
+
+function buildSessionConfig(
+  input: Parameters<AgentRunner["analyze"]>[0],
+  llmCfg: ReturnType<typeof settings.getLlmConfig>,
+  enableLlmLog: boolean,
+  systemPrompt: string,
+  statusSink: AgentStatusSink,
+) {
   return {
     providerId: toClineProviderId(llmCfg.provider) as any,
     modelId: llmCfg.model,
@@ -213,30 +222,38 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
     enableAgentTeams: false,
     disableMcpSettingsTools: true,
     checkpoint: { enabled: false },
-    hooks: enableLlmLog ? {
+    hooks: {
       beforeModel: async (context: any) => {
-        const iter = context.snapshot?.iteration ?? 0;
-        const logPath = path.join(
-          input.workspacePath,
-          "agent_notes",
-          `llm-request-${formatLogTimestamp()}-iter${iter}.json`
-        );
-        const payload = {
-          systemPromptLength: context.request.systemPrompt?.length ?? 0,
-          systemPrompt: context.request.systemPrompt,
-          messageCount: context.request.messages.length,
-          messages: context.request.messages,
-          latestUserMessage: context.request.messages.at(-1),
-          toolCount: context.request.tools.length,
-          toolNames: context.request.tools.map((t: any) => t.name),
-          options: context.request.options ?? {},
-        };
-        await fs.mkdir(path.dirname(logPath), { recursive: true });
-        await fs.writeFile(logPath, JSON.stringify(payload, null, 2), "utf8")
-          .catch((err: any) => log.warn("agent:llm-request-log-failed", { error: err.message }));
+        const iter = context.snapshot?.iteration ?? 1;
+        const toolNames = context.request.tools.map((t: any) => t.name);
+        // Cline uses 1-based iteration; log once at the start of each user turn.
+        if (iter === 1) {
+          statusSink.push?.({ type: "status", content: `tools: ${toolNames.join(", ")}` });
+          log.info("agent:tools", { tools: toolNames });
+        }
+        if (enableLlmLog) {
+          const logPath = path.join(
+            input.workspacePath,
+            "agent_notes",
+            `llm-request-${formatLogTimestamp()}-iter${iter}.json`
+          );
+          const payload = {
+            systemPromptLength: context.request.systemPrompt?.length ?? 0,
+            systemPrompt: context.request.systemPrompt,
+            messageCount: context.request.messages.length,
+            messages: context.request.messages,
+            latestUserMessage: context.request.messages.at(-1),
+            toolCount: context.request.tools.length,
+            toolNames,
+            options: context.request.options ?? {},
+          };
+          await fs.mkdir(path.dirname(logPath), { recursive: true });
+          await fs.writeFile(logPath, JSON.stringify(payload, null, 2), "utf8")
+            .catch((err: any) => log.warn("agent:llm-request-log-failed", { error: err.message }));
+        }
         return undefined;
       },
-    } : undefined,
+    },
     toolPolicies: {
       [DefaultToolNames.APPLY_PATCH]: { enabled: false },
       [DefaultToolNames.EDITOR]: { enabled: false },
@@ -247,6 +264,9 @@ function buildSessionConfig(input: Parameters<AgentRunner["analyze"]>[0], llmCfg
 }
 
 export class ClineCoreAgentRunner implements AgentRunner {
+  /** Shared across sessions; push is reassigned each analyze() for follow-up beforeModel hooks. */
+  private readonly statusSink: AgentStatusSink = { push: null };
+
   async abort(clineSessionId: string): Promise<void> {
     const cline = await getCline();
     await cline.abort(clineSessionId);
@@ -327,6 +347,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       queue.push(event);
       wakeup.fn?.();
     };
+    this.statusSink.push = push;
 
     const cline = await getCline();
 
@@ -477,7 +498,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
             source: SessionSource.API,
             interactive: false,
             prompt: fullPrompt,
-            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt),
+            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt, this.statusSink),
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
@@ -495,7 +516,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
             source: SessionSource.API,
             interactive: false,
             prompt: fullPrompt,
-            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt),
+            config: buildSessionConfig(input, llmCfg, flags.llmRequestLogging, systemPrompt, this.statusSink),
           });
           clineSessionId = startResult.sessionId;
           push({ type: "session_id", content: clineSessionId });
