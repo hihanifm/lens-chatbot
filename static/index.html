@@ -25,6 +25,10 @@
       --page-bg:         #f0f6ff;
       --focus-shadow:    rgba(0,98,204,0.15);
       --explorer-bg:     #001a4d;
+      --upload-warm:     #c2410c;
+      --upload-warm-hover: #ea580c;
+      --upload-warm-bg:  #fff7ed;
+      --upload-warm-border: #fdba74;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Inter', system-ui, sans-serif; background: var(--page-bg); height: 100vh; display: flex; color: #111827; }
@@ -116,6 +120,7 @@
     .bug-meta span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
     .bug-meta .label { color: #9ca3af; font-weight: 500; }
     .bug-meta .state { background: #d1fae5; color: #065f46; font-weight: 600; font-size: 11px; padding: 2px 9px; border-radius: 999px; }
+    .bug-meta .state.state-upload { background: #ffedd5; color: #9a3412; }
     #bug-description { font-size: 13px; color: #4b5563; line-height: 1.65; margin-bottom: 14px; }
     .section-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: #9ca3af; margin: 14px 0 8px; }
     .section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
@@ -336,12 +341,12 @@
     .s-skills-empty { font-size: 12px; color: #9ca3af; font-style: italic; padding: 8px 0; }
 
     /* session mode tabs */
-    #tab-adhoc { background: transparent; color: #6b7280; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-family: inherit; transition: color 0.15s, border-color 0.15s; }
-    #tab-adhoc:hover { color: #374151; border-color: #9ca3af; }
+    #tab-adhoc { background: var(--upload-warm-bg); color: #9a3412; border: 1px solid var(--upload-warm-border); border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+    #tab-adhoc:hover { background: #ffedd5; color: var(--upload-warm); border-color: #fb923c; }
     #adhoc-page { display: none; position: fixed; inset: 0; background: #f8fafc; z-index: 150; align-items: center; justify-content: center; }
     #adhoc-page.open { display: flex; }
     #adhoc-card { background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 36px 40px; width: 480px; max-width: 95vw; display: flex; flex-direction: column; gap: 16px; }
-    #adhoc-card h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; color: #111827; }
+    #adhoc-card h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; color: #9a3412; }
     #adhoc-card label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 500; color: #374151; }
     .adhoc-label-hint { font-weight: 400; color: #9ca3af; }
     #adhoc-card input[type=text], #adhoc-card textarea { padding: 8px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit; color: #111827; outline: none; transition: border-color 0.15s; resize: vertical; }
@@ -1123,7 +1128,7 @@
     document.getElementById('bug-meta-summary').innerHTML = `
       <span><span class="label">Author</span>${bug.author}</span>
       <span><span class="label">Owner</span>${bug.owner}</span>
-      <span><span class="label">State</span><span class="state">${bug.state === 'adhoc' ? 'Upload Bug' : bug.state}</span></span>
+      <span><span class="label">State</span><span class="state${bug.state === 'adhoc' ? ' state-upload' : ''}">${bug.state === 'adhoc' ? 'Upload Bug' : bug.state}</span></span>
     `;
     document.getElementById('bug-meta-extra').innerHTML = `
       <span><span class="label">Module</span>${bug.module}</span>
