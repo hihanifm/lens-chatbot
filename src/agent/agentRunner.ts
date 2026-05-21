@@ -18,12 +18,12 @@ export interface AgentRunner {
     files: string[];
     question: string;
     clineSessionId?: string;
-    mode?: "plan" | "act" | "yolo";
+    mode?: "plan" | "act";
     modelOverride?: string;
     selectedSkillName?: string;
     /** Lucky-only: count of additional non-critical files left on disk + their root. */
     extras?: { count: number; attachmentsRoot: string };
-    /** Lucky-only: skip reading agent_notes/ priors so the run starts fresh. */
+    /** Lucky-only: skip reading agent_notes/ priors so the first run starts fresh. */
     skipPriorReports?: boolean;
   }): AsyncIterable<AgentEvent>;
   abort(clineSessionId: string): Promise<void>;

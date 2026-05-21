@@ -214,7 +214,7 @@ function buildSessionConfig(
     baseUrl: llmCfg.provider === "openai" ? "https://api.openai.com/v1" : (llmCfg.baseUrl ?? ""),
     cwd: input.workspacePath,
     workspaceRoot: input.workspacePath,
-    mode: ((input.mode ?? "act") === "yolo" ? "act" : (input.mode ?? "act")) as "plan" | "act",
+    mode: (input.mode ?? "act") as "plan" | "act",
     systemPrompt,
     maxIterations: settings.getAgentMaxIterations(),
     enableTools: true,
@@ -258,7 +258,7 @@ function buildSessionConfig(
       [DefaultToolNames.APPLY_PATCH]: { enabled: false },
       [DefaultToolNames.EDITOR]: { enabled: false },
       [DefaultToolNames.FETCH_WEB_CONTENT]: { enabled: false },
-      [DefaultToolNames.SUBMIT_AND_EXIT]: { enabled: input.mode === "yolo" },
+      [DefaultToolNames.SUBMIT_AND_EXIT]: { enabled: false },
     },
   };
 }
@@ -292,7 +292,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
     const fileComments = buildFileCommentMap(bugJson, existingFiles);
     const rawBaseTemplate =
       systemPromptSource === "lens"
-        ? await loadPrompt(input.mode === "yolo" ? "base-yolo" : "base")
+        ? await loadPrompt("base")
         : undefined;
     // ClineCore's getClineDefaultSystemPrompt only substitutes placeholders into
     // its own DEFAULT_CLINE_SYSTEM_PROMPT. When overridePrompt is set the SDK
@@ -435,15 +435,6 @@ export class ClineCoreAgentRunner implements AgentRunner {
               log.debug("agent:tool-start", { tool: agentEvent.toolName, sessionId: clineSessionId });
               const detail = summarizeToolInput(agentEvent.toolName, agentEvent.input);
               push({ type: "status", content: `tool: ${agentEvent.toolName ?? "started"}${detail ? ` · ${detail}` : ""}` });
-              if (agentEvent.toolName === DefaultToolNames.SUBMIT_AND_EXIT) {
-                const summary = typeof agentEvent.input === "string"
-                  ? agentEvent.input
-                  : (agentEvent.input?.summary ?? agentEvent.input?.result ?? JSON.stringify(agentEvent.input));
-                if (summary) {
-                  streamedText += summary;
-                  push({ type: "text", content: summary });
-                }
-              }
             } else if (agentEvent.type === "content_end" && agentEvent.contentType === "tool") {
               if (agentEvent.error) {
                 log.warn("agent:tool-error", { tool: agentEvent.toolName, error: agentEvent.error, sessionId: clineSessionId });

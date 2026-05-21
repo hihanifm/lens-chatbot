@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "node:fs/promises";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "url";
 import { createHash, randomUUID, scrypt, randomBytes, timingSafeEqual } from "crypto";
 import type { BugTracker } from "./services/bugTracker.js";
@@ -37,22 +37,6 @@ async function listDownloadedAttachmentPaths(workspacePath: string): Promise<str
 }
 
 let skillsCache: { name: string; description: string; triggers: string[] }[] | null = null;
-
-/** Lucky runs do not persist cline_session_id; map lens session id → active Cline id for abort. */
-const ephemeralClineSessions = new Map<string, string>();
-
-// Pull the trailing `## TLDR` paragraph out of a Lucky report. Returns null if
-// the heading is missing or the section is empty so callers can fall back to
-// the full text.
-function extractTldr(text: string): string | null {
-  if (!text) return null;
-  const matches = [...text.matchAll(/^#{2,}\s*TL;?DR\b.*$/gim)];
-  if (matches.length === 0) return null;
-  const last = matches[matches.length - 1];
-  const start = (last.index ?? 0) + last[0].length;
-  const body = text.slice(start).trim();
-  return body || null;
-}
 
 export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -112,7 +96,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     next();
   });
 
-  app.use(express.static(path.join(__dirname, "../static")));
+  // Serve the built React UI (frontend/dist) when present; fall back to the
+  // legacy static/ bundle otherwise. dist holds hashed assets, so the React
+  // index.html is served via the SPA fallback registered after the API routes.
+  const reactDist = path.join(__dirname, "../frontend/dist");
+  const hasReactBuild = existsSync(path.join(reactDist, "index.html"));
+  const webRoot = hasReactBuild ? reactDist : path.join(__dirname, "../static");
+  log.info("web:static-root", { root: webRoot, react: hasReactBuild });
+  app.use(express.static(webRoot));
 
   app.post("/auth", (req, res) => {
     const { name, pin } = req.body;
@@ -239,7 +230,13 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.json(sessions.listByIds(ids));
   });
 
-  app.get("/session/:id", async (req, res) => {
+  app.get("/session/:id", async (req, res, next) => {
+    // This path doubles as a client-side React route. A browser navigating
+    // (or hard-refreshing) to /session/:id sends `Accept: text/html` — defer
+    // to the SPA fallback so it gets the app shell, not this JSON payload.
+    // The frontend's fetch client always sends `Accept: application/json`.
+    if (req.accepts(["json", "html"]) === "html") return next();
+
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
     let bug = null;
@@ -418,11 +415,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.post("/session/:id/abort", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
-    const clineId = session.cline_session_id ?? ephemeralClineSessions.get(req.params.id);
+    const clineId = session.cline_session_id;
     if (!clineId) return res.status(400).json({ error: "no active agent session" });
     try {
       await runner.abort(clineId);
-      ephemeralClineSessions.delete(req.params.id);
       log.info("agent:aborted", { sessionId: req.params.id, clineSessionId: clineId });
       res.json({ ok: true });
     } catch (err: any) {
@@ -559,7 +555,6 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
     if (!session.workspace_path) return res.status(400).json({ error: "no workspace loaded" });
-    const mode: "act" | "yolo" = req.query.mode === "yolo" ? "yolo" : "act";
 
     const user = users.getById(req.query.userId as string);
     if (!user) return res.status(400).json({ error: "userId required" });
@@ -666,51 +661,39 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
       const updatedSession = sessions.get(lensSessionId)!;
       const filesForLucky = bugJson ? luckyFiles : updatedSession.selected_files;
-      log.info("lucky:start", { sessionId: lensSessionId, mode, files: filesForLucky });
+      log.info("lucky:start", { sessionId: lensSessionId, files: filesForLucky });
       const luckyStartedAt = Date.now();
 
-      const luckyUserLabel = `🎲 I'm Feeling Lucky${mode === "yolo" ? " (yolo)" : ""} — finding root cause automatically...`;
-      messages.add(lensSessionId, "user", luckyUserLabel, user.name);
+      // 🎲 Lucky always starts a fresh Cline session: runLucky passes no
+      // clineSessionId, and the new session_id event below overwrites any prior
+      // one in the DB. We deliberately do NOT clear cline_session_id up front —
+      // that would open a window where Stop/abort finds no session.
+      messages.add(lensSessionId, "user", "🎲 I'm Feeling Lucky — finding root cause automatically...", user.name);
       const reportSnapshot = await snapshotAgentReportPaths(updatedSession.workspace_path);
       let fullResponse = "";
 
       const effectiveModel = users.getPreferredModel(user.id) ?? settings.getLlmConfig().model;
+      sessions.setLastModel(lensSessionId, effectiveModel);
       for await (const event of runLucky(
         runner,
         { workspace_path: updatedSession.workspace_path, selected_files: filesForLucky },
-        mode,
         effectiveModel,
         luckyExtrasOnDisk > 0
           ? { count: luckyExtrasOnDisk, attachmentsRoot: path.join(updatedSession.workspace_path, "attachments") }
           : undefined
       )) {
         if (event.type === "session_id") {
-          ephemeralClineSessions.set(lensSessionId, event.content);
+          // Persist like a normal session so the user can resume this Lucky
+          // thread with follow-up messages via the /analyze route.
+          sessions.setClineSessionId(lensSessionId, event.content);
           continue;
         }
         if (event.type === "text") {
           fullResponse += event.content;
           writeLucky({ type: "text", content: event.content, user: user.name, clientId });
         } else if (event.type === "done") {
-          log.info("lucky:done", { sessionId: req.params.id, mode, durationMs: Date.now() - luckyStartedAt, responseLen: fullResponse.length });
-          if (fullResponse) {
-            const reportName = `lucky-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.md`;
-            const reportPath = path.join(updatedSession.workspace_path, "agent_notes", reportName);
-            try {
-              await fs.mkdir(path.dirname(reportPath), { recursive: true });
-              await fs.writeFile(reportPath, fullResponse);
-              log.info("lucky:report-saved", { reportPath });
-            } catch (writeErr: any) {
-              log.error("lucky:report-write-error", { reportPath, error: writeErr.message });
-            }
-          }
-          const tldrText = extractTldr(fullResponse);
-          if (tldrText) {
-            writeLucky({ type: "tldr", content: tldrText, user: user.name, clientId });
-          } else if (fullResponse) {
-            log.warn("lucky:no-tldr-section", { sessionId: req.params.id, mode });
-          }
-          const bubbleText = tldrText || fullResponse || "[Lucky analysis produced no output]";
+          log.info("lucky:done", { sessionId: req.params.id, durationMs: Date.now() - luckyStartedAt, responseLen: fullResponse.length });
+          const bubbleText = fullResponse || "[Lucky analysis produced no output]";
           messages.add(req.params.id, "assistant", bubbleText);
           const reports = await listNewAgentReports(updatedSession.workspace_path, reportSnapshot);
           writeLucky({ type: "done", user: user.name, clientId, reports });
@@ -737,7 +720,6 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       messages.add(lensSessionId, "assistant", `[Analysis error: ${err.message}]`);
       writeLucky({ type: "error", content: err.message, user: user.name, clientId });
     } finally {
-      ephemeralClineSessions.delete(lensSessionId);
       if (!res.writableEnded) res.end();
     }
   });
@@ -1084,6 +1066,16 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     log.info("settings:pin-changed");
     res.json({ ok: true });
   });
+
+  // SPA fallback: any unmatched GET that wants HTML gets the React app shell,
+  // so client-side routes (/session/:id, /login) survive a hard refresh.
+  // Registered after every API route so it never shadows them.
+  if (hasReactBuild) {
+    app.get("*", (req, res, next) => {
+      if (!req.accepts("html")) return next();
+      res.sendFile(path.join(reactDist, "index.html"));
+    });
+  }
 
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err.code === "LIMIT_FILE_SIZE") {

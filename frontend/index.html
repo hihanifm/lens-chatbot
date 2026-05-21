@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lens Chatbot</title>
+    <script>
+      // Pre-mount theme bootstrap. Runs synchronously before React so we never
+      // flash light-on-dark or vice versa during a reload.
+      // Default = light, regardless of OS prefers-color-scheme. The user must
+      // opt in to dark or system explicitly via the header toggle.
+      (function () {
+        try {
+          var stored = localStorage.getItem("lens-chatbot:theme");
+          var resolved = "light";
+          if (stored === "dark") resolved = "dark";
+          else if (stored === "system") {
+            resolved = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          if (resolved === "dark") document.documentElement.classList.add("dark");
+        } catch (_) {
+          // localStorage unavailable; leave default (light).
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-100">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

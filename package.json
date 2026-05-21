@@ -5,7 +5,10 @@
   "scripts": {
     "predev": "node -e \"if(+process.versions.node.split('.')[0]<22){console.error('ERROR: Node 22+ required (found '+process.version+')');process.exit(1)}\"",
     "dev": "NODE_OPTIONS=--experimental-sqlite tsx src/index.ts",
-    "build": "tsc",
+    "ui": "npm --prefix frontend run dev",
+    "ui:install": "npm --prefix frontend install",
+    "ui:build": "npm --prefix frontend run build",
+    "build": "tsc && npm run ui:build",
     "test": "NODE_OPTIONS=--experimental-sqlite tsx --test src/services/llmSanitize.test.ts src/services/workspaceExplorer.test.ts src/services/workspacePaths.test.ts src/services/agentReports.test.ts src/db.agentSettings.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

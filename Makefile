@@ -9,7 +9,7 @@ NODE_22_VER    := 22.15.0
 NODE_22_TARBALL := node-v$(NODE_22_VER)-linux-x64.tar.xz
 NODE_22_URL    := https://nodejs.org/dist/v$(NODE_22_VER)/$(NODE_22_TARBALL)
 
-.PHONY: help setup check-node install-node dev dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
+.PHONY: help setup check-node install-node dev ui ui-build dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
         prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live sync-cline-system-prompts
 
 help:
@@ -17,6 +17,8 @@ help:
 	@echo "  make setup              Install deps + create .env (run once after clone)"
 	@echo "  make install-node       Install Node 22 (nvm → apt → local tarball fallbacks)"
 	@echo "  make dev                Run as plain Node on port 38001 (background, logs → data/dev/dev.log)"
+	@echo "  make ui                 Run the Vite React dev server (HMR) on port 38002, proxying to 38001"
+	@echo "  make ui-build           Build the React UI → frontend/dist (served by the Node server)"
 	@echo "  make dev-ps             Show plain Node dev process status"
 	@echo "  make dev-logs           Tail plain Node dev logs"
 	@echo "  make dev-stop           Stop plain Node dev process"
@@ -112,11 +114,13 @@ install-node:
 setup: check-node
 	@[ -f .env ] || (cp .env.example .env && echo "Created .env from .env.example — edit it before running")
 	npm install
+	npm --prefix frontend install
 	@echo ""
-	@echo "Setup complete. Run: make dev"
+	@echo "Setup complete. Run: make dev  (and 'make ui' for live React HMR)"
 
 dev: check-node
 	@mkdir -p ./data/local
+	@[ -d frontend/dist ] || { echo "Building React UI (one-off — use 'make ui' for HMR)..."; $(MAKE) ui-build; }
 	@[ -f ./data/local/dev.pid ] && kill $$(cat ./data/local/dev.pid) 2>/dev/null && echo "Stopped previous process." || true
 	@nohup env PORT=$${PORT:-38001} DATA_DIR=./data/local \
 	  LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
@@ -124,6 +128,15 @@ dev: check-node
 	  node node_modules/.bin/tsx src/index.ts \
 	  >> ./data/local/dev.log 2>&1 & echo $$! > ./data/local/dev.pid
 	@echo "Started on http://localhost:38001 (pid=$$(cat ./data/local/dev.pid)) — logs: make dev-logs  stop: make dev-stop"
+
+ui:
+	@[ -d frontend/node_modules ] || npm --prefix frontend install
+	@echo "Vite dev server → http://localhost:38002  (proxying API to http://localhost:38001)"
+	npm --prefix frontend run dev
+
+ui-build:
+	@[ -d frontend/node_modules ] || npm --prefix frontend install
+	npm --prefix frontend run build
 
 dev-logs:
 	tail -f ./data/local/dev.log

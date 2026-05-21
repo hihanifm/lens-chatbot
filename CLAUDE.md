@@ -13,9 +13,12 @@ A web chatbot for engineers to debug bugs. User enters a bug ID → backend fetc
 ## Dev commands
 
 ```bash
-npm run dev          # run locally via tsx (no Docker)
-npm run build        # compile TypeScript → dist/ (runs tsc)
-npx tsc --noEmit     # type-check only, no output
+npm run dev          # run the Node server locally via tsx (no Docker) — serves frontend/dist if built
+npm run ui           # run the Vite React dev server (HMR) on port 38002, proxying API to :38001
+npm run build        # compile server TypeScript → dist/ AND build the React UI → frontend/dist
+npm run ui:build     # build only the React UI → frontend/dist
+npx tsc --noEmit     # type-check the server only, no output
+make ui              # same as npm run ui (installs frontend deps first if missing)
 
 make build && make up  # build Docker image (not TypeScript) + start dev stack (port 38001)
 make rebuild           # full --no-cache Docker rebuild + up (after dependency changes)
@@ -42,13 +45,13 @@ Key env vars:
 | `ADMIN_PIN` | `"admin"` | Hashed with scrypt on first startup, stored in SQLite; ignored on restart. Required to change LLM settings. |
 | `UPLOAD_SIZE_LIMIT_MB` | `50` | Max file upload size (multer, 413 on exceed) |
 | `AGENT_MAX_ITERATIONS` | `24` | ClineCore max iterations per analysis (env fallback; Settings → LLM Provider overrides in SQLite) |
-| `SYSTEM_PROMPT_SOURCE` | `lens` | `lens` = `base.md` / `base-yolo.md` override; `cline` = SDK default (env fallback; Settings overrides in SQLite `agent` key) |
+| `SYSTEM_PROMPT_SOURCE` | `lens` | `lens` = `base.md` override; `cline` = SDK default (env fallback; Settings overrides in SQLite `agent` key) |
 | `LOG_LEVEL` | `info` | Server verbosity: `debug\|info\|warn\|error` |
 | `SKILLS_DIR` | `/app/skills` | Colon-separated skill directories (extra dirs also configurable via Settings UI) |
 | `WIKI_DIR` | `DATA_DIR/wiki` | Wiki storage; mount as shared volume for team-wide knowledge |
 | `PROMPTS_DIR` | `src/prompts` (bundled) | Top-level `.md` prompts plus `fragments/`; mount as a volume to edit at runtime without rebuild |
 | `MAX_LUCKY_ATTACHMENTS` | `20` | Lucky route: max top-level bug attachments to auto-download |
-| `PRIOR_REPORTS_LIMIT` | `3` | Cap on prior `agent_notes/*.md` reports loaded into each chat-path analyze turn (newest first). Set `0` to disable. Lucky always skips priors regardless. |
+| `PRIOR_REPORTS_LIMIT` | `3` | Cap on prior `agent_notes/*.md` reports loaded into each chat-path analyze turn (newest first). Set `0` to disable. Lucky's first turn always skips priors; follow-ups go through `/analyze` and load priors normally. |
 | `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
 
 Additional make targets:
@@ -66,7 +69,13 @@ make clean       # remove containers, volumes, prune images
 ## Architecture
 
 ```
-static/index.html        ← single-page UI, plain JS, SSE consumer; includes file explorer drawer
+frontend/                ← React + Vite + Tailwind SPA (the UI). `npm run ui:build` → frontend/dist
+  src/pages/             ← Login, Home, Session
+  src/components/        ← Header, Sidebar, BugPanel, Chat/*, Explorer/*, Settings/*, Wiki/*, Lucky/*, ui/*
+  src/hooks/             ← useAnalyze (analyze+lucky SSE), useListen (presence + remote mirror)
+  src/state/             ← zustand stores: auth, theme (light default), sessions, upload
+  src/api/               ← fetch client + react-query hooks + shared types
+static/login.html        ← legacy fallback page; the React app serves /login itself
 src/index.ts             ← entry point: wires MockBugTracker + ClineCoreAgentRunner, calls createApp()
 src/app.ts               ← Express app factory (createApp), all routes, SSE streaming
 src/db.ts                ← SQLite via node:sqlite (built-in, no native addon)
@@ -74,8 +83,7 @@ src/logger.ts            ← thin console wrapper with timestamps + levels
 src/broadcast.ts         ← SSE presence room (addClient/removeClient/broadcast), 25s ping keepalive
 src/prompts/
   promptLoader.ts        ← loadPrompt, loadFragment, renderPrompt ({{var}}), composePrompt (join fragments)
-  base.md                ← ClineCore overridePrompt (act/plan analyze + Lucky act mode)
-  base-yolo.md           ← overridePrompt when mode=yolo (Lucky only); enables submit_and_exit termination
+  base.md                ← ClineCore overridePrompt (act/plan analyze + Lucky)
   environment.md         ← tools + Android file reference; prepended to every user turn
   lucky.md               ← Lucky user question (three-phase RCA instructions)
   wiki-synthesis.md      ← wiki entry generation template ({{bugId}}, {{module}}, etc.)
@@ -91,7 +99,7 @@ src/agent/
   agentPrompt.ts         ← buildSystemRules(), buildPrompt(), buildFollowUpPrompt() via composePrompt + fragments
   clineCoreAgentRunner.ts ← ClineCoreAgentRunner; base.md + rules + environment; prior agent_notes/ reports
   skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
-  luckyAnalyzer.ts       ← runLucky(): lucky.md as user question; ephemeral session (not persisted)
+  luckyAnalyzer.ts       ← runLucky(): lucky.md as user question; persists cline_session_id like a normal session
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
 wiki/                    ← two-level knowledge base: index.md → <module>/index.md → dated entries
 e2e/
@@ -111,25 +119,23 @@ fixtures/                ← static fixture files for tests
 
 **Agent sessions persist across turns.** `cline_session_id` is stored in SQLite and passed back on follow-up turns so `ClineCoreAgentRunner` calls `cline.send()` instead of `cline.start()`, preserving ClineCore's native context. If the session is no longer found (e.g. after Docker restart), the runner falls back to `cline.start()` automatically.
 
-**ClineCoreAgentRunner config**: defaults to `"act"` mode (`GET /session/:id/analyze?mode=plan` for plan). Max iterations from Settings UI (stored in SQLite `agent` key) or `AGENT_MAX_ITERATIONS` env (default 24). Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, all MCP settings tools; `SUBMIT_AND_EXIT` only when `mode=yolo` (Lucky). Spawn agent and agent teams disabled.
+**ClineCoreAgentRunner config**: defaults to `"act"` mode (`GET /session/:id/analyze?mode=plan` for plan). Max iterations from Settings UI (stored in SQLite `agent` key) or `AGENT_MAX_ITERATIONS` env (default 24). Disabled tools: `APPLY_PATCH`, `EDITOR`, `FETCH_WEB_CONTENT`, `SUBMIT_AND_EXIT`, all MCP settings tools. Spawn agent and agent teams disabled.
 
 **Prompt composition** (two layers):
-1. **System prompt** — Settings / `SYSTEM_PROMPT_SOURCE`: **lens** (default) loads `base.md` or `base-yolo.md` as `overridePrompt`; **cline** omits override (SDK default). Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` in both modes (stable per session).
+1. **System prompt** — Settings / `SYSTEM_PROMPT_SOURCE`: **lens** (default) loads `base.md` as `overridePrompt`; **cline** omits override (SDK default). Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` in both modes (stable per session).
 2. **User turn** — `buildPrompt()` prepends `environment.md`, then composes `fragments/user/*` (workspace, file list, skills/wiki hints, prior reports, question). Follow-ups use `buildFollowUpPrompt()` (shorter file list + question only).
 
 **Ad-hoc sessions**: users can create a session without a bug tracker entry (`POST /session/adhoc` with title/description/optional bugId), then upload files (`POST /session/:id/upload`, up to 20 files, optional `commentLabel`/`commentBody` for grouping in the file explorer). Same workspace layout and analysis flow as tracker-based sessions.
 
-**Lucky analyzer** (`luckyAnalyzer.ts`): passes `lucky.md` as the user question through the normal `analyze()` path (same system prompt stack as chat). Ephemeral — no `cline_session_id` persisted. `app.ts` auto-downloads top-level bug attachments (not comment attachments; cap `MAX_LUCKY_ATTACHMENTS`) and **fully extracts zips** into context before `runLucky` — unlike the file explorer, which lists zip contents lazily. Triggered via `GET /session/:id/lucky` (SSE). Gated by feature flag `lucky`.
+**Lucky analyzer** (`luckyAnalyzer.ts`): seeds the **first turn** of a session with `lucky.md` as the user question, through the normal `analyze()` path (same system prompt stack as chat). `app.ts` auto-downloads top-level bug attachments (not comment attachments; cap `MAX_LUCKY_ATTACHMENTS`) and **fully extracts zips** into context before `runLucky` — unlike the file explorer, which lists zip contents lazily. Triggered via `GET /session/:id/lucky` (SSE). Gated by feature flag `lucky`.
 
-**Lucky modes** (A/B): `GET /session/:id/lucky` defaults to act (`base.md`). `?mode=yolo` uses `base-yolo.md` and enables `SUBMIT_AND_EXIT` — the agent must call `submit_and_exit` to finish (vs act, where a tool-call-less reply ends the task). UI: 🎲 Lucky button (act); session menu **Lucky YOLO** (one-shot `?mode=yolo`). Reports: `agent_notes/lucky-act-<ts>.md` vs `lucky-yolo-<ts>.md`.
-
-**Lucky TLDR split**: `lucky.md` instructs the agent to end the report with a trailing `## TLDR` paragraph (5–10 lines). The full report is still streamed (so the user watches progress) and saved to `agent_notes/`, but on `done` the server extracts that section via `extractTldr()` in `app.ts`, emits a `{ type: "tldr" }` SSE event, and uses the TLDR for both the chat bubble and `messages.add` history. If the heading is missing, falls back to the full text (logged as `lucky:no-tldr-section`). The full report stays one click away via the existing report attachment chip.
+**Lucky is a conversational, persisted session — not one-shot.** Small models tend to reply with a plan and ask "shall I continue?" instead of finishing in one shot. So Lucky persists `cline_session_id` like a normal session: after the first turn the user just keeps chatting in the normal chat box, and follow-ups flow through the `/analyze` route, which resumes ClineCore's native session context. Strong models still finish in one turn (a no-tool-call reply ends the turn). There is no separate "zone" and no `submit_and_exit` termination — `SUBMIT_AND_EXIT` is always disabled. **Re-clicking 🎲 Lucky always starts a fresh Cline session** (`app.ts` clears `cline_session_id` first, then the new `session_id` is persisted); typing in the chat box resumes the current session. The agent's full reply is the chat bubble — there is no TLDR split.
 
 **Externalized prompts**: all LLM-facing text lives under `PROMPTS_DIR` (default bundled `src/prompts/`). Edit without rebuild, or mount a volume in Docker.
 
 | File / dir | Role |
 |------------|------|
-| `base.md`, `base-yolo.md` | ClineCore `overridePrompt` templates (`{{CLINE_RULES}}`, `{{PLATFORM_NAME}}`, etc.) |
+| `base.md` | ClineCore `overridePrompt` template (`{{CLINE_RULES}}`, `{{PLATFORM_NAME}}`, etc.) |
 | `environment.md` | Tools + workspace/Android reference; first block of each user turn |
 | `lucky.md` | Lucky RCA instructions (injected as user question) |
 | `wiki-synthesis.md` | Wiki entry template (`renderPrompt` vars) |
