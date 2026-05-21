@@ -7,6 +7,8 @@ import type {
 } from "../../api/types";
 import { cn } from "../../utils/cn";
 import { ZipNode } from "./ZipNode";
+import { DownloadButton, DownloadAllButton } from "./DownloadButton";
+import { useDownloadAttachments, type DownloadItem } from "../../hooks/useDownloadAttachments";
 
 interface TreeProps {
   tree: VirtualTree;
@@ -15,44 +17,42 @@ interface TreeProps {
   onToggle: (filePath: string, selected: boolean) => void;
 }
 
+type ToggleFn = (filePath: string, selected: boolean) => void;
+
+function pendingItems(nodes: AttachmentNode[]): DownloadItem[] {
+  return nodes
+    .filter((n) => !n.downloaded)
+    .map((n) => ({ attId: n.attId, attName: n.name }));
+}
+
 export function FileRow({
   name,
   filePath,
   selected,
   onToggle,
   hint,
-  disabled,
 }: {
   name: string;
-  filePath?: string;
+  filePath: string;
   selected: Set<string>;
-  onToggle: (filePath: string, selected: boolean) => void;
+  onToggle: ToggleFn;
   hint?: string;
-  disabled?: boolean;
 }) {
-  const checkable = !!filePath && !disabled;
-  const isOn = !!filePath && selected.has(filePath);
+  const isOn = selected.has(filePath);
   return (
     <label
-      className={cn(
-        "flex items-center gap-2 px-2 py-1 rounded-md text-sm",
-        checkable
-          ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-800"
-          : "opacity-60"
-      )}
+      className="flex items-center gap-2 px-2 py-1 rounded-md text-sm cursor-pointer
+        hover:bg-gray-100 dark:hover:bg-slate-800"
     >
       <input
         type="checkbox"
         className="accent-blue-600 shrink-0"
         checked={isOn}
-        disabled={!checkable}
-        onChange={(e) => filePath && onToggle(filePath, e.target.checked)}
+        onChange={(e) => onToggle(filePath, e.target.checked)}
       />
       <span className="truncate text-gray-700 dark:text-slate-200">{name}</span>
       {hint && (
-        <span className="text-[11px] text-gray-400 dark:text-slate-500 truncate">
-          {hint}
-        </span>
+        <span className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{hint}</span>
       )}
     </label>
   );
@@ -67,12 +67,13 @@ function AttachmentRow({
   node: AttachmentNode;
   sessionId: string;
   selected: Set<string>;
-  onToggle: (filePath: string, selected: boolean) => void;
+  onToggle: ToggleFn;
 }) {
   if (node.isZip) {
     return (
       <ZipNode
         sessionId={sessionId}
+        attId={node.attId}
         name={node.name}
         zipPath={node.filePath}
         downloaded={node.downloaded}
@@ -81,13 +82,21 @@ function AttachmentRow({
       />
     );
   }
+  // Not yet downloaded — offer a Download action instead of a dead checkbox.
+  if (!node.downloaded || !node.filePath) {
+    return (
+      <div className="flex items-center gap-2 px-2 py-1 text-sm">
+        <DownloadButton sessionId={sessionId} attId={node.attId} attName={node.name} />
+        <span className="truncate text-gray-500 dark:text-slate-400">{node.name}</span>
+      </div>
+    );
+  }
   return (
     <FileRow
       name={node.name}
       filePath={node.filePath}
       selected={selected}
       onToggle={onToggle}
-      hint={node.downloaded ? undefined : "not downloaded"}
     />
   );
 }
@@ -95,29 +104,76 @@ function AttachmentRow({
 function Section({
   title,
   count,
+  action,
   children,
   defaultOpen = true,
 }: {
   title: string;
   count?: number;
+  action?: React.ReactNode;
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="mb-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 w-full px-1 py-1 text-xs font-semibold
-          uppercase tracking-wide text-gray-500 dark:text-slate-400"
-      >
-        <span className={cn("transition-transform text-[10px]", open && "rotate-90")}>▶</span>
-        {title}
-        {count != null && <span className="text-gray-400 dark:text-slate-500">({count})</span>}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1.5 flex-1 px-1 py-1 text-xs font-semibold
+            uppercase tracking-wide text-gray-500 dark:text-slate-400"
+        >
+          <span className={cn("transition-transform text-[10px]", open && "rotate-90")}>▶</span>
+          {title}
+          {count != null && <span className="text-gray-400 dark:text-slate-500">({count})</span>}
+        </button>
+        {action}
+      </div>
       {open && <div className="pl-1">{children}</div>}
     </div>
+  );
+}
+
+// A section of bug/comment attachments with its own "Download all" control.
+function AttachmentSection({
+  title,
+  nodes,
+  sessionId,
+  selected,
+  onToggle,
+}: {
+  title: string;
+  nodes: AttachmentNode[];
+  sessionId: string;
+  selected: Set<string>;
+  onToggle: ToggleFn;
+}) {
+  const { downloadMany, progress } = useDownloadAttachments(sessionId);
+  const pending = pendingItems(nodes);
+  return (
+    <Section
+      title={title}
+      count={nodes.length}
+      action={
+        <DownloadAllButton
+          pendingCount={pending.length}
+          busy={progress !== null}
+          progress={progress}
+          onClick={() => downloadMany(pending)}
+        />
+      }
+    >
+      {nodes.map((n) => (
+        <AttachmentRow
+          key={n.attId}
+          node={n}
+          sessionId={sessionId}
+          selected={selected}
+          onToggle={onToggle}
+        />
+      ))}
+    </Section>
   );
 }
 
@@ -128,7 +184,7 @@ function InternalFolder({
 }: {
   folder: InternalFolderNode;
   selected: Set<string>;
-  onToggle: (filePath: string, selected: boolean) => void;
+  onToggle: ToggleFn;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -171,7 +227,7 @@ function InternalSection({
   roots: InternalRoots;
   count: number;
   selected: Set<string>;
-  onToggle: (filePath: string, selected: boolean) => void;
+  onToggle: ToggleFn;
 }) {
   if (count === 0) return null;
   return (
@@ -210,30 +266,23 @@ export function Tree({ tree, sessionId, selected, onToggle }: TreeProps) {
   return (
     <div>
       {tree.bugAttachments.length > 0 && (
-        <Section title="Bug Attachments" count={tree.bugAttachments.length}>
-          {tree.bugAttachments.map((n) => (
-            <AttachmentRow
-              key={n.attId}
-              node={n}
-              sessionId={sessionId}
-              selected={selected}
-              onToggle={onToggle}
-            />
-          ))}
-        </Section>
+        <AttachmentSection
+          title="Bug Attachments"
+          nodes={tree.bugAttachments}
+          sessionId={sessionId}
+          selected={selected}
+          onToggle={onToggle}
+        />
       )}
       {tree.comments.map((c) => (
-        <Section key={c.commentId} title={`Comment · ${c.author}`} count={c.nodes.length}>
-          {c.nodes.map((n) => (
-            <AttachmentRow
-              key={n.attId}
-              node={n}
-              sessionId={sessionId}
-              selected={selected}
-              onToggle={onToggle}
-            />
-          ))}
-        </Section>
+        <AttachmentSection
+          key={c.commentId}
+          title={`Comment · ${c.author}`}
+          nodes={c.nodes}
+          sessionId={sessionId}
+          selected={selected}
+          onToggle={onToggle}
+        />
       ))}
       <InternalSection
         roots={tree.internalRoots}

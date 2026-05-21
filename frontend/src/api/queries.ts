@@ -58,6 +58,22 @@ export function useToggleFile(id: string | undefined) {
   });
 }
 
+export function useDownloadAttachment(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation<
+    { filePath: string; extractedFiles: string[]; autoSelected: string[] },
+    Error,
+    { attId: string; attName: string }
+  >({
+    mutationFn: ({ attId, attName }) =>
+      apiJson(`/session/${id}/attachment/${attId}`, { attName }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workspace-files", id] });
+      qc.invalidateQueries({ queryKey: ["session", id] });
+    },
+  });
+}
+
 export function useExtractFile(id: string | undefined) {
   const qc = useQueryClient();
   return useMutation<{ filePath: string }, Error, { zipPath: string; innerPath: string }>({

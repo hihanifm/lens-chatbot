@@ -19,7 +19,7 @@ const labelMap: Record<string, Tone> = {
   ready: "ready",
   done: "ready",
   ok: "ready",
-  active: "running",
+  active: "ready",
   running: "running",
   analyzing: "running",
   ingesting: "running",

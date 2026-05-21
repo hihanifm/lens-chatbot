@@ -2,9 +2,11 @@ import { useState } from "react";
 import { cn } from "../../utils/cn";
 import { useZipContents, useExtractFile } from "../../api/queries";
 import { Spinner } from "../ui/Spinner";
+import { DownloadButton } from "./DownloadButton";
 
 interface ZipNodeProps {
   sessionId: string;
+  attId: string;
   name: string;
   zipPath?: string;
   downloaded: boolean;
@@ -16,6 +18,7 @@ interface ZipNodeProps {
 // extracted on demand, then added to context like any other file.
 export function ZipNode({
   sessionId,
+  attId,
   name,
   zipPath,
   downloaded,
@@ -26,24 +29,26 @@ export function ZipNode({
   const { data, isLoading } = useZipContents(sessionId, open ? zipPath ?? null : null);
   const extract = useExtractFile(sessionId);
 
+  // A zip that isn't downloaded yet can't be listed — offer a Download action.
+  if (!downloaded || !zipPath) {
+    return (
+      <div className="flex items-center gap-2 px-2 py-1 text-sm">
+        <DownloadButton sessionId={sessionId} attId={attId} attName={name} />
+        <span className="truncate text-gray-500 dark:text-slate-400">🗜 {name}</span>
+      </div>
+    );
+  }
+
   return (
     <div>
       <button
         type="button"
-        disabled={!downloaded || !zipPath}
         onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex items-center gap-1.5 px-2 py-1 text-sm w-full text-left",
-          downloaded
-            ? "text-gray-700 dark:text-slate-200"
-            : "text-gray-400 dark:text-slate-500"
-        )}
+        className="flex items-center gap-1.5 px-2 py-1 text-sm w-full text-left
+          text-gray-700 dark:text-slate-200"
       >
         <span className={cn("transition-transform text-[10px]", open && "rotate-90")}>▶</span>
         🗜 {name}
-        {!downloaded && (
-          <span className="text-[11px] text-gray-400">not downloaded</span>
-        )}
       </button>
       {open && (
         <div className="pl-5">

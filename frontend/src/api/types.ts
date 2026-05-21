@@ -12,14 +12,34 @@ export interface Session {
   created_at: string;
 }
 
+export interface BugAttachment {
+  id: string;
+  name: string;
+  size: number;
+}
+
+export interface BugComment {
+  id: string;
+  author: string;
+  body: string;
+  created_at: string;
+  attachments?: BugAttachment[];
+}
+
+// Mirrors BugDetails from src/services/bugTracker.ts (the raw bug.json).
 export interface Bug {
   id: string;
   title: string;
   description?: string;
   author?: string;
+  owner?: string;
+  module?: string;
+  state?: string;
   status?: string;
   created_at?: string;
-  comments?: Array<{ id: string; author: string; body: string; created_at: string }>;
+  updated_at?: string;
+  attachments?: BugAttachment[];
+  comments?: BugComment[];
 }
 
 export interface Message {
