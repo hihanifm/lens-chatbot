@@ -10,8 +10,14 @@ import {
   useSaveSkillsDirs,
   useChangeAdminPin,
 } from "../../api/queries";
+import {
+  useTheme,
+  CHAT_FONT_LABELS,
+  CHAT_FONT_STACKS,
+  type ChatFont,
+} from "../../state/theme";
 
-type Tab = "llm" | "skills" | "pin";
+type Tab = "appearance" | "llm" | "skills" | "pin";
 
 const fieldLabel = "block text-sm font-medium mb-1 text-gray-600 dark:text-slate-300";
 const selectClass =
@@ -30,6 +36,54 @@ function Banner({ kind, children }: { kind: "ok" | "error"; children: React.Reac
     >
       {children}
     </p>
+  );
+}
+
+function AppearanceTab() {
+  const chatFont = useTheme((s) => s.chatFont);
+  const setChatFont = useTheme((s) => s.setChatFont);
+  const fonts: ChatFont[] = ["handdrawn", "system", "mono"];
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className={fieldLabel}>Chat window font</label>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
+          Applies to the chat thread in this browser only. Default is the
+          hand-drawn font.
+        </p>
+        <div className="space-y-2">
+          {fonts.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setChatFont(f)}
+              className={cn(
+                "w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors",
+                chatFont === f
+                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400"
+                  : "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
+              )}
+            >
+              <span className="text-sm font-medium text-gray-700 dark:text-slate-200">
+                {CHAT_FONT_LABELS[f]}
+                {f === "handdrawn" && (
+                  <span className="ml-1 text-xs text-gray-400 dark:text-slate-500">
+                    (default)
+                  </span>
+                )}
+              </span>
+              <span
+                className="text-base text-gray-500 dark:text-slate-300"
+                style={{ fontFamily: CHAT_FONT_STACKS[f] }}
+              >
+                The quick brown fox
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -277,8 +331,9 @@ function PinTab() {
 }
 
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>("llm");
+  const [tab, setTab] = useState<Tab>("appearance");
   const tabs: Array<{ id: Tab; label: string }> = [
+    { id: "appearance", label: "Appearance" },
     { id: "llm", label: "LLM Provider" },
     { id: "skills", label: "Skills" },
     { id: "pin", label: "Admin PIN" },
@@ -303,6 +358,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           </button>
         ))}
       </div>
+      {tab === "appearance" && <AppearanceTab />}
       {tab === "llm" && <LlmTab />}
       {tab === "skills" && <SkillsTab />}
       {tab === "pin" && <PinTab />}

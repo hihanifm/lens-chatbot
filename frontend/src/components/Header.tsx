@@ -20,10 +20,10 @@ export default function Header() {
     <header className="bg-blue-600 text-white border-b border-blue-700 shrink-0">
       <div className="w-[92%] max-w-6xl mx-auto flex items-center justify-between gap-4 py-3">
         <Link to="/" className="flex items-baseline gap-2 group">
-          <span className="text-xl font-bold tracking-tight">LENS</span>
+          <span className="text-xl font-bold tracking-tight">War Room</span>
           <span aria-hidden className="text-lg">🔍</span>
           <span className="hidden sm:inline text-sm text-blue-100/90 group-hover:text-white transition-colors">
-            Debug bugs faster
+            Debug bugs together
           </span>
         </Link>
 

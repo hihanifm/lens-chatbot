@@ -44,6 +44,23 @@ test("buildVirtualTree groups agent_notes in a folder tree", async () => {
   }
 });
 
+test("buildVirtualTree sorts agent_notes files newest-first by mtime", async () => {
+  const workspace = await makeWorkspace();
+  try {
+    // a.json is oldest, report.md is newest — set explicit mtimes.
+    const old = new Date(Date.now() - 60_000);
+    const recent = new Date();
+    await fs.utimes(path.join(workspace, "agent_notes", "a.json"), old, old);
+    await fs.utimes(path.join(workspace, "agent_notes", "report.md"), recent, recent);
+    const tree = await buildVirtualTree(workspace);
+    const agentNotes = tree.internalRoots.folders[0];
+    assert.equal(agentNotes.files[0].relativePath, "agent_notes/report.md");
+    assert.equal(agentNotes.files[1].relativePath, "agent_notes/a.json");
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("buildVirtualTree does not list attachments/", async () => {
   const workspace = await makeWorkspace();
   try {

@@ -110,6 +110,8 @@ async function buildInternalFolder(
   const files: InternalFileNode[] = [];
   const folders: InternalFolderNode[] = [];
 
+  const mtimes = new Map<string, number>();
+
   const entries = await fs.readdir(absDir, { withFileTypes: true });
   for (const entry of entries) {
     const rel = path.join(relativeDir, entry.name);
@@ -117,9 +119,17 @@ async function buildInternalFolder(
     if (!isUnderWorkspace(workspacePath, abs)) continue;
 
     if (entry.isFile()) {
+      const relativePath = rel.split(path.sep).join("/");
+      let mtimeMs = 0;
+      try {
+        mtimeMs = (await fs.stat(abs)).mtimeMs;
+      } catch {
+        // unreadable file — sort it last
+      }
+      mtimes.set(relativePath, mtimeMs);
       files.push({
         name: entry.name,
-        relativePath: rel.split(path.sep).join("/"),
+        relativePath,
         filePath: abs,
         description: agentNotesDescription(entry.name),
       });
@@ -128,7 +138,8 @@ async function buildInternalFolder(
     }
   }
 
-  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  // agent_notes: newest report first (mtime desc) so stale reports sink.
+  files.sort((a, b) => (mtimes.get(b.relativePath) ?? 0) - (mtimes.get(a.relativePath) ?? 0));
   folders.sort((a, b) => a.name.localeCompare(b.name));
 
   return {

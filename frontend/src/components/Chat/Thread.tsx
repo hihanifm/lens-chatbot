@@ -1,7 +1,13 @@
 import { useEffect, useRef } from "react";
 import { MessageBubble, type ChatMessage } from "./MessageBubble";
 
-export function Thread({ messages }: { messages: ChatMessage[] }) {
+export function Thread({
+  messages,
+  sessionId,
+}: {
+  messages: ChatMessage[];
+  sessionId?: string;
+}) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,7 +29,7 @@ export function Thread({ messages }: { messages: ChatMessage[] }) {
         bg-blue-50/50 dark:bg-slate-950"
     >
       {messages.map((m) => (
-        <MessageBubble key={m.key} msg={m} />
+        <MessageBubble key={m.key} msg={m} sessionId={sessionId} />
       ))}
       <div ref={bottomRef} />
     </div>

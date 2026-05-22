@@ -4,7 +4,8 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Session from "./pages/Session";
 import Header from "./components/Header";
-import { UploadBanner } from "./components/Upload/Banner";
+import { TransferBanner } from "./components/Transfer/Banner";
+import { WikiBanner } from "./components/Wiki/Banner";
 import { useThemeBootstrap } from "./state/theme";
 import { useAuth } from "./state/auth";
 
@@ -25,7 +26,8 @@ function Shell() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Header />
-      <UploadBanner />
+      <TransferBanner />
+      <WikiBanner />
       <main className="flex-1 flex flex-col min-h-0">
         <Routes>
           <Route path="/login" element={<Login />} />

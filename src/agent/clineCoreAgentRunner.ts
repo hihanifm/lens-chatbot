@@ -189,7 +189,7 @@ export async function getCline(): Promise<ClineCore> {
   return clineInstance;
 }
 
-/** Lens UI provider ids → Cline built-in provider ids (@cline/llms BUILT_IN_PROVIDER). */
+/** War Room UI provider ids → Cline built-in provider ids (@cline/llms BUILT_IN_PROVIDER). */
 function toClineProviderId(provider: ReturnType<typeof settings.getLlmConfig>["provider"]): string {
   if (provider === "openai") return "openai-native";
   // "openai-compatible" is a protocol family in Cline, not a provider id; ollama uses that family + custom baseUrl.
@@ -382,14 +382,16 @@ export class ClineCoreAgentRunner implements AgentRunner {
       push({ type: "status", content: `PII patterns redacted in prompt (${sanitizeReplacementTotal} substitutions)` });
     }
 
-    const selectedSkill = input.selectedSkillName
-      ? skills.find((s) => s.name === input.selectedSkillName)
-      : undefined;
-    if (input.selectedSkillName && !selectedSkill) {
-      log.warn("agent:selected-skill-not-found", { name: input.selectedSkillName });
-      push({ type: "status", content: `selected skill not found: ${input.selectedSkillName} (continuing without preload)` });
-    } else if (selectedSkill) {
-      push({ type: "status", content: `selected skill: ${selectedSkill.name}` });
+    const selectedSkills: typeof skills = [];
+    for (const name of input.selectedSkillNames ?? []) {
+      const found = skills.find((s) => s.name === name);
+      if (found) {
+        selectedSkills.push(found);
+        push({ type: "status", content: `selected skill: ${found.name}` });
+      } else {
+        log.warn("agent:selected-skill-not-found", { name });
+        push({ type: "status", content: `selected skill not found: ${name} (continuing without preload)` });
+      }
     }
     const isFollowUp = !!input.clineSessionId;
     const fullPrompt = await buildPrompt({
@@ -401,7 +403,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       wikiRootIndex,
       priorReports,
       environmentContext,
-      selectedSkill,
+      selectedSkills,
       bugContext: isFollowUp ? null : bugContextForLlm,
     });
     const followUpPrompt = await buildFollowUpPrompt({
@@ -409,7 +411,7 @@ export class ClineCoreAgentRunner implements AgentRunner {
       files: existingFiles,
       question: questionForLlm,
       fileComments: fileCommentsForLlm,
-      selectedSkill,
+      selectedSkills,
     });
     const sentPrompt = isFollowUp ? followUpPrompt : fullPrompt;
     if (flags.promptLogging) {

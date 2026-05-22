@@ -30,9 +30,11 @@ export interface BugDetails {
   comments: BugComment[];
 }
 
+export type DownloadProgress = (loaded: number, total: number) => void;
+
 export interface BugTracker {
   getBug(bugId: string): Promise<BugDetails>;
-  downloadAttachment(bugId: string, attId: string): Promise<Buffer>;
+  downloadAttachment(bugId: string, attId: string, onProgress?: DownloadProgress): Promise<Buffer>;
 }
 
 const MOCK_FIXTURES_DIR = path.join(
@@ -112,7 +114,7 @@ export class MockBugTracker implements BugTracker {
     };
   }
 
-  async downloadAttachment(_bugId: string, attId: string): Promise<Buffer> {
+  async downloadAttachment(_bugId: string, attId: string, _onProgress?: DownloadProgress): Promise<Buffer> {
     const fixtureName = MOCK_ATTACHMENTS[attId];
     if (!fixtureName) {
       throw new Error(`Unknown mock attachment: ${attId}`);
@@ -140,13 +142,16 @@ export class InternalBugTracker implements BugTracker {
     return res.data as BugDetails;
   }
 
-  async downloadAttachment(bugId: string, attId: string): Promise<Buffer> {
+  async downloadAttachment(bugId: string, attId: string, onProgress?: DownloadProgress): Promise<Buffer> {
     const { default: axios } = await import("axios");
     const res = await axios.get(
       `${this.baseUrl}/bugs/${bugId}/attachments/${attId}/download`,
       {
         headers: { Authorization: `Bearer ${this.token}` },
         responseType: "arraybuffer",
+        onDownloadProgress: onProgress
+          ? (e) => onProgress(e.loaded, e.total ?? 0)
+          : undefined,
       }
     );
     return Buffer.from(res.data);

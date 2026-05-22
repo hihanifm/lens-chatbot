@@ -20,7 +20,7 @@ export interface AgentRunner {
     clineSessionId?: string;
     mode?: "plan" | "act";
     modelOverride?: string;
-    selectedSkillName?: string;
+    selectedSkillNames?: string[];
     /** Lucky-only: count of additional non-critical files left on disk + their root. */
     extras?: { count: number; attachmentsRoot: string };
     /** Lucky-only: skip reading agent_notes/ priors so the first run starts fresh. */

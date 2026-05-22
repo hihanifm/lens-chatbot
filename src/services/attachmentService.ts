@@ -3,7 +3,7 @@ import { createWriteStream } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import unzipper from "unzipper";
-import type { BugTracker, BugDetails } from "./bugTracker.js";
+import type { BugTracker, BugDetails, DownloadProgress } from "./bugTracker.js";
 import { log } from "../logger.js";
 
 const WORKSPACES_ROOT = path.resolve(
@@ -23,9 +23,10 @@ export async function downloadAttachment(
   bugId: string,
   attId: string,
   attName: string,
-  workspacePath: string
+  workspacePath: string,
+  onProgress?: DownloadProgress
 ): Promise<{ filePath: string; extractedFiles: string[] }> {
-  const data = await tracker.downloadAttachment(bugId, attId);
+  const data = await tracker.downloadAttachment(bugId, attId, onProgress);
   const filePath = path.join(workspacePath, "attachments", attName);
   await fs.writeFile(filePath, data);
   log.info("attachment:written", { filePath, bytes: data.length });

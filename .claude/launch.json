@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lens-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "frontend",
+      "port": 38002,
+      "env": { "UI_API_PROXY_TARGET": "http://localhost:38005" }
+    },
+    {
+      "name": "lens-app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts"],
+      "port": 38006,
+      "env": { "PORT": "38006", "NODE_OPTIONS": "--experimental-sqlite" }
+    }
+  ]
+}

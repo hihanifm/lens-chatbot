@@ -15,6 +15,7 @@ interface ListenEvent {
   content?: string;
   user?: string;
   skill?: string | null;
+  skills?: string[];
   commands?: { query: string; success: boolean; error?: string }[];
 }
 
@@ -85,7 +86,7 @@ export function useListen(sessionId: string | undefined, userId: string | null) 
             role: "user",
             content: d.content ?? "",
             userName: d.user ?? "Someone",
-            skill: d.skill ?? null,
+            skills: d.skills ?? [],
           },
           { key: eng, role: "englog", content: "", logLines: [], streaming: true },
           { key: asst, role: "assistant", content: "", streaming: true },

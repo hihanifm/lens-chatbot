@@ -1,38 +1,78 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
-import { SkillPicker } from "./SkillPicker";
+import { SkillPicker, filterSkills } from "./SkillPicker";
 import { SkillChip } from "./SkillChip";
 import { useSkills, type SkillInfo } from "../../api/queries";
 
 interface ComposerProps {
   streaming: boolean;
-  onSend: (question: string, skill: string | null) => void;
+  onSend: (question: string, skills: string[]) => void;
   onAbort: () => void;
+  onFocus?: () => void;
   disabled?: boolean;
+  selectedFiles?: string[];
 }
 
-export function Composer({ streaming, onSend, onAbort, disabled }: ComposerProps) {
+export function Composer({ streaming, onSend, onAbort, onFocus, disabled, selectedFiles = [] }: ComposerProps) {
   const [value, setValue] = useState("");
-  const [skill, setSkill] = useState<SkillInfo | null>(null);
+  const [selectedSkills, setSelectedSkills] = useState<SkillInfo[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { data: skills = [] } = useSkills();
+
+  const filteredSkills = useMemo(
+    () => (pickerOpen ? filterSkills(skills, value.slice(1)) : []),
+    [pickerOpen, skills, value]
+  );
 
   const submit = () => {
     const q = value.trim();
     if (!q || streaming || disabled) return;
-    onSend(q, skill?.name ?? null);
+    onSend(q, selectedSkills.map((s) => s.name));
     setValue("");
-    setSkill(null);
+    setSelectedSkills([]);
     if (taRef.current) taRef.current.style.height = "auto";
   };
 
+  const pickSkill = (s: SkillInfo) => {
+    setSelectedSkills((prev) =>
+      prev.some((x) => x.name === s.name) ? prev : [...prev, s]
+    );
+    setPickerOpen(false);
+    setActiveIndex(0);
+    // Drop the "/filter" text the user typed to open the picker.
+    setValue((v) => (v.startsWith("/") ? "" : v));
+    taRef.current?.focus();
+  };
+
+  const removeSkill = (name: string) => {
+    setSelectedSkills((prev) => prev.filter((s) => s.name !== name));
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (pickerOpen && e.key === "Escape") {
-      e.preventDefault();
-      setPickerOpen(false);
-      return;
+    if (pickerOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setPickerOpen(false);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIndex((i) => (i + 1) % filteredSkills.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIndex((i) => (i - 1 + filteredSkills.length) % filteredSkills.length);
+        return;
+      }
+      if (e.key === "Tab" && filteredSkills.length > 0) {
+        e.preventDefault();
+        pickSkill(filteredSkills[activeIndex]);
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -44,33 +84,53 @@ export function Composer({ streaming, onSend, onAbort, disabled }: ComposerProps
     const v = e.target.value;
     setValue(v);
     // Open the skill picker the moment the input starts with "/".
-    setPickerOpen(v.startsWith("/") && skills.length > 0);
+    const open = v.startsWith("/") && skills.length > 0;
+    setPickerOpen(open);
+    if (open) setActiveIndex(0);
     const el = e.target;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   };
 
-  const pickSkill = (s: SkillInfo) => {
-    setSkill(s);
-    setPickerOpen(false);
-    // Drop the "/filter" text the user typed to open the picker.
-    setValue((v) => (v.startsWith("/") ? "" : v));
-    taRef.current?.focus();
-  };
-
   return (
     <div className="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3">
-      {skill && (
-        <div className="mb-2" id="context-bar">
-          <SkillChip name={skill.name} onRemove={() => setSkill(null)} />
+      {(selectedSkills.length > 0 || selectedFiles.length > 0) && (
+        <div className="mb-2 flex flex-wrap gap-1.5" id="context-bar">
+          {selectedSkills.map((s) => (
+            <SkillChip key={s.name} name={s.name} onRemove={() => removeSkill(s.name)} />
+          ))}
+          {selectedFiles.map((path) => {
+            const name = path.split("/").pop() ?? path;
+            return (
+              <span
+                key={path}
+                title={path}
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
+                  bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+              >
+                <span aria-hidden>📎</span> {name}
+              </span>
+            );
+          })}
         </div>
+      )}
+      {selectedSkills.length > 2 && (
+        <p
+          id="skill-token-warning"
+          className="mb-2 text-[11px] text-amber-600 dark:text-amber-400 px-1"
+        >
+          ⚠ {selectedSkills.length} skills selected — each one's full body is added
+          to the prompt, which increases token cost.
+        </p>
       )}
       <div className="relative flex items-end gap-2">
         {pickerOpen && (
           <SkillPicker
             skills={skills}
             filter={value.slice(1)}
+            activeIndex={activeIndex}
             onPick={pickSkill}
+            onHover={setActiveIndex}
             onClose={() => setPickerOpen(false)}
           />
         )}
@@ -80,6 +140,7 @@ export function Composer({ streaming, onSend, onAbort, disabled }: ComposerProps
           value={value}
           onChange={autoGrow}
           onKeyDown={onKeyDown}
+          onFocus={onFocus}
           rows={1}
           placeholder={
             disabled ? "Loading session…" : "Ask a question…  ( / for skills )"

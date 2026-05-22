@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, LogLine } from "../components/Chat/types";
+import type { ChatMessage, LogLine, ReportRef } from "../components/Chat/types";
 import { clientId } from "../utils/clientId";
 import { api } from "../api/client";
 
@@ -13,12 +13,12 @@ interface AnalyzeEvent {
   type: "text" | "done" | "error" | "status" | "tool_error" | "tool_command";
   content?: string;
   commands?: ToolCommandLine[];
-  reports?: string[];
+  reports?: ReportRef[];
 }
 
 export interface AnalyzeOptions {
   mode?: "act" | "plan";
-  skill?: string | null;
+  skills?: string[];
 }
 
 const truncate = (s: string) => (s.length > 280 ? s.slice(0, 280) + "…" : s);
@@ -150,12 +150,12 @@ export function useAnalyze(sessionId: string | undefined, userId: string | null)
         clientId: clientId(),
         mode: opts.mode ?? "act",
       });
-      if (opts.skill) params.set("skill", opts.skill);
+      (opts.skills ?? []).forEach((s) => params.append("skill", s));
       runStream(`/session/${sessionId}/analyze?${params}`, {
         key: `live-user-${Date.now()}`,
         role: "user",
         content: q,
-        skill: opts.skill ?? null,
+        skills: opts.skills ?? [],
       });
     },
     [sessionId, userId, streaming, runStream]

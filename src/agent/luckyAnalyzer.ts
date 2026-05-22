@@ -26,7 +26,7 @@ export async function* runLucky(
     mode: "act",
     modelOverride,
     extras,
-    selectedSkillName: LUCKY_PRELOAD_SKILL_NAME,
+    selectedSkillNames: [LUCKY_PRELOAD_SKILL_NAME],
     skipPriorReports: true, // First Lucky turn always starts a fresh RCA.
   })) {
     yield event;

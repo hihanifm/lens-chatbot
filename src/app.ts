@@ -14,6 +14,7 @@ import { sessions, messages, users, settings } from "./db.js";
 import type { LlmConfig } from "./db.js";
 import { addClient, removeClient, broadcast } from "./broadcast.js";
 import { createWikiEntry, listWikiEntries, readWikiEntry, buildWikiSynthesisPrompt } from "./services/wikiService.js";
+import type { WikiEntry } from "./services/wikiService.js";
 import { loadAgentSkills } from "./agent/agentPrompt.js";
 import { runLucky } from "./agent/luckyAnalyzer.js";
 import { log } from "./logger.js";
@@ -21,6 +22,80 @@ import { isLlmSanitizeEnabled, sanitizeForLlm } from "./services/llmSanitize.js"
 import { classifyBatch, shouldAutoSelect, summarizeBatch, isCritical } from "./services/attachmentFilter.js";
 import { snapshotAgentReportPaths, listNewAgentReports } from "./services/agentReports.js";
 import { resolveWorkspaceFilePath } from "./services/workspacePaths.js";
+import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
+
+/** Wrap sanitized report HTML in a minimal styled standalone document. */
+function renderReportPage(title: string, bodyHtml: string): string {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title.replace(/[<>&]/g, "")}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 900px; margin: 2.5rem auto; padding: 0 2rem;
+    font: 15px/1.7 -apple-system, Segoe UI, Roboto, sans-serif;
+    color: #1f2937; background: #fff;
+  }
+  /* Heading hierarchy — dark navy title → medium blue sections */
+  h1 {
+    font-size: 1.65em; font-weight: 700; color: #0f2d5e;
+    border-bottom: 3px solid #1a4ea6; padding-bottom: .45em; margin-bottom: 1em;
+  }
+  h2 { font-size: 1.2em; font-weight: 700; color: #1a4ea6; margin-top: 2em; }
+  h3 { font-size: 1.05em; font-weight: 700; color: #1a5ea6; margin-top: 1.4em; }
+  h4 { font-size: 1em; font-weight: 600; color: #2563eb; margin-top: 1.2em; }
+  /* Bold metadata labels (e.g. "Ticket ID:", "Priority:") */
+  strong, b { color: #0f2d5e; }
+  p { margin: .6em 0; }
+  ul, ol { padding-left: 1.6em; margin: .6em 0; }
+  li { margin: .25em 0; }
+  a { color: #1a4ea6; }
+  code {
+    background: #eef2f9; padding: .12em .38em;
+    border-radius: 4px; font-size: .88em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre {
+    background: #eef2f9; padding: 1rem; border-radius: 8px;
+    overflow-x: auto; margin: .8em 0;
+  }
+  pre code { background: none; padding: 0; }
+  /* Tables — blue header, bold first column, alternating rows */
+  table { border-collapse: collapse; width: 100%; margin: .8em 0; }
+  thead tr { background: #e8eef9; }
+  th {
+    padding: .45em .7em; text-align: left; font-weight: 600;
+    color: #0f2d5e; border: 1px solid #c5d3e8;
+  }
+  td { padding: .4em .7em; border: 1px solid #d1daea; }
+  tbody tr:nth-child(even) { background: #f7f9fd; }
+  td:first-child { font-weight: 600; color: #0f2d5e; }
+  blockquote {
+    border-left: 4px solid #1a4ea6; margin: 1em 0;
+    padding-left: 1em; color: #4b5e7a;
+  }
+  hr { border: none; border-top: 1px solid #d1daea; margin: 1.4em 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0f172a; color: #e2e8f0; }
+    h1 { color: #93c5fd; border-color: #3b82f6; }
+    h2 { color: #60a5fa; }
+    h3 { color: #7ab8fc; }
+    h4 { color: #93c5fd; }
+    strong, b { color: #bfdbfe; }
+    code, pre { background: #1e293b; }
+    thead tr { background: #1e3a5f; }
+    th { color: #bfdbfe; border-color: #2d4a70; }
+    td { border-color: #334155; }
+    tbody tr:nth-child(even) { background: #172033; }
+    td:first-child { color: #93c5fd; }
+    blockquote { border-color: #3b82f6; color: #94a3b8; }
+    a { color: #60a5fa; }
+    hr { border-color: #334155; }
+  }
+</style></head><body>${bodyHtml}</body></html>`;
+}
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -351,32 +426,57 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     });
   });
 
-  app.post("/session/:id/attachment/:attId", async (req, res) => {
+  // Render a Markdown report as a standalone, styled HTML page (shareable in a browser tab).
+  app.get("/session/:id/report", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+    const filePath = resolveWorkspaceFilePath(session.workspace_path, String(req.query.filePath ?? ""));
+    if (!filePath) return res.status(403).json({ error: "path outside workspace" });
+    if (path.extname(filePath).toLowerCase() !== ".md") {
+      return res.status(400).json({ error: "only .md reports can be rendered" });
+    }
+    try {
+      const md = await fs.readFile(filePath, "utf8");
+      const html = DOMPurify.sanitize(await marked.parse(md));
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(renderReportPage(path.basename(filePath), html));
+    } catch (err) {
+      log.error("report:render-error", { filePath, error: (err as Error).message });
+      res.status(404).json({ error: "report not found" });
+    }
+  });
+
+  app.get("/session/:id/attachment/:attId/stream", async (req, res) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "session not found" });
 
-    const { attName } = req.body;
+    const attName = req.query.attName as string;
     if (!attName) return res.status(400).json({ error: "attName required" });
 
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
     log.info("attachment:download", { sessionId: req.params.id, attId: req.params.attId, attName });
-    const { filePath, extractedFiles } = await downloadAttachment(
-      tracker,
-      session.bug_id,
-      req.params.attId,
-      attName,
-      session.workspace_path
-    );
-    // Auto-select via attachment-filter skill (priority/useful only).
-    const classified = await classifyBatch([filePath, ...extractedFiles], session.workspace_path);
-    const autoAdded: string[] = [];
-    for (const c of classified) {
-      if (shouldAutoSelect(c.classification)) {
-        sessions.addFile(req.params.id, c.absPath);
-        autoAdded.push(c.relPath);
-      }
+    try {
+      const { filePath, extractedFiles } = await downloadAttachment(
+        tracker,
+        session.bug_id,
+        req.params.attId,
+        attName,
+        session.workspace_path,
+        (loaded, total) => send({ type: "progress", loaded, total })
+      );
+      // Downloading does not add files to agent context — the user selects
+      // files explicitly via the file explorer checkboxes.
+      log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length });
+      send({ type: "done", filePath, extractedFiles });
+    } catch (err: any) {
+      log.error("attachment:download-error", { attId: req.params.attId, error: err.message });
+      send({ type: "error", content: err.message });
     }
-    log.info("attachment:saved", { filePath, extractedFiles: extractedFiles.length, autoSelected: autoAdded.length });
-    res.json({ filePath, extractedFiles, autoSelected: autoAdded });
+    res.end();
   });
 
   app.patch("/session/:id/files", (req, res) => {
@@ -449,11 +549,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const question = req.query.question as string;
     if (!question) return res.status(400).json({ error: "question required" });
     const agentMode = req.query.mode === "plan" ? "plan" : "act";
-    const rawSkill = (req.query.skill as string | undefined)?.trim();
-    let selectedSkillName: string | undefined;
-    if (rawSkill) {
+    const rawSkills = (Array.isArray(req.query.skill) ? req.query.skill : [req.query.skill])
+      .map((s) => (typeof s === "string" ? s.trim() : ""))
+      .filter(Boolean);
+    let selectedSkillNames: string[] = [];
+    if (rawSkills.length > 0) {
       const known = await loadAgentSkills();
-      if (known.some((s) => s.name === rawSkill)) selectedSkillName = rawSkill;
+      const knownNames = new Set(known.map((s) => s.name));
+      selectedSkillNames = [...new Set(rawSkills)].filter((s) => knownNames.has(s));
     }
 
     const user = users.getById(req.query.userId as string);
@@ -464,10 +567,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    const storedQuestion = selectedSkillName ? `[skill:${selectedSkillName}]\n${question}` : question;
+    const storedQuestion = selectedSkillNames.length
+      ? `[skill:${selectedSkillNames.join(",")}]\n${question}`
+      : question;
     messages.add(req.params.id, "user", storedQuestion, user.name);
 
-    broadcast(req.params.id, { type: "user_message", content: question, skill: selectedSkillName, user: user.name, clientId }, clientId);
+    broadcast(req.params.id, { type: "user_message", content: question, skills: selectedSkillNames, user: user.name, clientId }, clientId);
     broadcast(req.params.id, { type: "analyzing", user: user.name, clientId }, clientId);
 
     let updatedSession = sessions.get(req.params.id)!;
@@ -497,7 +602,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         clineSessionId: updatedSession.cline_session_id,
         mode: agentMode,
         modelOverride: effectiveModel,
-        selectedSkillName,
+        selectedSkillNames,
       })) {
         if (event.type === "session_id") {
           sessions.setClineSessionId(req.params.id, event.content);
@@ -726,27 +831,25 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
   // ── Wiki routes ──────────────────────────────────────────────────────────────
 
-  app.post("/session/:id/wiki", async (req, res) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "session not found" });
-
-    const rawModule = String(req.body.module ?? "").trim();
-    if (!rawModule) return res.status(400).json({ error: "module required" });
-    const rawTitle = String(req.body.title ?? "").trim();
-
-    const transcript = messages.buildSummary(req.params.id);
-    if (!transcript) return res.status(400).json({ error: "no messages to synthesize" });
+  // Synthesizes a wiki entry from a session transcript via the LLM and writes it.
+  // Throws Error on any failure; the caller maps that to an SSE error event.
+  async function synthesizeWiki(
+    session: NonNullable<ReturnType<typeof sessions.get>>,
+    rawModule: string,
+    rawTitle: string
+  ): Promise<WikiEntry> {
+    const transcript = messages.buildSummary(session.id);
+    if (!transcript) throw new Error("no messages to synthesize");
 
     // Load bug comments from workspace
     let bugComments = "";
     try {
-      const { readFile } = await import("fs/promises");
-      const bugJson = JSON.parse(await readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
+      const bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
       bugComments = (bugJson.comments ?? [])
         .map((c: any) => `${c.author} [${c.created_at}]: ${c.body}`)
         .join("\n");
     } catch (err: any) {
-      log.debug("wiki:bug-comments-missing", { sessionId: req.params.id, error: err.message, stack: err.stack });
+      log.debug("wiki:bug-comments-missing", { sessionId: session.id, error: err.message, stack: err.stack });
     }
 
     let transcriptForLlm = transcript;
@@ -760,7 +863,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const baseUrl = llmCfg.provider === "openai"
       ? "https://api.openai.com/v1"
       : (llmCfg.baseUrl ?? "");
-    if (!baseUrl) return res.status(400).json({ error: "LLM baseUrl not configured" });
+    if (!baseUrl) throw new Error("LLM baseUrl not configured");
 
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (llmCfg.apiKey) headers["Authorization"] = `Bearer ${llmCfg.apiKey}`;
@@ -773,24 +876,23 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         body: JSON.stringify({
           model: llmCfg.model,
           stream: false,
-          temperature: 0.3,
           messages: [{ role: "user", content: await buildWikiSynthesisPrompt(transcriptForLlm, bugCommentsForLlm, session.bug_id, rawModule) }],
         }),
       });
     } catch (err: any) {
-      log.error("wiki:llm-unreachable", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
-      return res.status(502).json({ error: `LLM unreachable: ${err.message}` });
+      log.error("wiki:llm-unreachable", { sessionId: session.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
+      throw new Error(`LLM unreachable: ${err.message}`);
     }
 
     if (!llmRes.ok) {
       const txt = await llmRes.text().catch(() => "");
       log.error("wiki:llm-error", { status: llmRes.status, body: txt.slice(0, 200) });
-      return res.status(502).json({ error: `LLM returned ${llmRes.status}` });
+      throw new Error(`LLM returned ${llmRes.status}`);
     }
 
     const data = await llmRes.json() as any;
     const llmOutput: string = data.choices?.[0]?.message?.content ?? "";
-    if (!llmOutput.trim()) return res.status(502).json({ error: "LLM returned empty response" });
+    if (!llmOutput.trim()) throw new Error("LLM returned empty response");
 
     // Extract title from first H1 if user didn't supply one
     const titleFromLlm = llmOutput.match(/^#\s+(.+)/m)?.[1]?.trim() ?? `Bug ${session.bug_id}`;
@@ -803,14 +905,37 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     // Extract summary line (last line of LLM output)
     const oneLiner = llmOutput.match(/^summary:\s*(.+)/m)?.[1]?.trim() ?? title;
 
+    const entry = await createWikiEntry({ module: rawModule, title, bugId: session.bug_id, tags, body: llmOutput, oneLiner });
+    log.info("wiki:created", { path: entry.path, module: entry.moduleSlug, bugId: session.bug_id });
+    return entry;
+  }
+
+  // SSE: synthesize a wiki entry in the background. The frontend keeps this
+  // stream open in a global store so the banner survives modal close / nav.
+  app.get("/session/:id/wiki/synthesize", async (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "session not found" });
+
+    const rawModule = String(req.query.module ?? "").trim();
+    if (!rawModule) return res.status(400).json({ error: "module required" });
+    const rawTitle = String(req.query.title ?? "").trim();
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    send({ type: "status", content: "Synthesizing wiki entry…" });
     try {
-      const entry = await createWikiEntry({ module: rawModule, title, bugId: session.bug_id, tags, body: llmOutput, oneLiner });
-      log.info("wiki:created", { path: entry.path, module: entry.moduleSlug, bugId: session.bug_id });
-      res.json({ entry });
+      const entry = await synthesizeWiki(session, rawModule, rawTitle);
+      send({ type: "done", entry: { moduleSlug: entry.moduleSlug, filename: entry.filename, path: entry.path, title: entry.title } });
     } catch (err: any) {
-      log.error("wiki:write-error", { sessionId: req.params.id, error: err.message, stack: err instanceof Error ? err.stack : undefined });
-      res.status(500).json({ error: `Failed to write wiki entry: ${err.message}` });
+      log.error("wiki:synthesize-error", { sessionId: req.params.id, error: err.message });
+      send({ type: "error", content: err.message ?? "Wiki synthesis failed" });
     }
+    res.end();
   });
 
   app.get("/skills", async (_req, res) => {
@@ -857,6 +982,15 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!filename.endsWith(".md")) return res.status(400).json({ error: "filename must end in .md" });
     try {
       const content = await readWikiEntry(moduleSlug, filename);
+      // ?render=html → styled standalone page (used by the wiki banner's
+      // "View entry" link); otherwise raw markdown as JSON for the SPA.
+      if (req.query.render === "html") {
+        const titleMatch = content.match(/^#\s+(.+)/m);
+        const bodyHtml = DOMPurify.sanitize(await marked.parse(content));
+        return res
+          .type("html")
+          .send(renderReportPage(titleMatch?.[1]?.trim() ?? filename, bodyHtml));
+      }
       res.json({ entry: { moduleSlug, filename, content } });
     } catch (err: any) {
       if (err.code === "ENOENT") return res.status(404).json({ error: "entry not found" });

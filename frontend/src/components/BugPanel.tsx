@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Bug } from "../api/types";
 import { StatusBadge } from "./ui/StatusBadge";
 import { fmtDate } from "../utils/time";
@@ -25,6 +24,29 @@ function MetaGrid({ bug }: { bug: Bug }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function MetaLine({ bug }: { bug: Bug }) {
+  const items: Array<[string, string | undefined]> = [
+    ["Owner", bug.owner],
+    ["Module", bug.module],
+    ["State", bug.state],
+    ["Updated", bug.updated_at ? fmtDate(bug.updated_at) : undefined],
+  ];
+  const present = items.filter(([, v]) => v);
+  if (present.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+      {present.map(([label, value]) => (
+        <span key={label} className="text-xs text-gray-500 dark:text-slate-400">
+          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500">
+            {label}
+          </span>{" "}
+          <span className="text-gray-700 dark:text-slate-200">{value}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -73,15 +95,19 @@ export function BugPanel({
   bugId,
   explorerOpen,
   onToggleExplorer,
+  detailsOpen,
+  onToggleDetails,
   actions,
 }: {
   bug: Bug | null;
   bugId: string;
   explorerOpen: boolean;
   onToggleExplorer: () => void;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
   actions?: React.ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const expanded = detailsOpen;
   const title = bug?.title ?? bugId;
   const description = bug?.description?.trim();
   // The expansion has content whenever there's a description, meta, or comments.
@@ -103,12 +129,13 @@ export function BugPanel({
           <h1 className="font-semibold text-gray-900 dark:text-slate-100 mt-0.5 truncate">
             {title}
           </h1>
+          {bug && <MetaLine bug={bug} />}
         </div>
         <div className="shrink-0 flex items-center gap-2">
           {hasDetails && (
             <button
               type="button"
-              onClick={() => setExpanded((v) => !v)}
+              onClick={onToggleDetails}
               className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-1"
             >
               {expanded

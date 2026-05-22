@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { useUpload } from "../../state/upload";
+import { useTransferQueue } from "../../state/transferQueue";
 
 export function UploadPanel({
   sessionId,
@@ -21,9 +22,11 @@ export function UploadPanel({
 
   const busy =
     !!active && active.phase !== "done" && active.phase !== "error";
+  // Block new uploads while any transfer is running or queued — serial only.
+  const transferBusy = useTransferQueue((s) => s.running || s.queued > 0);
 
   const submit = async () => {
-    if (files.length === 0 || busy) return;
+    if (files.length === 0 || busy || transferBusy) return;
     setError(null);
     try {
       await start({
@@ -72,7 +75,7 @@ export function UploadPanel({
         size="sm"
         className="w-full"
         onClick={submit}
-        disabled={files.length === 0 || busy}
+        disabled={files.length === 0 || busy || transferBusy}
       >
         {busy ? "Uploading…" : `Upload ${files.length || ""} file${files.length === 1 ? "" : "s"}`}
       </Button>

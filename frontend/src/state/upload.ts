@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { useTransferQueue } from "./transferQueue";
+import { useDownload } from "./download";
 
 export interface UploadProgress {
   sessionId: string;
@@ -29,28 +31,30 @@ interface UploadState {
   clear: () => void;
 }
 
-export const useUpload = create<UploadState>((set, get) => ({
+export const useUpload = create<UploadState>((set) => ({
   active: null,
   clear: () => set({ active: null }),
   start: ({ sessionId, bugId, files, commentLabel, commentBody }) => {
-    if (get().active && get().active!.phase !== "done" && get().active!.phase !== "error") {
-      return Promise.reject(new Error("An upload is already in progress"));
-    }
     const list = Array.from(files);
     const fileName =
       list.length === 1 ? list[0].name : `${list.length} files`;
     const total = list.reduce((sum, f) => sum + f.size, 0);
 
-    set({
-      active: { sessionId, bugId, fileName, loaded: 0, total, phase: "uploading" },
-    });
+    // Serialized behind the shared transfer queue; `active` is set only once
+    // this upload actually starts, so a queued upload isn't shown as running.
+    return useTransferQueue.getState().enqueue(() => {
+      // Reuse the single status bar — drop any finished download banner.
+      useDownload.getState().clear();
+      set({
+        active: { sessionId, bugId, fileName, loaded: 0, total, phase: "uploading" },
+      });
 
-    const fd = new FormData();
-    for (const f of list) fd.append("files", f);
-    if (commentLabel) fd.append("commentLabel", commentLabel);
-    if (commentBody) fd.append("commentBody", commentBody);
+      const fd = new FormData();
+      for (const f of list) fd.append("files", f);
+      if (commentLabel) fd.append("commentLabel", commentLabel);
+      if (commentBody) fd.append("commentBody", commentBody);
 
-    return new Promise<UploadResult>((resolve, reject) => {
+      return new Promise<UploadResult>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/session/${sessionId}/upload`);
 
@@ -94,6 +98,7 @@ export const useUpload = create<UploadState>((set, get) => ({
       };
 
       xhr.send(fd);
+      });
     });
   },
 }));

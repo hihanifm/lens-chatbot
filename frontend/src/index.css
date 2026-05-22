@@ -2,15 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  font-size: 16px;
+/* Self-hosted hand-drawn font (Excalidraw-style). SIL OFL licensed.
+   Latin subset only — keeps the bundle small (~24 KB). */
+@font-face {
+  font-family: "Patrick Hand";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/PatrickHand-Regular.woff2") format("woff2");
 }
 
-@layer base {
-  body {
-    font-feature-settings: "cv02", "cv11";
-    -webkit-font-smoothing: antialiased;
-  }
+html {
+  font-size: 17px;
+}
+
+/* Chat window font — overridable per-browser via the Appearance setting.
+   The theme store sets --chat-font on <html>; this is the baked-in default. */
+:root {
+  --chat-font: "Patrick Hand", "Comic Sans MS", cursive;
+}
+
+#chat {
+  font-family: var(--chat-font);
 }
 
 /* Cross-browser line clamp used in cards/list items. */
@@ -20,3 +33,82 @@ html {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
+
+/* Rendered Markdown (agent reports, etc.) — PLM-style blue hierarchy.
+   Tailwind typography isn't installed so element styles live here. */
+.md-body {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  word-break: break-word;
+  color: #1f2937;
+}
+.dark .md-body { color: #e2e8f0; }
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+
+/* Heading hierarchy — dark navy → medium blue */
+.md-body h1 {
+  font-size: 1.35em; font-weight: 700; color: #0f2d5e;
+  border-bottom: 3px solid #1a4ea6; padding-bottom: 0.35em;
+  margin: 1.5em 0 0.7em;
+}
+.md-body h2 { font-size: 1.15em; font-weight: 700; color: #1a4ea6; margin: 1.6em 0 0.5em; }
+.md-body h3 { font-size: 1.02em; font-weight: 700; color: #1a5ea6; margin: 1.3em 0 0.4em; }
+.md-body h4 { font-size: 0.95em; font-weight: 600; color: #2563eb; margin: 1.1em 0 0.4em; }
+.dark .md-body h1 { color: #93c5fd; border-color: #3b82f6; }
+.dark .md-body h2 { color: #60a5fa; }
+.dark .md-body h3 { color: #7ab8fc; }
+.dark .md-body h4 { color: #93c5fd; }
+
+/* Bold labels (e.g. "Ticket ID:", "Priority:") inherit the navy */
+.md-body strong, .md-body b { color: #0f2d5e; font-weight: 700; }
+.dark .md-body strong, .dark .md-body b { color: #bfdbfe; }
+
+.md-body p, .md-body ul, .md-body ol, .md-body blockquote, .md-body pre, .md-body table {
+  margin: 0.6em 0;
+}
+.md-body ul, .md-body ol { padding-left: 1.6em; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body li { margin: 0.25em 0; }
+.md-body a { color: #1a4ea6; text-decoration: underline; }
+.dark .md-body a { color: #60a5fa; }
+
+/* Code — blue-tinted background */
+.md-body code {
+  background: #eef2f9;
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.dark .md-body code { background: #1e293b; }
+.md-body pre { background: #eef2f9; padding: 0.85rem; border-radius: 8px; overflow-x: auto; }
+.dark .md-body pre { background: #1e293b; }
+.md-body pre code { background: none; padding: 0; }
+
+/* Tables — blue header row, alternating body rows, bold first column */
+.md-body table { border-collapse: collapse; width: 100%; }
+.md-body thead tr { background: #e8eef9; }
+.md-body th {
+  padding: 0.4em 0.65em; text-align: left; font-weight: 600;
+  color: #0f2d5e; border: 1px solid #c5d3e8;
+}
+.md-body td { padding: 0.38em 0.65em; border: 1px solid #d1daea; }
+.md-body tbody tr:nth-child(even) { background: #f7f9fd; }
+.md-body td:first-child { font-weight: 600; color: #0f2d5e; }
+.dark .md-body thead tr { background: #1e3a5f; }
+.dark .md-body th { color: #bfdbfe; border-color: #2d4a70; }
+.dark .md-body td { border-color: #334155; }
+.dark .md-body tbody tr:nth-child(even) { background: #172033; }
+.dark .md-body td:first-child { color: #93c5fd; }
+
+.md-body blockquote {
+  border-left: 4px solid #1a4ea6;
+  padding-left: 0.9em;
+  color: #4b5e7a;
+  margin: 0.8em 0;
+}
+.dark .md-body blockquote { border-color: #3b82f6; color: #94a3b8; }
+.md-body hr { border: none; border-top: 1px solid #d1daea; margin: 1.2em 0; }
+.dark .md-body hr { border-color: #334155; }

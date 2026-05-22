@@ -26,6 +26,7 @@ make restart         # down + up without rebuild
 make logs            # tail dev container logs
 make prod-up         # build + start prod stack (port 38000)
 
+npm test                 # unit tests (node:test via tsx --test) — llmSanitize, workspaceExplorer, workspacePaths, agentReports, db.agentSettings
 npm run test:e2e         # Playwright e2e suite (spins up real Express + MockBugTracker + StubAgentRunner)
 npm run test:e2e:ui      # same, with Playwright UI
 npm run test:e2e:live    # live suite against real Ollama (see playwright.live.config.ts)

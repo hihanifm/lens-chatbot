@@ -7,8 +7,9 @@ import type {
 } from "../../api/types";
 import { cn } from "../../utils/cn";
 import { ZipNode } from "./ZipNode";
+import { useQueryClient } from "@tanstack/react-query";
 import { DownloadButton, DownloadAllButton } from "./DownloadButton";
-import { useDownloadAttachments, type DownloadItem } from "../../hooks/useDownloadAttachments";
+import { useDownload, type DownloadItem } from "../../state/download";
 
 interface TreeProps {
   tree: VirtualTree;
@@ -149,7 +150,9 @@ function AttachmentSection({
   selected: Set<string>;
   onToggle: ToggleFn;
 }) {
-  const { downloadMany, progress } = useDownloadAttachments(sessionId);
+  const qc = useQueryClient();
+  const start = useDownload((s) => s.start);
+  const busy = useDownload((s) => s.active?.phase === "downloading");
   const pending = pendingItems(nodes);
   return (
     <Section
@@ -158,9 +161,12 @@ function AttachmentSection({
       action={
         <DownloadAllButton
           pendingCount={pending.length}
-          busy={progress !== null}
-          progress={progress}
-          onClick={() => downloadMany(pending)}
+          busy={busy}
+          onClick={async () => {
+            await start({ sessionId, items: pending });
+            qc.invalidateQueries({ queryKey: ["workspace-files", sessionId] });
+            qc.invalidateQueries({ queryKey: ["session", sessionId] });
+          }}
         />
       }
     >

@@ -27,6 +27,16 @@ export default function Session() {
   const { presence, remote } = useListen(id, userId);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [wikiOpen, setWikiOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [bugDetailsOpen, setBugDetailsOpen] = useState(false);
+
+  // Focusing the chat input collapses every side surface; panels reopened
+  // afterwards stay open until the next time the input is focused.
+  const collapseAll = () => {
+    setSidebarOpen(false);
+    setBugDetailsOpen(false);
+    setDrawerOpen(false);
+  };
 
   useEffect(() => {
     if (id) addSeen(id);
@@ -36,14 +46,14 @@ export default function Session() {
     if (!data) return [];
     return data.messages.map((m) => {
       const parsed =
-        m.role === "user" ? parseSkillTag(m.content) : { skill: null, text: m.content };
+        m.role === "user" ? parseSkillTag(m.content) : { skills: [], text: m.content };
       return {
         key: String(m.id),
         role: m.role === "assistant" ? "assistant" : m.role === "user" ? "user" : "status",
         content: parsed.text,
         createdAt: m.created_at,
         userName: m.role === "user" && m.user_name !== "User" ? m.user_name : null,
-        skill: parsed.skill,
+        skills: parsed.skills,
       } satisfies ChatMessage;
     });
   }, [data]);
@@ -55,7 +65,10 @@ export default function Session() {
 
   return (
     <div className="flex-1 flex min-h-0">
-      <Sidebar />
+      <Sidebar
+        collapsed={!sidebarOpen}
+        onToggle={() => setSidebarOpen((v) => !v)}
+      />
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {isLoading && (
           <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500">
@@ -79,6 +92,8 @@ export default function Session() {
               bugId={data.session.bug_id}
               explorerOpen={drawerOpen}
               onToggleExplorer={() => setDrawerOpen((v) => !v)}
+              detailsOpen={bugDetailsOpen}
+              onToggleDetails={() => setBugDetailsOpen((v) => !v)}
               actions={
                 <>
                   {features?.lucky && (
@@ -99,11 +114,13 @@ export default function Session() {
               }
             />
             <PresenceBar users={presence} />
-            <Thread messages={messages} />
+            <Thread messages={messages} sessionId={id} />
             <Composer
               streaming={streaming}
-              onSend={(q, skill) => send(q, { skill })}
+              onSend={(q, skills) => send(q, { skills })}
               onAbort={abort}
+              onFocus={collapseAll}
+              selectedFiles={data.session.selected_files ?? []}
             />
           </>
         )}

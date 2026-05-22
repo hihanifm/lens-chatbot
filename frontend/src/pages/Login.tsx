@@ -80,7 +80,7 @@ export default function Login() {
             className="w-full"
             disabled={login.isPending || !name.trim() || !pin}
           >
-            {login.isPending ? "Signing in…" : "Enter LENS"}
+            {login.isPending ? "Signing in…" : "Enter War Room"}
           </Button>
         </form>
       </Card>
