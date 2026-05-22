@@ -20,7 +20,8 @@ function isWorkspacePath(p: string): boolean {
 export function extractWorkspacePaths(text: string): string[] {
   const seen = new Set<string>();
   const add = (p: string) => {
-    if (isWorkspacePath(p)) seen.add(p);
+    const clean = p.replace(/[.,;:!?]+$/, "");
+    if (isWorkspacePath(clean)) seen.add(clean);
   };
 
   for (const m of text.matchAll(BACKTICK_RE)) add(m[1]);
