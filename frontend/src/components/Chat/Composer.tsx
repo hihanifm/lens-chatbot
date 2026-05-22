@@ -12,9 +12,10 @@ interface ComposerProps {
   onFocus?: () => void;
   disabled?: boolean;
   selectedFiles?: string[];
+  onRemoveFile?: (path: string) => void;
 }
 
-export function Composer({ streaming, onSend, onAbort, onFocus, disabled, selectedFiles = [] }: ComposerProps) {
+export function Composer({ streaming, onSend, onAbort, onFocus, disabled, selectedFiles = [], onRemoveFile }: ComposerProps) {
   const [value, setValue] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SkillInfo[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -109,6 +110,16 @@ export function Composer({ streaming, onSend, onAbort, onFocus, disabled, select
                   bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
               >
                 <span aria-hidden>📎</span> {name}
+                {onRemoveFile && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveFile(path)}
+                    className="ml-0.5 opacity-60 hover:opacity-100 leading-none"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                )}
               </span>
             );
           })}

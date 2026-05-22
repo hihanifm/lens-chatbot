@@ -1,11 +1,8 @@
-import { useMemo, useState } from "react";
 import { cn } from "../../utils/cn";
 import { fmtTime } from "../../utils/time";
-import { extractWorkspacePaths } from "../../utils/extractWorkspacePaths";
 import { EngineeringLog } from "./EngineeringLog";
-import { ReportModal } from "./ReportModal";
 import { Markdown } from "../ui/Markdown";
-import type { ChatMessage, ReportRef } from "./types";
+import type { ChatMessage } from "./types";
 
 export type { ChatMessage } from "./types";
 
@@ -19,8 +16,7 @@ function SkillChip({ name }: { name: string }) {
   );
 }
 
-export function MessageBubble({ msg, sessionId }: { msg: ChatMessage; sessionId?: string }) {
-  const [openReport, setOpenReport] = useState<ReportRef | null>(null);
+export function MessageBubble({ msg }: { msg: ChatMessage; sessionId?: string }) {
 
   if (msg.role === "englog") {
     return <EngineeringLog lines={msg.logLines ?? []} streaming={msg.streaming} />;
@@ -49,17 +45,6 @@ export function MessageBubble({ msg, sessionId }: { msg: ChatMessage; sessionId?
   // streaming, partial Markdown (unclosed code fences/tables) looks broken,
   // so we keep plain pre-wrapped text until `done`.
   const renderMarkdown = !isUser && !msg.streaming && !!msg.content;
-
-  // Merge backend-detected reports with any workspace paths mentioned in reply text.
-  // Backend only tracks new .md files; this catches .txt and other formats too.
-  const allChips = useMemo<ReportRef[]>(() => {
-    if (msg.streaming || isUser) return msg.reports ?? [];
-    const existing = new Set((msg.reports ?? []).map((r) => r.relativePath));
-    const mentioned = extractWorkspacePaths(msg.content)
-      .filter((p) => !existing.has(p))
-      .map((p) => ({ relativePath: p, name: p.split("/").at(-1) ?? p, size: 0 }));
-    return [...(msg.reports ?? []), ...mentioned];
-  }, [msg.streaming, msg.reports, msg.content, isUser]);
 
   return (
     <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
@@ -92,33 +77,6 @@ export function MessageBubble({ msg, sessionId }: { msg: ChatMessage; sessionId?
           msg.content || (msg.streaming ? "…" : "")
         )}
       </div>
-      {allChips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-1">
-          {allChips.map((r) => (
-            <button
-              key={r.relativePath}
-              type="button"
-              onClick={() => sessionId && setOpenReport(r)}
-              disabled={!sessionId}
-              title={sessionId ? "View report" : undefined}
-              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
-                bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200
-                enabled:hover:bg-sky-200 dark:enabled:hover:bg-sky-900/70
-                enabled:cursor-pointer transition-colors"
-            >
-              <span aria-hidden>📄</span> {r.name}
-            </button>
-          ))}
-        </div>
-      )}
-      {sessionId && (
-        <ReportModal
-          open={openReport !== null}
-          onClose={() => setOpenReport(null)}
-          sessionId={sessionId}
-          report={openReport}
-        />
-      )}
       <span className="text-[11px] text-gray-400 dark:text-slate-600 px-1 mt-0.5">
         {msg.streaming ? "…" : fmtTime(msg.createdAt ?? Date.now())}
       </span>

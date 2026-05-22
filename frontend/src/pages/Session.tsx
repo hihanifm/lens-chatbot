@@ -10,7 +10,7 @@ import { WikiModal } from "../components/Wiki/Modal";
 import { PresenceBar } from "../components/Presence/Bar";
 import type { ChatMessage } from "../components/Chat/types";
 import { Spinner } from "../components/ui/Spinner";
-import { useSession, useFeatureFlags } from "../api/queries";
+import { useSession, useFeatureFlags, useToggleFile } from "../api/queries";
 import { useSeenSessions } from "../state/sessions";
 import { useAuth } from "../state/auth";
 import { useAnalyze } from "../hooks/useAnalyze";
@@ -25,6 +25,7 @@ export default function Session() {
   const userId = useAuth((s) => s.userId);
   const { live, streaming, send, lucky, abort } = useAnalyze(id, userId);
   const { presence, remote } = useListen(id, userId);
+  const toggleFile = useToggleFile(id);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [wikiOpen, setWikiOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -121,6 +122,7 @@ export default function Session() {
               onAbort={abort}
               onFocus={collapseAll}
               selectedFiles={data.session.selected_files ?? []}
+              onRemoveFile={(path) => toggleFile.mutate({ filePath: path, selected: false })}
             />
           </>
         )}
