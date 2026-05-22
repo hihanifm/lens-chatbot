@@ -4,6 +4,8 @@ dotenv({ path: existsSync(".env") ? ".env" : ".env.example" });
 import { createApp, hashPin } from "./app.js";
 import { MockBugTracker } from "./services/bugTracker.js";
 import { ClineCoreAgentRunner } from "./agent/clineCoreAgentRunner.js";
+import { CliAgentRunner } from "./agent/cliAgentRunner.js";
+import { DispatchingAgentRunner } from "./agent/dispatchingAgentRunner.js";
 import { installFetchInterceptor } from "./services/httpEgressLogger.js";
 import { settings } from "./db.js";
 import { log } from "./logger.js";
@@ -11,7 +13,11 @@ import { log } from "./logger.js";
 installFetchInterceptor();
 
 // Swap MockBugTracker → InternalBugTracker when API is ready
-const app = createApp(new MockBugTracker(), new ClineCoreAgentRunner());
+const runner = new DispatchingAgentRunner({
+  "cline-core": new ClineCoreAgentRunner(),
+  cli: new CliAgentRunner(),
+});
+const app = createApp(new MockBugTracker(), runner);
 
 if (process.env.ADMIN_PIN && !settings.getAdminPinHash()) {
   hashPin(process.env.ADMIN_PIN).then((hash) => settings.setAdminPinHash(hash));

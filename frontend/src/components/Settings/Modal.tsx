@@ -96,6 +96,9 @@ function LlmTab() {
   const [apiKey, setApiKey] = useState("");
   const [maxIterations, setMaxIterations] = useState("24");
   const [systemPromptSource, setSystemPromptSource] = useState<"lens" | "cline">("lens");
+  const [engine, setEngine] = useState<"cline-core" | "cli">("cline-core");
+  const [cliCommand, setCliCommand] = useState("cline");
+  const [cliInjectHistory, setCliInjectHistory] = useState(true);
   const [pin, setPin] = useState("");
 
   useEffect(() => {
@@ -105,6 +108,9 @@ function LlmTab() {
     setBaseUrl(data.baseUrl ?? "");
     setMaxIterations(String(data.maxIterations ?? 24));
     setSystemPromptSource(data.systemPromptSource ?? "lens");
+    setEngine(data.engine ?? "cline-core");
+    setCliCommand(data.cliCommand ?? "cline");
+    setCliInjectHistory(data.cliInjectHistory ?? true);
   }, [data]);
 
   const submit = () => {
@@ -117,6 +123,9 @@ function LlmTab() {
         apiKey: apiKey || undefined,
         maxIterations: Number(maxIterations),
         systemPromptSource,
+        engine,
+        cliCommand: cliCommand || undefined,
+        cliInjectHistory,
       },
       { onSuccess: () => { setApiKey(""); setPin(""); } }
     );
@@ -184,6 +193,47 @@ function LlmTab() {
           </select>
         </div>
       </div>
+      <div>
+        <label className={fieldLabel}>Agent engine</label>
+        <select
+          className={selectClass}
+          value={engine}
+          onChange={(e) => setEngine(e.target.value as "cline-core" | "cli")}
+        >
+          <option value="cline-core">cline-core (in-process SDK)</option>
+          <option value="cli">cli (cline CLI)</option>
+        </select>
+      </div>
+      {engine === "cli" && (
+        <div>
+          <label className={fieldLabel}>Cline CLI command</label>
+          <Input
+            value={cliCommand}
+            onChange={(e) => setCliCommand(e.target.value)}
+            placeholder="cline"
+          />
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
+            Path to (or name of) the <code>cline</code> binary. Provider/model
+            come from <code>cline auth</code>, not the fields above.
+          </p>
+          <label className="flex items-start gap-2 mt-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={cliInjectHistory}
+              onChange={(e) => setCliInjectHistory(e.target.checked)}
+            />
+            <span className="text-sm text-gray-600 dark:text-slate-300">
+              Inject conversation history
+              <span className="block text-xs text-gray-400 dark:text-slate-500">
+                The cline CLI is one-shot per turn. Prepend prior turns to the
+                prompt for multi-turn memory. Turn off if your provider already
+                stitches history server-side.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
       <div>
         <label className={fieldLabel}>Admin PIN</label>
         <Input

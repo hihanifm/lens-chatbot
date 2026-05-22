@@ -25,6 +25,9 @@ export interface AgentRunner {
     extras?: { count: number; attachmentsRoot: string };
     /** Lucky-only: skip reading agent_notes/ priors so the first run starts fresh. */
     skipPriorReports?: boolean;
+    /** Prior conversation turns (oldest first), excluding the current question.
+     *  Used by the CLI runner for transcript injection; cline-core ignores it. */
+    priorMessages?: { role: "user" | "assistant"; content: string }[];
   }): AsyncIterable<AgentEvent>;
   abort(clineSessionId: string): Promise<void>;
   stop(clineSessionId: string): Promise<void>;

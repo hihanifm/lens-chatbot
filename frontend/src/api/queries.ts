@@ -111,6 +111,9 @@ export interface LlmSettings {
   apiKey?: string;
   maxIterations?: number;
   systemPromptSource?: "lens" | "cline";
+  engine?: "cline-core" | "cli";
+  cliCommand?: string;
+  cliInjectHistory?: boolean;
 }
 
 export function useLlmSettings() {

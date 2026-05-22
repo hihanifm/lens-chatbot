@@ -225,20 +225,47 @@ export interface LlmConfig {
 
 export type SystemPromptSource = "lens" | "cline";
 
+export type AgentEngine = "cline-core" | "cli";
+
 export interface AgentSettings {
   maxIterations?: number;
   systemPromptSource?: SystemPromptSource;
+  /** Which agent runner handles analysis: in-process SDK ("cline-core") or the `cline` CLI ("cli"). */
+  engine?: AgentEngine;
+  /** Path to (or name of) the `cline` CLI binary; used when engine is "cli". */
+  cliCommand?: string;
+  /** When engine is "cli", prepend prior turns to the prompt (cline CLI is one-shot, no native resume). */
+  cliInjectHistory?: boolean;
 }
 
 export function resolveAgentSettings(stored: Partial<AgentSettings> | undefined): {
   maxIterations: number;
   systemPromptSource: SystemPromptSource;
+  engine: AgentEngine;
+  cliCommand: string;
+  cliInjectHistory: boolean;
 } {
   const defaultSource: SystemPromptSource = process.env.SYSTEM_PROMPT_SOURCE === "cline" ? "cline" : "lens";
+  const defaultEngine: AgentEngine = process.env.AGENT_ENGINE === "cli" ? "cli" : "cline-core";
   return {
     maxIterations: stored?.maxIterations ?? Number(process.env.AGENT_MAX_ITERATIONS ?? 24),
     systemPromptSource: stored?.systemPromptSource ?? defaultSource,
+    engine: stored?.engine ?? defaultEngine,
+    cliCommand: stored?.cliCommand ?? process.env.CLINE_CLI_COMMAND ?? "cline",
+    cliInjectHistory: stored?.cliInjectHistory ?? true,
   };
+}
+
+/** Pack the owning engine into the stored cline_session_id so follow-ups/abort route correctly. */
+export function packSessionId(engine: AgentEngine, id: string): string {
+  return `${engine}:${id}`;
+}
+
+/** Unpack a stored cline_session_id. Unprefixed legacy values are treated as cline-core. */
+export function unpackSessionId(stored: string): { engine: AgentEngine; id: string } {
+  if (stored.startsWith("cli:")) return { engine: "cli", id: stored.slice(4) };
+  if (stored.startsWith("cline-core:")) return { engine: "cline-core", id: stored.slice(11) };
+  return { engine: "cline-core", id: stored };
 }
 
 function readAgentSettingsRow(): Partial<AgentSettings> {
@@ -311,6 +338,10 @@ export const settings = {
 
   getAgentMaxIterations(): number {
     return settings.getAgentSettings().maxIterations;
+  },
+
+  getAgentEngine(): AgentEngine {
+    return settings.getAgentSettings().engine;
   },
 
   setAgentMaxIterations(n: number): void {

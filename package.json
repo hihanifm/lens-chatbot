@@ -9,7 +9,7 @@
     "ui:install": "npm --prefix frontend install",
     "ui:build": "npm --prefix frontend run build",
     "build": "tsc && npm run ui:build",
-    "test": "NODE_OPTIONS=--experimental-sqlite tsx --test src/services/llmSanitize.test.ts src/services/workspaceExplorer.test.ts src/services/workspacePaths.test.ts src/services/agentReports.test.ts src/db.agentSettings.test.ts",
+    "test": "NODE_OPTIONS=--experimental-sqlite tsx --test src/services/llmSanitize.test.ts src/services/workspaceExplorer.test.ts src/services/workspacePaths.test.ts src/services/agentReports.test.ts src/db.agentSettings.test.ts src/agent/cliOutputParser.test.ts src/agent/dispatchingAgentRunner.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:live": "playwright test -c playwright.live.config.ts",

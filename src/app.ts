@@ -10,7 +10,7 @@ import { synthesizeBugSummary } from "./services/bugSummarizer.js";
 import multer from "multer";
 import { buildVirtualTree } from "./services/workspaceExplorer.js";
 import type { AgentRunner } from "./agent/agentRunner.js";
-import { sessions, messages, users, settings } from "./db.js";
+import { sessions, messages, users, settings, unpackSessionId } from "./db.js";
 import type { LlmConfig } from "./db.js";
 import { addClient, removeClient, broadcast } from "./broadcast.js";
 import { createWikiEntry, listWikiEntries, readWikiEntry, buildWikiSynthesisPrompt } from "./services/wikiService.js";
@@ -567,6 +567,12 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
+    // Snapshot prior turns BEFORE storing the current question — used by the
+    // CLI runner for transcript injection (cline CLI has no native resume).
+    const priorMessages = messages
+      .list(req.params.id)
+      .map((m) => ({ role: m.role, content: m.content }));
+
     const storedQuestion = selectedSkillNames.length
       ? `[skill:${selectedSkillNames.join(",")}]\n${question}`
       : question;
@@ -577,8 +583,24 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
     let updatedSession = sessions.get(req.params.id)!;
 
+    // Engine-switch reset: a session owned by a different engine than the
+    // current global setting cannot be resumed — start fresh (lazy, per-session).
+    const currentEngine = settings.getAgentEngine();
+    if (updatedSession.cline_session_id) {
+      const sessionEngine = unpackSessionId(updatedSession.cline_session_id).engine;
+      if (sessionEngine !== currentEngine) {
+        log.info("analyze:engine-switch-resets-session", {
+          sessionId: req.params.id,
+          from: sessionEngine,
+          to: currentEngine,
+        });
+        sessions.clearClineSessionId(req.params.id);
+        updatedSession = sessions.get(req.params.id)!;
+      }
+    }
+
     const effectiveModel = users.getPreferredModel(user.id) ?? settings.getLlmConfig().model;
-    if (updatedSession.last_model && updatedSession.last_model !== effectiveModel && updatedSession.cline_session_id) {
+    if (currentEngine === "cline-core" && updatedSession.last_model && updatedSession.last_model !== effectiveModel && updatedSession.cline_session_id) {
       log.info("analyze:model-switch-resets-session", {
         sessionId: req.params.id,
         from: updatedSession.last_model,
@@ -603,6 +625,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         mode: agentMode,
         modelOverride: effectiveModel,
         selectedSkillNames,
+        priorMessages,
       })) {
         if (event.type === "session_id") {
           sessions.setClineSessionId(req.params.id, event.content);
@@ -1086,13 +1109,20 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.get("/settings/llm", (_req, res) => {
     const cfg = settings.getLlmConfig();
     const agent = settings.getAgentSettings();
-    const out = { ...cfg, maxIterations: agent.maxIterations, systemPromptSource: agent.systemPromptSource } as any;
+    const out = {
+      ...cfg,
+      maxIterations: agent.maxIterations,
+      systemPromptSource: agent.systemPromptSource,
+      engine: agent.engine,
+      cliCommand: agent.cliCommand,
+      cliInjectHistory: agent.cliInjectHistory,
+    } as any;
     if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
     res.json(out);
   });
 
   app.put("/settings/llm", async (req, res) => {
-    const { pin, provider, model, baseUrl, apiKey, maxIterations, systemPromptSource } = req.body;
+    const { pin, provider, model, baseUrl, apiKey, maxIterations, systemPromptSource, engine, cliCommand, cliInjectHistory } = req.body;
     if (!pin) return res.status(400).json({ error: "pin required" });
     if (!provider || !model) return res.status(400).json({ error: "provider and model required" });
 
@@ -1109,7 +1139,13 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if ((provider === "openai-compatible" || provider === "ollama") && !baseUrl)
       return res.status(400).json({ error: "baseUrl required" });
 
-    const agentPartial: { maxIterations?: number; systemPromptSource?: "lens" | "cline" } = {};
+    const agentPartial: {
+      maxIterations?: number;
+      systemPromptSource?: "lens" | "cline";
+      engine?: "cline-core" | "cli";
+      cliCommand?: string;
+      cliInjectHistory?: boolean;
+    } = {};
     if (maxIterations !== undefined) {
       const n = Number(maxIterations);
       if (!Number.isInteger(n) || n < 1 || n > 100)
@@ -1121,6 +1157,26 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
         return res.status(400).json({ error: "systemPromptSource must be lens or cline" });
       agentPartial.systemPromptSource = systemPromptSource;
     }
+    if (engine !== undefined) {
+      if (engine !== "cline-core" && engine !== "cli")
+        return res.status(400).json({ error: "engine must be cline-core or cli" });
+      agentPartial.engine = engine;
+    }
+    if (cliCommand !== undefined) {
+      if (typeof cliCommand !== "string" || !cliCommand.trim())
+        return res.status(400).json({ error: "cliCommand must be a non-empty string" });
+      agentPartial.cliCommand = cliCommand.trim();
+    }
+    if (cliInjectHistory !== undefined) {
+      if (typeof cliInjectHistory !== "boolean")
+        return res.status(400).json({ error: "cliInjectHistory must be a boolean" });
+      agentPartial.cliInjectHistory = cliInjectHistory;
+    }
+    if (engine === "cli") {
+      const effectiveCliCommand = agentPartial.cliCommand ?? settings.getAgentSettings().cliCommand;
+      if (!effectiveCliCommand)
+        return res.status(400).json({ error: "cliCommand required when engine is cli" });
+    }
     if (Object.keys(agentPartial).length > 0) settings.setAgentSettings(agentPartial);
 
     const cfg: LlmConfig = { provider, model, baseUrl, apiKey: resolvedApiKey };
@@ -1128,7 +1184,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     log.info("settings:llm-updated", { provider, model });
 
     const agent = settings.getAgentSettings();
-    const out = { ...cfg, maxIterations: agent.maxIterations, systemPromptSource: agent.systemPromptSource } as any;
+    const out = {
+      ...cfg,
+      maxIterations: agent.maxIterations,
+      systemPromptSource: agent.systemPromptSource,
+      engine: agent.engine,
+      cliCommand: agent.cliCommand,
+      cliInjectHistory: agent.cliInjectHistory,
+    } as any;
     if (out.apiKey) out.apiKey = "••••" + out.apiKey.slice(-4);
     res.json(out);
   });
