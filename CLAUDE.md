@@ -10,6 +10,15 @@ Invoke `/caveman lite` at the start of every session.
 
 A web chatbot for engineers to debug bugs. User enters a bug ID → backend fetches details from an internal tracker → user downloads a log attachment → Cline SDK agent analyzes it and streams the result back. Multi-turn follow-up chat is supported. Sessions persist in SQLite.
 
+## Audience & threat model
+
+**Internal use only — trusted users, trusted network.** Not exposed to the public internet, no anonymous traffic. The security posture is calibrated for this:
+
+- **Admin mutations are PIN-gated** (`PUT /settings/llm`, `PUT /settings/skills`, `PUT /settings/features`, `POST /settings/llm/models`, `PUT /settings/admin/pin`) — scrypt + salt + `timingSafeEqual`. Default PIN is `"admin"` (logged as a warning); set `ADMIN_PIN` in `.env`.
+- **User PINs** hash with scrypt; legacy unsalted SHA-256 hashes are transparently re-hashed on next login.
+- **Sessions are intentionally open across logged-in users.** Any authenticated user can drive, read, or abort any session by ID. This is a *deliberate design choice* that backs the `/listen` mirror, the presence room, and the transparency principle. Do not "fix" this by adding owner-only checks unless explicitly asked — it would break collaboration.
+- **No rate limiting, no CSRF tokens, no per-route ACLs beyond the PIN gate above.** Acceptable for an internal tool; do not propose external-grade hardening unprompted.
+
 ## Dev commands
 
 ```bash
@@ -54,6 +63,7 @@ Key env vars:
 | `MAX_LUCKY_ATTACHMENTS` | `20` | Lucky route: max top-level bug attachments to auto-download |
 | `PRIOR_REPORTS_LIMIT` | `3` | Cap on prior `agent_notes/*.md` reports loaded into each chat-path analyze turn (newest first). Set `0` to disable. Lucky's first turn always skips priors; follow-ups go through `/analyze` and load priors normally. |
 | `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
+| `SESSION_RETENTION_DAYS` | `0` (disabled) | When > 0, the retention sweeper (`src/services/retention.ts`) deletes sessions older than this many days, plus their messages and workspace dirs. Opt-in only — the sweep is destructive. Runs on startup and every 24h. |
 
 Additional make targets:
 
@@ -171,6 +181,8 @@ DATA_DIR/workspaces/BUG-ID/
 `DATA_DIR` defaults to `/app/data` in Docker, CWD locally.
 
 **SSE streaming**: `/session/:id/analyze?question=...` is a GET that streams `text/event-stream`. Each event is `data: {type, content}\n\n`. Types: `status`, `text`, `done`, `error`. **`/session/:id/listen`** (GET, SSE) is a passive observer stream — same analysis events broadcast via `broadcast.ts`, plus presence events: `presence:snapshot`, `presence:join`, `presence:leave`.
+
+**Concurrency guard**: an in-memory `activeAnalyses: Set<sessionId>` in `app.ts` rejects a second concurrent `/analyze` or `/lucky` on the same session with HTTP 409 (`an analysis is already in progress for this session`). The slot is released in `finally`, so crashes don't strand the session. This prevents two parallel runs from racing on `cline_session_id`.
 
 ## File explorer
 
