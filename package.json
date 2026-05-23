@@ -9,13 +9,14 @@
     "ui:install": "npm --prefix frontend install",
     "ui:build": "npm --prefix frontend run build",
     "build": "tsc && npm run ui:build",
-    "test": "NODE_OPTIONS=--experimental-sqlite tsx --test src/services/llmSanitize.test.ts src/services/workspaceExplorer.test.ts src/services/workspacePaths.test.ts src/services/agentReports.test.ts src/db.agentSettings.test.ts src/agent/cliOutputParser.test.ts src/agent/dispatchingAgentRunner.test.ts",
+    "test": "NODE_OPTIONS=--experimental-sqlite tsx --test src/services/llmSanitize.test.ts src/services/workspaceExplorer.test.ts src/services/workspacePaths.test.ts src/services/agentReports.test.ts src/db.agentSettings.test.ts src/agent/cliOutputParser.test.ts src/agent/dispatchingAgentRunner.test.ts src/app.bugId.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:live": "playwright test -c playwright.live.config.ts",
     "prompts:check": "node scripts/check-prompts.mjs",
     "prompts:sync-cline-system": "node scripts/sync-cline-system-prompts.mjs",
-    "prompts:check-cline-system": "node scripts/sync-cline-system-prompts.mjs --check"
+    "prompts:check-cline-system": "node scripts/sync-cline-system-prompts.mjs --check",
+    "openapi:check": "node scripts/check-openapi.mjs"
   },
   "dependencies": {
     "@cline/sdk": "latest",
@@ -33,6 +34,7 @@
     "@types/express": "^4",
     "@types/node": "^22",
     "@types/unzipper": "^0.10.11",
+    "js-yaml": "^4.1.1",
     "tsx": "^4",
     "typescript": "^5"
   }

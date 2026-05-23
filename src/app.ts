@@ -24,6 +24,31 @@ import { snapshotAgentReportPaths, listNewAgentReports } from "./services/agentR
 import { resolveWorkspaceFilePath } from "./services/workspacePaths.js";
 import { marked } from "marked";
 import DOMPurify from "isomorphic-dompurify";
+import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+
+const OPENAPI_SPEC_PATH = path.resolve(fileURLToPath(import.meta.url), "../../docs/openapi.yaml");
+
+/** Read `info.version` from the OpenAPI spec without pulling in a YAML parser dep. */
+function readOpenApiVersion(): string {
+  try {
+    const head = readFileSync(OPENAPI_SPEC_PATH, "utf8").slice(0, 2048);
+    const m = head.match(/^\s*version:\s*([^\s#]+)/m);
+    return m?.[1] ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function readGitSha(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "dev";
+  } catch {
+    return "dev";
+  }
+}
+
+const SERVER_BUILD_INFO = { api: readOpenApiVersion(), build: readGitSha() };
 
 /** Wrap sanitized report HTML in a minimal styled standalone document. */
 function renderReportPage(title: string, bodyHtml: string): string {
@@ -98,6 +123,16 @@ function renderReportPage(title: string, bodyHtml: string): string {
 }
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/**
+ * Restrict bugId to characters safe to use as a single workspace directory name.
+ * Internal users only — this is fat-finger / paste-mistake protection, not a hard
+ * security boundary. Rejects path-traversal payloads (`..`, `/`, `\`) and limits length.
+ */
+const BUG_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+export function isValidBugId(s: unknown): s is string {
+  return typeof s === "string" && BUG_ID_RE.test(s);
+}
 
 async function listDownloadedAttachmentPaths(workspacePath: string): Promise<string[]> {
   try {
@@ -187,6 +222,26 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   log.info("web:static-root", { root: webRoot, react: hasReactBuild });
   app.use(express.static(webRoot));
 
+  // ── External integration: spec, docs, version ────────────────────────────────
+  // Registered before /auth so they take precedence over the SPA fallback.
+
+  app.get("/version", (_req, res) => res.json(SERVER_BUILD_INFO));
+
+  app.get("/openapi.yaml", (_req, res) => {
+    res.setHeader("Content-Type", "application/yaml; charset=utf-8");
+    res.sendFile(OPENAPI_SPEC_PATH, (err) => {
+      if (err) {
+        log.error("openapi:serve-error", { error: err.message });
+        if (!res.headersSent) res.status(404).json({ error: "openapi.yaml not found" });
+      }
+    });
+  });
+
+  app.get("/docs", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Lens Chatbot API — ${SERVER_BUILD_INFO.api}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}</style></head><body><redoc spec-url="/openapi.yaml"></redoc><script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script></body></html>`);
+  });
+
   app.post("/auth", async (req, res) => {
     const { name, pin } = req.body;
     if (!name || !pin) return res.status(400).json({ error: "name and pin required" });
@@ -227,6 +282,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!title) return res.status(400).json({ error: "title required" });
 
     const bugId = (rawId?.trim()) || `ADHOC-${Date.now()}`;
+    if (!isValidBugId(bugId))
+      return res.status(400).json({ error: "bugId must be alphanumeric + ._- (max 64 chars)" });
     const now = new Date().toISOString();
 
     const bug = {
@@ -291,6 +348,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.post("/session", async (req, res) => {
     const { bugId } = req.body;
     if (!bugId) return res.status(400).json({ error: "bugId required" });
+    if (!isValidBugId(bugId))
+      return res.status(400).json({ error: "bugId must be alphanumeric + ._- (max 64 chars)" });
 
     log.info("session:create", { bugId });
     const bug = await tracker.getBug(bugId);
@@ -664,6 +723,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
           broadcast(req.params.id, payload, clientId);
           res.end();
+          break;
         } else if (event.type === "error") {
           log.error("analyze:agent-error", { sessionId: req.params.id, error: event.content });
           messages.add(req.params.id, "assistant", `[Analysis error: ${event.content}]`, "Assistant");
@@ -671,6 +731,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
           broadcast(req.params.id, payload, clientId);
           res.end();
+          break;
         } else if (event.type === "status") {
           const payload = { type: "status", content: event.content, user: user.name, clientId };
           res.write(`data: ${JSON.stringify(payload)}\n\n`);

@@ -19,6 +19,22 @@ A web chatbot for engineers to debug bugs. User enters a bug ID → backend fetc
 - **Sessions are intentionally open across logged-in users.** Any authenticated user can drive, read, or abort any session by ID. This is a *deliberate design choice* that backs the `/listen` mirror, the presence room, and the transparency principle. Do not "fix" this by adding owner-only checks unless explicitly asked — it would break collaboration.
 - **No rate limiting, no CSRF tokens, no per-route ACLs beyond the PIN gate above.** Acceptable for an internal tool; do not propose external-grade hardening unprompted.
 
+## External integration
+
+The public HTTP surface is documented in [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3.1). Routes served at runtime:
+
+- `GET /openapi.yaml` — the spec.
+- `GET /docs` — Redoc renders the spec in a browser tab.
+- `GET /version` — `{ api: <spec version>, build: <git sha> }`. Clients can call this on startup and compare against their pinned major.
+
+**Versioning.** `info.version` in `docs/openapi.yaml` is the canonical contract version. Patch = doc-only, minor = additive, major = breaking. `npm run openapi:check` (script `scripts/check-openapi.mjs`) lints structure and diffs against the committed `docs/openapi.previous.yaml` snapshot — breaking change without a major bump fails. When bumping, update both `docs/openapi.previous.yaml` and `docs/openapi-CHANGELOG.md`.
+
+**Scope.** Spec covers read + run analysis + wiki write. Admin/PIN-gated settings routes are intentionally `x-internal` and excluded — they are UI-only and not part of the public contract.
+
+**Auth posture caveat.** The spec assumes the same trusted-network posture as the rest of the app: no tokens, no rate limiting. Do not expose `/openapi.yaml`, `/docs`, or any API route past the org perimeter.
+
+Future phases (TS SDK, MCP server, release automation) live in [`docs/integration-plan.md`](docs/integration-plan.md).
+
 ## Dev commands
 
 ```bash

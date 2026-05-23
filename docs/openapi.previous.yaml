@@ -1,0 +1,1095 @@
+openapi: 3.1.0
+info:
+  title: Lens Chatbot API
+  version: 0.1.0
+  summary: HTTP contract for the lens-chatbot bug-troubleshooting service.
+  description: |
+    Public HTTP surface of the lens-chatbot server (`src/app.ts`).
+
+    Intended for **internal trusted networks only**: there is no token auth,
+    no rate limiting, and no per-route ACLs beyond the admin PIN on a small
+    set of UI-only settings routes (not documented here).
+
+    Any authenticated user can drive, read, or abort any session by ID. This
+    is a deliberate design choice that backs the `/listen` mirror and the
+    presence room.
+
+    Analysis and streaming routes use Server-Sent Events. See
+    `components/schemas/AgentEvent` for the union of `data:` payloads.
+
+servers:
+  - url: http://localhost:38001
+    description: Local dev server (`npm run dev`)
+  - url: http://localhost:38000
+    description: Local prod stack (`make prod-up`)
+
+tags:
+  - name: auth
+  - name: session
+  - name: workspace
+  - name: analysis
+  - name: wiki
+  - name: skills
+  - name: meta
+
+paths:
+  /version:
+    get:
+      tags: [meta]
+      summary: API version + build sha
+      operationId: getVersion
+      responses:
+        "200":
+          description: Server build info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+
+  /openapi.yaml:
+    get:
+      tags: [meta]
+      summary: This OpenAPI document
+      operationId: getOpenApiSpec
+      responses:
+        "200":
+          description: Raw OpenAPI 3.1 YAML
+          content:
+            application/yaml: { schema: { type: string } }
+
+  /auth:
+    post:
+      tags: [auth]
+      summary: Log in or create a user by name + PIN
+      description: |
+        First login with a new name creates the user. Subsequent logins
+        verify the PIN. Legacy unsalted SHA-256 hashes are transparently
+        re-hashed to scrypt on a successful login.
+      operationId: auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, pin]
+              properties:
+                name: { type: string, maxLength: 50 }
+                pin:  { type: string }
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/{id}:
+    get:
+      tags: [auth]
+      summary: Look up a user by id
+      operationId: getUser
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session:
+    post:
+      tags: [session]
+      summary: Create (or reuse) a session for a tracker bug id
+      description: |
+        Fetches the bug from the tracker, creates or reuses an active workspace,
+        and writes `bug.json` + `bug_summary.md`. If an active session already
+        exists for this `bugId` it is reused rather than duplicated.
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bugId]
+              properties:
+                bugId: { $ref: "#/components/schemas/BugId" }
+      responses:
+        "200":
+          description: Session, bug, downloaded files
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /session/adhoc:
+    post:
+      tags: [session]
+      summary: Create an ad-hoc session without a tracker entry
+      description: |
+        Each call creates a fresh session (no dedup). If `bugId` is omitted,
+        a synthetic `ADHOC-<epoch>` id is generated.
+      operationId: createAdhocSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:       { type: string }
+                description: { type: string }
+                bugId:       { $ref: "#/components/schemas/BugId" }
+      responses:
+        "200":
+          description: Session + synthetic bug
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, bug]
+                properties:
+                  session: { $ref: "#/components/schemas/Session" }
+                  bug:     { $ref: "#/components/schemas/Bug" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /session/{id}:
+    get:
+      tags: [session]
+      summary: Get a session with messages, bug, and downloaded files
+      description: |
+        Responds with the SPA app shell when `Accept: text/html`. Send
+        `Accept: application/json` to get the documented payload.
+      operationId: getSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, messages, downloaded_files]
+                properties:
+                  session:           { $ref: "#/components/schemas/Session" }
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+                  bug:
+                    oneOf:
+                      - { $ref: "#/components/schemas/Bug" }
+                      - { type: "null" }
+                  downloaded_files:
+                    type: array
+                    items: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sessions:
+    get:
+      tags: [session]
+      summary: List sessions by id
+      operationId: listSessions
+      parameters:
+        - in: query
+          name: ids
+          required: false
+          description: Comma-separated session ids. Omit or pass empty to receive `[]`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Session" }
+
+  /session/{id}/refresh-bug:
+    post:
+      tags: [session]
+      summary: Re-fetch the bug from the tracker
+      operationId: refreshBug
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Updated bug
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { bug: { $ref: "#/components/schemas/Bug" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: Upstream tracker failure
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /session/{id}/upload:
+    post:
+      tags: [session, workspace]
+      summary: Upload up to 20 files to a session workspace
+      operationId: uploadFiles
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, format: binary }
+                commentLabel:
+                  type: string
+                  description: Optional grouping label for the file explorer.
+                commentBody:
+                  type: string
+      responses:
+        "200":
+          description: Uploaded file paths
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [filePaths, autoSelected]
+                properties:
+                  filePaths:
+                    type: array
+                    items: { type: string }
+                  autoSelected:
+                    type: array
+                    description: Files auto-added to agent context by the attachment-filter skill.
+                    items: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: File too large (exceeds `UPLOAD_SIZE_LIMIT_MB`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /session/{id}/files:
+    patch:
+      tags: [session, workspace]
+      summary: Add or remove a file from the session's agent-context selection
+      operationId: setFileSelected
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filePath, selected]
+              properties:
+                filePath: { type: string, description: Absolute path inside the session workspace. }
+                selected: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/workspace/files:
+    get:
+      tags: [workspace]
+      summary: Virtual file tree for the explorer
+      operationId: getWorkspaceTree
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Tree
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VirtualTree" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/workspace/file:
+    get:
+      tags: [workspace]
+      summary: Read a file from the session workspace (text/markdown)
+      operationId: readWorkspaceFile
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: filePath
+          required: true
+          schema: { type: string }
+        - in: query
+          name: disposition
+          required: false
+          schema: { type: string, enum: [inline, attachment], default: inline }
+      responses:
+        "200":
+          description: File contents
+          content:
+            text/plain:    { schema: { type: string } }
+            text/markdown: { schema: { type: string } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/workspace/download:
+    get:
+      tags: [workspace]
+      summary: Download a workspace file as an attachment
+      operationId: downloadWorkspaceFile
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: filePath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: File bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/attachment/download:
+    get:
+      tags: [workspace]
+      summary: Download a previously fetched bug attachment by basename
+      operationId: downloadAttachment
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Attachment bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/attachment/{attId}/stream:
+    get:
+      tags: [workspace]
+      summary: SSE — download a bug attachment with progress events
+      operationId: streamAttachment
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: path
+          name: attId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: attName
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/AttachmentStreamEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/zip-contents:
+    get:
+      tags: [workspace]
+      summary: List entries inside a downloaded zip without extracting
+      operationId: listZipContents
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: zipPath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/ZipEntry" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/extract-file:
+    post:
+      tags: [workspace]
+      summary: Extract a single entry from a zip to disk
+      description: Extraction only; does **not** add the file to agent context. Use `PATCH /session/{id}/files` to select it.
+      operationId: extractZipEntry
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [zipPath, innerPath]
+              properties:
+                zipPath:   { type: string }
+                innerPath: { type: string }
+      responses:
+        "200":
+          description: Extracted file path
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { filePath: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/report:
+    get:
+      tags: [workspace]
+      summary: Render a Markdown report as a standalone HTML page
+      operationId: renderReport
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: filePath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Sanitized HTML page
+          content:
+            text/html: { schema: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/analyze:
+    get:
+      tags: [analysis]
+      summary: SSE — run an agent turn against the session's selected files
+      description: |
+        Rejects with 409 if another analysis (`/analyze` or `/lucky`) is in
+        flight for the same session id.
+
+        The stream emits one or more `data:` events. Each event is JSON
+        matching `components/schemas/AgentEvent`.
+      operationId: analyze
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: question
+          required: true
+          schema: { type: string }
+        - in: query
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: mode
+          required: false
+          schema: { type: string, enum: [plan, act], default: act }
+        - in: query
+          name: skill
+          required: false
+          description: Skill name to select. Repeat the param for multiple skills.
+          schema:
+            oneOf:
+              - { type: string }
+              - { type: array, items: { type: string } }
+        - in: query
+          name: clientId
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE stream of `AgentEvent`s
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/AgentEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /session/{id}/lucky:
+    get:
+      tags: [analysis]
+      summary: SSE — “I'm Feeling Lucky” one-shot RCA
+      description: |
+        Auto-downloads top-level bug attachments (capped by `MAX_LUCKY_ATTACHMENTS`),
+        fully extracts zips, then seeds a fresh agent session with the
+        `lucky.md` prompt. Gated by the `lucky` feature flag.
+
+        Follow-up turns flow through `/analyze` against the same session.
+      operationId: lucky
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: clientId
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE stream of `AgentEvent`s
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/AgentEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403":
+          description: Lucky feature flag disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /session/{id}/listen:
+    get:
+      tags: [analysis]
+      summary: SSE — passive observer stream for a session
+      description: |
+        Mirrors the analysis events broadcast for the session plus presence
+        events (`presence:snapshot`, `presence:join`, `presence:leave`).
+      operationId: listen
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: clientId
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/AgentEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/abort:
+    post:
+      tags: [analysis]
+      summary: Abort the in-flight agent run, keep session for resume
+      operationId: abortSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/stop:
+    post:
+      tags: [analysis]
+      summary: Stop the agent and clear the underlying engine session
+      description: Next `/analyze` call starts a fresh agent session (no resume).
+      operationId: stopSession
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /skills:
+    get:
+      tags: [skills]
+      summary: List loaded agent skills (frontmatter only)
+      description: Cached for 30s; reflects edits to mounted `SKILLS_DIR`.
+      operationId: listSkills
+      responses:
+        "200":
+          description: Skills
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SkillInfo" }
+
+  /wiki:
+    get:
+      tags: [wiki]
+      summary: List all wiki entries across modules
+      operationId: listWiki
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/WikiEntry" }
+        "403":
+          description: Wiki feature flag disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /wiki/{module}:
+    get:
+      tags: [wiki]
+      summary: List entries for one module
+      operationId: listWikiByModule
+      parameters:
+        - in: path
+          name: module
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/WikiEntry" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /wiki/{module}/{filename}:
+    get:
+      tags: [wiki]
+      summary: Read one wiki entry (raw markdown or rendered HTML)
+      operationId: readWikiEntry
+      parameters:
+        - in: path
+          name: module
+          required: true
+          schema: { type: string }
+        - in: path
+          name: filename
+          required: true
+          schema: { type: string }
+        - in: query
+          name: render
+          required: false
+          schema: { type: string, enum: [html] }
+      responses:
+        "200":
+          description: Entry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entry:
+                    type: object
+                    properties:
+                      moduleSlug: { type: string }
+                      filename:   { type: string }
+                      content:    { type: string }
+            text/html:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /session/{id}/wiki/synthesize:
+    get:
+      tags: [wiki]
+      summary: SSE — synthesize a wiki entry from the session transcript
+      operationId: synthesizeWikiEntry
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: module
+          required: true
+          schema: { type: string }
+        - in: query
+          name: title
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE stream — `status`, then either `done` (with `entry`) or `error`
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/AgentEvent" }
+                  - { $ref: "#/components/schemas/WikiSynthesizeDone" }
+
+components:
+  parameters:
+    SessionId:
+      in: path
+      name: id
+      required: true
+      description: Lens session id (UUID).
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: PIN or credential rejected
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Path traversal or disabled feature
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: An analysis is already in progress for this session
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    BugId:
+      type: string
+      pattern: "^[A-Za-z0-9._-]{1,64}$"
+      description: Alphanumeric + `._-`, max 64 chars. Doubles as a workspace directory name.
+    VersionInfo:
+      type: object
+      required: [api]
+      properties:
+        api:   { type: string, description: "Mirrors `info.version` of this spec." }
+        build: { type: string, description: "Git sha of the running server, or 'dev' when unknown." }
+
+    User:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:         { type: string, format: uuid }
+        name:       { type: string }
+        created_at: { type: string, format: date-time }
+
+    Session:
+      type: object
+      required: [id, bug_id, workspace_path, selected_files, status, created_at]
+      properties:
+        id:               { type: string, format: uuid }
+        bug_id:           { $ref: "#/components/schemas/BugId" }
+        workspace_path:   { type: string }
+        selected_files:
+          type: array
+          items: { type: string }
+        cline_session_id: { type: string, description: "Engine-prefixed agent session id (`cline-core:…` / `cli:…`)." }
+        last_model:       { type: string }
+        last_activity_at: { type: string, format: date-time }
+        status:           { type: string, enum: [active] }
+        created_at:       { type: string, format: date-time }
+
+    Message:
+      type: object
+      required: [id, session_id, role, content, user_name, created_at]
+      properties:
+        id:         { type: integer }
+        session_id: { type: string, format: uuid }
+        role:       { type: string, enum: [user, assistant] }
+        content:    { type: string }
+        user_name:  { type: string }
+        created_at: { type: string, format: date-time }
+
+    SessionEnvelope:
+      type: object
+      required: [session, bug, downloaded_files]
+      properties:
+        session:          { $ref: "#/components/schemas/Session" }
+        bug:              { $ref: "#/components/schemas/Bug" }
+        downloaded_files:
+          type: array
+          items: { type: string }
+
+    BugAttachment:
+      type: object
+      required: [id, name, size]
+      properties:
+        id:   { type: string }
+        name: { type: string }
+        size: { type: integer }
+
+    BugComment:
+      type: object
+      required: [id, author, body, created_at, attachments]
+      properties:
+        id:         { type: string }
+        author:     { type: string }
+        body:       { type: string }
+        created_at: { type: string, format: date-time }
+        attachments:
+          type: array
+          items: { $ref: "#/components/schemas/BugAttachment" }
+
+    Bug:
+      type: object
+      required: [id, title, description, author, owner, state, module, created_at, updated_at, attachments, comments]
+      properties:
+        id:          { type: string }
+        title:       { type: string }
+        description: { type: string }
+        author:      { type: string }
+        owner:       { type: string }
+        state:       { type: string }
+        module:      { type: string }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+        attachments:
+          type: array
+          items: { $ref: "#/components/schemas/BugAttachment" }
+        comments:
+          type: array
+          items: { $ref: "#/components/schemas/BugComment" }
+
+    SkillInfo:
+      type: object
+      required: [name, description, triggers]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        triggers:
+          type: array
+          items: { type: string }
+
+    WikiEntry:
+      type: object
+      required: [path, module, moduleSlug, filename, title, bugId, date, tags]
+      properties:
+        path:       { type: string }
+        module:     { type: string }
+        moduleSlug: { type: string }
+        filename:   { type: string }
+        title:      { type: string }
+        bugId:      { type: string }
+        date:       { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        content:    { type: string }
+
+    FileNode:
+      type: object
+      required: [name, filePath]
+      properties:
+        name:     { type: string }
+        filePath: { type: string }
+
+    AttachmentNode:
+      type: object
+      required: [attId, name, isZip, downloaded]
+      properties:
+        attId:      { type: string }
+        name:       { type: string }
+        isZip:      { type: boolean }
+        downloaded: { type: boolean }
+        filePath:   { type: string }
+        children:
+          type: array
+          items: { $ref: "#/components/schemas/FileNode" }
+
+    CommentSection:
+      type: object
+      required: [commentId, author, body, created_at, nodes]
+      properties:
+        commentId:  { type: string }
+        author:     { type: string }
+        body:       { type: string }
+        created_at: { type: string, format: date-time }
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/AttachmentNode" }
+
+    InternalFileNode:
+      type: object
+      required: [name, relativePath, filePath, description]
+      properties:
+        name:         { type: string }
+        relativePath: { type: string }
+        filePath:     { type: string }
+        description:  { type: string }
+
+    InternalFolderNode:
+      type: object
+      required: [name, relativePath, files, folders]
+      properties:
+        name:         { type: string }
+        relativePath: { type: string }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/InternalFileNode" }
+        folders:
+          type: array
+          items: { $ref: "#/components/schemas/InternalFolderNode" }
+
+    InternalRoots:
+      type: object
+      required: [files, folders]
+      properties:
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/InternalFileNode" }
+        folders:
+          type: array
+          items: { $ref: "#/components/schemas/InternalFolderNode" }
+
+    VirtualTree:
+      type: object
+      required: [bugAttachments, comments, internalRoots, internalFileCount]
+      properties:
+        bugAttachments:
+          type: array
+          items: { $ref: "#/components/schemas/AttachmentNode" }
+        comments:
+          type: array
+          items: { $ref: "#/components/schemas/CommentSection" }
+        internalRoots:     { $ref: "#/components/schemas/InternalRoots" }
+        internalFileCount: { type: integer }
+
+    ZipEntry:
+      type: object
+      required: [innerPath, extracted]
+      properties:
+        innerPath: { type: string }
+        size:      { type: integer }
+        extracted: { type: boolean }
+        filePath:  { type: string, description: "Set when `extracted` is true." }
+
+    ToolCommandLine:
+      type: object
+      required: [query, success]
+      properties:
+        query:   { type: string }
+        success: { type: boolean }
+        error:   { type: string }
+
+    AgentEvent:
+      type: object
+      description: |
+        Union of all `data:` payloads emitted on analysis SSE streams
+        (`/analyze`, `/lucky`, `/listen`, `/wiki/synthesize`).
+        Discriminate on `type`.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum:
+            - text
+            - done
+            - error
+            - status
+            - session_id
+            - tool_error
+            - tool_command
+            - user_message
+            - analyzing
+            - progress
+        content: { type: string, description: "Present on text/error/status/session_id/tool_error/user_message." }
+        user:    { type: string }
+        clientId: { type: string }
+        skills:
+          type: array
+          items: { type: string }
+        reports:
+          type: array
+          items: { type: string }
+          description: "On `done`, paths of new `agent_notes/*.md` reports written during this turn."
+        commands:
+          type: array
+          description: "On `tool_command`, the per-command results of a `run_commands` tool call."
+          items: { $ref: "#/components/schemas/ToolCommandLine" }
+        mode:
+          type: string
+          description: "On `analyzing`, set to `lucky` for Lucky runs."
+        loaded:  { type: integer, description: "On `progress` (attachment stream)." }
+        total:   { type: integer, description: "On `progress` (attachment stream)." }
+        filePath:
+          type: string
+          description: "On `done` for `/attachment/{attId}/stream`."
+        extractedFiles:
+          type: array
+          items: { type: string }
+          description: "On `done` for `/attachment/{attId}/stream`."
+
+    AttachmentStreamEvent:
+      type: object
+      description: |
+        SSE payload for `/session/{id}/attachment/{attId}/stream`.
+        Subset of `AgentEvent` types: `progress`, `done`, `error`.
+      required: [type]
+      properties:
+        type: { type: string, enum: [progress, done, error] }
+        loaded:  { type: integer }
+        total:   { type: integer }
+        filePath: { type: string }
+        extractedFiles:
+          type: array
+          items: { type: string }
+        content: { type: string }
+
+    WikiSynthesizeDone:
+      type: object
+      required: [type, entry]
+      properties:
+        type: { type: string, const: done }
+        entry:
+          type: object
+          required: [moduleSlug, filename, path, title]
+          properties:
+            moduleSlug: { type: string }
+            filename:   { type: string }
+            path:       { type: string }
+            title:      { type: string }
