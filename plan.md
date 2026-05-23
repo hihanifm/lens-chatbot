@@ -1,37 +1,29 @@
-# Plan: serialize uploads + downloads, shared status bar
+# Plan — code review follow-up fixes (2026-05-22)
 
 ## Goal
-All uploads and downloads run one at a time across the whole app (fully
-serial) to avoid stressing server infra. A second transfer enqueues instead
-of rejecting. A single status bar shows the active transfer plus an
-"N queued" indicator, replacing the separate upload/download banners.
-
-## Design
-- Global FIFO queue. Keep `upload.ts` and `download.ts` as separate stores
-  (singleton `active` each). Both route their work through a shared queue.
-- `start()` still returns a promise that settles on completion; callers
-  already `await` completion, so no behavior change for them.
-- The losing/second call no longer rejects synchronously — it waits.
+Fix 2 security findings + 4 tech-debt items from the app.ts/db.ts review. Skip per-session
+authorization (#3) by decision — keeps the collaborative `/listen` mirror open.
 
 ## Files
-- ADD  `frontend/src/state/transferQueue.ts` — zustand store: `enqueue(task)`,
-  `queued` count, `running` flag. Internal promise chain serializes tasks.
-- EDIT `frontend/src/state/upload.ts` — drop the "already in progress" reject;
-  wrap the real upload in `transferQueue.enqueue(...)`; set `active` only
-  once the task actually starts (so a queued upload isn't shown as active).
-- EDIT `frontend/src/state/download.ts` — same: drop reject, wrap in
-  `enqueue`, set `active` inside the task.
-- ADD  `frontend/src/components/Transfer/Banner.tsx` — single status bar:
-  shows whichever store has an `active`, appends "· N queued" from
-  transferQueue. Reuses existing banner styling.
-- EDIT `frontend/src/App.tsx` — replace `<UploadBanner/>` + `<DownloadBanner/>`
-  with `<TransferBanner/>`.
-- DELETE `frontend/src/components/Upload/Banner.tsx`,
-  `frontend/src/components/Download/Banner.tsx`.
+- `src/db.ts` — `users.updatePinHash`, `sessions.listExpiredBefore`, `sessions.delete`, capped `messages.buildSummary`
+- `src/app.ts` — scrypt user PINs + legacy migration, PIN-gate `POST /settings/llm/models`, `/skills` cache TTL, `/analyze` + `/lucky` concurrency guard
+- `src/services/retention.ts` — NEW: expired-session sweeper
+- `src/index.ts` — wire `startRetentionSweeper()`
 
 ## Steps
-1. Write `transferQueue.ts`.
-2. Rewire `upload.ts` and `download.ts` through the queue.
-3. Build `Transfer/Banner.tsx`.
-4. Swap banners in `App.tsx`; delete old banner files.
-5. `npx tsc --noEmit` in frontend; build; smoke-check in preview.
+1. **Security #1 — API-key leak / SSRF.** Add admin-PIN gate to `POST /settings/llm/models`
+   (matches the other `/settings/*` mutations). Closes the unauthenticated stored-key
+   exfiltration path.
+2. **Security #2 — user PINs.** Hash with scrypt via existing `hashPin`/`verifyPin`. On login,
+   detect legacy unsalted SHA-256 hashes (no `:`), verify, and transparently re-hash. Add
+   `users.updatePinHash`.
+3. **Retention.** New `retention.ts`: `sweepExpiredSessions(days)` deletes sessions older than
+   `SESSION_RETENTION_DAYS` plus their messages and workspace dirs. Default 0 = disabled
+   (opt-in — destructive). Run on startup + every 24h.
+4. **Concurrency guard.** In-memory `Set<sessionId>` of in-flight analyses. `/analyze` and
+   `/lucky` return 409 if the session is already running; released in `finally`.
+5. **`buildSummary` cap.** Limit to last 40 turns, 4000 chars/msg (parity with CLI history).
+6. **`/skills` cache TTL.** 30s expiry on `skillsCache`, matching the documented principle.
+
+## Verify
+`npx tsc --noEmit` (server) + `npm test`.

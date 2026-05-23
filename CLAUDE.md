@@ -96,11 +96,14 @@ src/services/
   workspaceExplorer.ts   ← builds VirtualTree (AttachmentNodes + CommentSections) for file explorer
   wikiService.ts         ← create/list/read troubleshooting wiki entries; buildWikiSynthesisPrompt (uses wiki-synthesis.md template)
 src/agent/
-  agentRunner.ts         ← AgentRunner interface + AgentEvent types
-  agentPrompt.ts         ← buildSystemRules(), buildPrompt(), buildFollowUpPrompt() via composePrompt + fragments
-  clineCoreAgentRunner.ts ← ClineCoreAgentRunner; base.md + rules + environment; prior agent_notes/ reports
-  skillsLoader.ts        ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
-  luckyAnalyzer.ts       ← runLucky(): lucky.md as user question; persists cline_session_id like a normal session
+  agentRunner.ts             ← AgentRunner interface + AgentEvent types
+  agentPrompt.ts             ← buildSystemRules(), buildPrompt(), buildFollowUpPrompt() via composePrompt + fragments
+  clineCoreAgentRunner.ts    ← ClineCoreAgentRunner; base.md + rules + environment; prior agent_notes/ reports
+  cliAgentRunner.ts          ← CliAgentRunner; spawns cline --json subprocess; transcript injection for multi-turn
+  cliOutputParser.ts         ← NDJSON line parser for cline 3.0.10 event stream (hook_event, agent_event types)
+  dispatchingAgentRunner.ts  ← selects concrete runner by engine prefix in cline_session_id or global settings
+  skillsLoader.ts            ← reads skill .md files from SKILLS_DIR(s), parses frontmatter via @cline/sdk
+  luckyAnalyzer.ts           ← runLucky(): lucky.md as user question; persists cline_session_id like a normal session
 skills/                  ← built-in skill files (Cline frontmatter format), baked into Docker at /app/skills
 wiki/                    ← two-level knowledge base: index.md → <module>/index.md → dated entries
 e2e/
@@ -114,7 +117,9 @@ fixtures/                ← static fixture files for tests
 
 ## Key design decisions
 
-**AgentRunner is an interface.** `ClineCoreAgentRunner` is the only implementation. To add CLI fallback: create `clineCliRunner.ts` implementing the same interface, swap one line in `index.ts`. Product code never imports `@cline/sdk` directly (except `clineCoreAgentRunner.ts` and `skillsLoader.ts`).
+**AgentRunner is an interface.** Two concrete implementations exist: `ClineCoreAgentRunner` (in-process Cline SDK) and `CliAgentRunner` (Cline CLI subprocess). `DispatchingAgentRunner` wraps both and selects at call time — new sessions use the globally-configured engine (Settings UI / `agent.engine` in SQLite); follow-up turns unpack the engine prefix from `cline_session_id` so the turn always goes to the runner that owns the session. Product code never imports `@cline/sdk` directly (except `clineCoreAgentRunner.ts` and `skillsLoader.ts`).
+
+**CliAgentRunner**: spawns `cline --json` as a subprocess per turn (one-shot; `--id` resume is incompatible with `--json` mode in cline 3.0.10). Multi-turn context is supplied via transcript injection: when `cliInjectHistory` is enabled (Settings UI or `AgentSettings.cliInjectHistory` in SQLite, default `true`), the last 20 prior turns (≤4000 chars each) are prepended to the prompt via the `user/cli-history` fragment. The CLI command itself is configurable (`AgentSettings.cliCommand`). Session IDs stored in SQLite are prefixed with the engine (`cline-core:…` / `cli:…` — see `packSessionId`/`unpackSessionId` in `db.ts`; unprefixed legacy values resolve to `cline-core`) so `DispatchingAgentRunner` can route follow-ups without an extra DB column.
 
 **BugTracker is an interface.** `MockBugTracker` returns hardcoded data. `InternalBugTracker` stub exists in `bugTracker.ts` — implement the two methods and swap in `index.ts`.
 
@@ -124,7 +129,7 @@ fixtures/                ← static fixture files for tests
 
 **Prompt composition** (two layers):
 1. **System prompt** — Settings / `SYSTEM_PROMPT_SOURCE`: **lens** (default) loads `base.md` as `overridePrompt`; **cline** omits override (SDK default). Domain rules from `fragments/rules/*` via `buildSystemRules()` fill `{{CLINE_RULES}}` in both modes (stable per session).
-2. **User turn** — `buildPrompt()` prepends `environment.md`, then composes `fragments/user/*` (workspace, file list, skills/wiki hints, prior reports, question). Follow-ups use `buildFollowUpPrompt()` (shorter file list + question only).
+2. **User turn** — `buildPrompt()` prepends `environment.md`, then composes `fragments/user/*` (workspace, file list, skills/wiki hints, prior reports, question). Follow-ups use `buildFollowUpPrompt()` (shorter file list + question only). Multiple skills can be selected per query (`selectedSkills: LoadedSkill[]`); each is injected via a `user/selected-skill` fragment spread.
 
 **Ad-hoc sessions**: users can create a session without a bug tracker entry (`POST /session/adhoc` with title/description/optional bugId), then upload files (`POST /session/:id/upload`, up to 20 files, optional `commentLabel`/`commentBody` for grouping in the file explorer). Same workspace layout and analysis flow as tracker-based sessions.
 
@@ -297,7 +302,7 @@ This tool is for engineers. Surface all agent lifecycle events to the UI — mor
 | What | Where | How |
 |------|-------|-----|
 | Bug tracker | `src/index.ts:9` | `new InternalBugTracker()` |
-| Agent runner | `src/index.ts:9` | `new ClineCliAgentRunner()` |
+| Agent engine | Settings UI / SQLite `agent.engine` | `"cline-core"` (ClineCoreAgentRunner) or `"cli"` (CliAgentRunner); `DispatchingAgentRunner` wraps both |
 | LLM model | `.env` → `LLM_MODEL` | any Ollama model name |
 | Skills dirs | `.env` → `SKILLS_DIR` | colon-separated paths |
 | Wiki dir | `.env` → `WIKI_DIR` | shared volume path for team-wide wiki |

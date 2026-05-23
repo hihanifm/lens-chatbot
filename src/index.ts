@@ -7,10 +7,12 @@ import { ClineCoreAgentRunner } from "./agent/clineCoreAgentRunner.js";
 import { CliAgentRunner } from "./agent/cliAgentRunner.js";
 import { DispatchingAgentRunner } from "./agent/dispatchingAgentRunner.js";
 import { installFetchInterceptor } from "./services/httpEgressLogger.js";
+import { startRetentionSweeper } from "./services/retention.js";
 import { settings } from "./db.js";
 import { log } from "./logger.js";
 
 installFetchInterceptor();
+startRetentionSweeper();
 
 // Swap MockBugTracker → InternalBugTracker when API is ready
 const runner = new DispatchingAgentRunner({

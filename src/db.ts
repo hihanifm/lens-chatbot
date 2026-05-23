@@ -84,6 +84,10 @@ export const users = {
   setPreferredModel(id: string, model: string | null): void {
     db.prepare("UPDATE users SET preferred_model = ? WHERE id = ?").run(model, id);
   },
+
+  updatePinHash(id: string, pinHash: string): void {
+    db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(pinHash, id);
+  },
 };
 
 export interface Session {
@@ -175,6 +179,19 @@ export const sessions = {
     if (!row) return undefined;
     return { ...row, selected_files: JSON.parse(row.selected_files as string) };
   },
+
+  /** Sessions created before the given ISO timestamp — used by the retention sweeper. */
+  listExpiredBefore(cutoffIso: string): Session[] {
+    return (db.prepare("SELECT * FROM sessions WHERE created_at < ?").all(cutoffIso) as any[]).map(
+      (r) => ({ ...r, selected_files: JSON.parse(r.selected_files) })
+    );
+  },
+
+  /** Delete a session and its messages. Workspace dir removal is the caller's job. */
+  delete(id: string): void {
+    db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+    db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+  },
 };
 
 export const messages = {
@@ -190,10 +207,12 @@ export const messages = {
       .all(sessionId) as unknown as Message[];
   },
 
-  buildSummary(sessionId: string): string {
+  /** Transcript for LLM consumption — capped to bound prompt size on long sessions. */
+  buildSummary(sessionId: string, maxTurns = 40, maxCharsPerMsg = 4000): string {
     return messages
       .list(sessionId)
-      .map((m) => `${m.role === "user" ? m.user_name : "Assistant"}: ${m.content}`)
+      .slice(-maxTurns)
+      .map((m) => `${m.role === "user" ? m.user_name : "Assistant"}: ${m.content.slice(0, maxCharsPerMsg)}`)
       .join("\n");
   },
 };

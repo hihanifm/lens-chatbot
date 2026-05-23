@@ -112,6 +112,9 @@ async function listDownloadedAttachmentPaths(workspacePath: string): Promise<str
 }
 
 let skillsCache: { name: string; description: string; triggers: string[] }[] | null = null;
+let skillsCacheAt = 0;
+/** Short TTL so live edits to a mounted SKILLS_DIR surface without a restart. */
+const SKILLS_CACHE_TTL_MS = 30_000;
 
 export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -139,6 +142,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   app.use(express.json());
 
   const MAX_UPLOAD_BYTES = parseInt(process.env.UPLOAD_SIZE_LIMIT_MB ?? "500") * 1024 * 1024;
+
+  // Session IDs with an analysis (/analyze or /lucky) currently in flight.
+  // A second concurrent run on the same session would race on cline_session_id.
+  const activeAnalyses = new Set<string>();
 
   function sessionUploadMiddleware(
     req: express.Request,
@@ -180,21 +187,32 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   log.info("web:static-root", { root: webRoot, react: hasReactBuild });
   app.use(express.static(webRoot));
 
-  app.post("/auth", (req, res) => {
+  app.post("/auth", async (req, res) => {
     const { name, pin } = req.body;
     if (!name || !pin) return res.status(400).json({ error: "name and pin required" });
 
-    const pinHash = sha256(String(pin));
+    const pinStr = String(pin);
     const trimmed = String(name).trim().slice(0, 50);
     const existing = users.getByName(trimmed);
 
     if (!existing) {
-      const user = users.create(trimmed, pinHash);
+      const user = users.create(trimmed, await hashPin(pinStr));
       return res.json(user);
     }
-    if (existing.pin_hash !== pinHash) {
-      return res.status(401).json({ error: "Wrong PIN for that name" });
+
+    let ok = false;
+    if (existing.pin_hash.includes(":")) {
+      // scrypt format (salt:hash)
+      ok = await verifyPin(pinStr, existing.pin_hash);
+    } else {
+      // Legacy unsalted SHA-256 — verify in constant time, then transparently
+      // upgrade the stored hash to scrypt on a successful login.
+      const a = Buffer.from(sha256(pinStr), "hex");
+      const b = Buffer.from(existing.pin_hash, "hex");
+      ok = a.length === b.length && timingSafeEqual(a, b);
+      if (ok) users.updatePinHash(existing.id, await hashPin(pinStr));
     }
+    if (!ok) return res.status(401).json({ error: "Wrong PIN for that name" });
     return res.json({ id: existing.id, name: existing.name, created_at: existing.created_at });
   });
 
@@ -563,6 +581,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!user) return res.status(400).json({ error: "userId required" });
     const clientId = (req.query.clientId as string) || randomUUID();
 
+    if (activeAnalyses.has(req.params.id))
+      return res.status(409).json({ error: "an analysis is already in progress for this session" });
+    activeAnalyses.add(req.params.id);
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -675,6 +697,8 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
       broadcast(req.params.id, payload, clientId);
       res.end();
+    } finally {
+      activeAnalyses.delete(req.params.id);
     }
   });
 
@@ -687,6 +711,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     const user = users.getById(req.query.userId as string);
     if (!user) return res.status(400).json({ error: "userId required" });
     const clientId = (req.query.clientId as string) || randomUUID();
+
+    if (activeAnalyses.has(req.params.id))
+      return res.status(409).json({ error: "an analysis is already in progress for this session" });
+    activeAnalyses.add(req.params.id);
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -848,6 +876,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       messages.add(lensSessionId, "assistant", `[Analysis error: ${err.message}]`);
       writeLucky({ type: "error", content: err.message, user: user.name, clientId });
     } finally {
+      activeAnalyses.delete(lensSessionId);
       if (!res.writableEnded) res.end();
     }
   });
@@ -963,13 +992,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
 
   app.get("/skills", async (_req, res) => {
     try {
-      if (!skillsCache) {
+      if (!skillsCache || Date.now() - skillsCacheAt > SKILLS_CACHE_TTL_MS) {
         const skills = await loadAgentSkills();
         skillsCache = skills.map(({ name, description, frontmatter }) => ({
           name,
           description: description ?? "",
           triggers: Array.isArray(frontmatter?.triggers) ? (frontmatter.triggers as string[]) : [],
         }));
+        skillsCacheAt = Date.now();
       }
       res.json(skillsCache);
     } catch (err: any) {
@@ -1025,8 +1055,15 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
   // ── Settings routes ───────────────────────────────────────────────────────────
 
   app.post("/settings/llm/models", async (req, res) => {
-    const { provider, baseUrl, apiKey } = req.body;
+    const { pin, provider, baseUrl, apiKey } = req.body;
     if (!provider) return res.status(400).json({ error: "provider required" });
+
+    // PIN-gated: this route fetches a caller-supplied baseUrl and may fall back
+    // to the stored API key — without a gate that leaks the key to any host.
+    if (!pin) return res.status(400).json({ error: "pin required" });
+    const storedPin = settings.getAdminPinHash();
+    if (!storedPin) return res.status(503).json({ error: "Admin PIN not configured — set ADMIN_PIN in .env" });
+    if (!(await verifyPin(String(pin), storedPin))) return res.status(401).json({ error: "Invalid PIN" });
 
     const url =
       provider === "openai"
