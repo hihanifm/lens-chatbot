@@ -118,7 +118,7 @@ export function Composer({ streaming, onSend, onAbort, onFocus, disabled, select
                   <button
                     type="button"
                     onClick={() => onRemoveFile(path)}
-                    className="ml-0.5 text-emerald-800 hover:text-emerald-900 dark:text-emerald-200 dark:hover:text-emerald-50"
+                    className="ml-1 text-sm font-bold text-emerald-800 hover:text-emerald-900 dark:text-emerald-200 dark:hover:text-emerald-50 cursor-pointer"
                     aria-label={`Remove ${name}`}
                   >
                     ×
