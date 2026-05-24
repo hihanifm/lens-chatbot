@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -6,6 +6,7 @@ import Session from "./pages/Session";
 import Header from "./components/Header";
 import { TransferBanner } from "./components/Transfer/Banner";
 import { WikiBanner } from "./components/Wiki/Banner";
+import { StatusBar } from "./components/StatusBar";
 import { useThemeBootstrap } from "./state/theme";
 import { useAuth } from "./state/auth";
 
@@ -23,8 +24,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function Shell() {
   useThemeBootstrap();
+  const location = useLocation();
+  const onLogin = location.pathname === "/login";
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className={`h-screen flex flex-col overflow-hidden ${onLogin ? "" : "pb-[26px]"}`}>
       <Header />
       <TransferBanner />
       <WikiBanner />
@@ -50,6 +53,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      <StatusBar />
     </div>
   );
 }

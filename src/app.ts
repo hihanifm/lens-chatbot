@@ -27,7 +27,9 @@ import DOMPurify from "isomorphic-dompurify";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
-const OPENAPI_SPEC_PATH = path.resolve(fileURLToPath(import.meta.url), "../../docs/openapi.yaml");
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const OPENAPI_SPEC_PATH = path.resolve(MODULE_DIR, "../docs/openapi.yaml");
+const PACKAGE_JSON_PATH = path.resolve(MODULE_DIR, "../package.json");
 
 /** Read `info.version` from the OpenAPI spec without pulling in a YAML parser dep. */
 function readOpenApiVersion(): string {
@@ -48,7 +50,38 @@ function readGitSha(): string {
   }
 }
 
-const SERVER_BUILD_INFO = { api: readOpenApiVersion(), build: readGitSha() };
+function readPackageJson(): { version?: string; repository?: string | { url?: string } } {
+  try {
+    return JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function normalizeRepoUrl(repository: string | { url?: string } | undefined): string {
+  const raw = typeof repository === "string" ? repository : repository?.url;
+  if (!raw) return "";
+  if (raw.startsWith("git@github.com:")) {
+    const path = raw.slice("git@github.com:".length).replace(/\.git$/i, "");
+    return `https://github.com/${path}`;
+  }
+  return raw.replace(/^git\+/, "").replace(/\.git$/i, "");
+}
+
+const PACKAGE_JSON = readPackageJson();
+const GIT_SHA = readGitSha();
+const SERVER_STARTED_AT = new Date().toISOString();
+
+const SERVER_BUILD_INFO = {
+  api: readOpenApiVersion(),
+  build: GIT_SHA,
+  gitSha: GIT_SHA,
+  appVersion: PACKAGE_JSON.version ?? "unknown",
+  repoUrl: normalizeRepoUrl(PACKAGE_JSON.repository),
+  env: process.env.NODE_ENV ?? "development",
+  startedAt: SERVER_STARTED_AT,
+  nodeVersion: process.version,
+};
 
 /** Wrap sanitized report HTML in a minimal styled standalone document. */
 function renderReportPage(title: string, bodyHtml: string): string {
@@ -175,7 +208,7 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
   return timingSafeEqual(actual, expectedBuf);
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = MODULE_DIR;
 
 export function createApp(tracker: BugTracker, runner: AgentRunner): express.Application {
   const app = express();

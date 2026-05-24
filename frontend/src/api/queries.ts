@@ -25,11 +25,30 @@ export interface SessionDetail {
   downloaded_files: string[];
 }
 
+export interface VersionInfo {
+  api: string;
+  build: string;
+  appVersion: string;
+  gitSha: string;
+  repoUrl: string;
+  env: string;
+  startedAt: string;
+  nodeVersion: string;
+}
+
 export function useSession(id: string | undefined) {
   return useQuery<SessionDetail>({
     queryKey: ["session", id],
     enabled: !!id,
     queryFn: () => api(`/session/${id}`),
+  });
+}
+
+export function useVersion() {
+  return useQuery<VersionInfo>({
+    queryKey: ["version"],
+    queryFn: () => api("/version"),
+    staleTime: 60_000,
   });
 }
 
@@ -116,6 +135,13 @@ export interface LlmSettings {
   cliInjectHistory?: boolean;
 }
 
+export interface LlmModelsProbeInput {
+  pin: string;
+  provider: string;
+  baseUrl?: string;
+  apiKey?: string;
+}
+
 export function useLlmSettings() {
   return useQuery<LlmSettings>({
     queryKey: ["settings", "llm"],
@@ -130,6 +156,12 @@ export function useAvailableModels() {
     staleTime: 30_000,
     // Provider can be unreachable / 502 — fail soft, the picker will fall back to the current model only.
     retry: false,
+  });
+}
+
+export function useProbeLlmModels() {
+  return useMutation<{ models: string[] }, Error, LlmModelsProbeInput>({
+    mutationFn: (vars) => apiJson("/settings/llm/models", vars),
   });
 }
 
@@ -161,7 +193,10 @@ export function useSaveLlmSettings() {
   const qc = useQueryClient();
   return useMutation<LlmSettings, Error, LlmSettings & { pin: string }>({
     mutationFn: (vars) => apiJson("/settings/llm", vars, "PUT"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings", "llm"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "llm"] });
+      qc.invalidateQueries({ queryKey: ["settings", "llm", "models"] });
+    },
   });
 }
 

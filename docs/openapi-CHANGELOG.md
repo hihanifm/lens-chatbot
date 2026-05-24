@@ -8,6 +8,17 @@ each entry mirrors `info.version` in the spec. Format follows
 - **MINOR** — additive change (new route, new optional field)
 - **PATCH** — doc-only change (descriptions, examples)
 
+## [0.2.0] — 2026-05-24
+
+### Added
+
+- `GET /version` `VersionInfo` now documents additive runtime/build fields:
+  `appVersion`, `gitSha`, `repoUrl`, `env`, `startedAt`, `nodeVersion`.
+
+### Changed
+
+- `VersionInfo.build` is clarified as a back-compat alias for `gitSha`.
+
 ## [0.1.0] — 2026-05-23
 
 Initial published spec. Documents the public-facing HTTP surface of `src/app.ts`:

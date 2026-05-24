@@ -1,29 +1,68 @@
-# Plan — code review follow-up fixes (2026-05-22)
+# Plan: Engineering Bottom Bar
 
 ## Goal
-Fix 2 security findings + 4 tech-debt items from the app.ts/db.ts review. Skip per-session
-authorization (#3) by decision — keeps the collaborative `/listen` mirror open.
+Fixed bottom strip on every page (except /login) showing build identity + runtime details. Compact one-line summary; click chevron to expand a panel with all fields. GitHub URL served from `/version`.
 
-## Files
-- `src/db.ts` — `users.updatePinHash`, `sessions.listExpiredBefore`, `sessions.delete`, capped `messages.buildSummary`
-- `src/app.ts` — scrypt user PINs + legacy migration, PIN-gate `POST /settings/llm/models`, `/skills` cache TTL, `/analyze` + `/lucky` concurrency guard
-- `src/services/retention.ts` — NEW: expired-session sweeper
-- `src/index.ts` — wire `startRetentionSweeper()`
+## Backend changes
 
-## Steps
-1. **Security #1 — API-key leak / SSRF.** Add admin-PIN gate to `POST /settings/llm/models`
-   (matches the other `/settings/*` mutations). Closes the unauthenticated stored-key
-   exfiltration path.
-2. **Security #2 — user PINs.** Hash with scrypt via existing `hashPin`/`verifyPin`. On login,
-   detect legacy unsalted SHA-256 hashes (no `:`), verify, and transparently re-hash. Add
-   `users.updatePinHash`.
-3. **Retention.** New `retention.ts`: `sweepExpiredSessions(days)` deletes sessions older than
-   `SESSION_RETENTION_DAYS` plus their messages and workspace dirs. Default 0 = disabled
-   (opt-in — destructive). Run on startup + every 24h.
-4. **Concurrency guard.** In-memory `Set<sessionId>` of in-flight analyses. `/analyze` and
-   `/lucky` return 409 if the session is already running; released in `finally`.
-5. **`buildSummary` cap.** Limit to last 40 turns, 4000 chars/msg (parity with CLI history).
-6. **`/skills` cache TTL.** 30s expiry on `skillsCache`, matching the documented principle.
+### `src/app.ts`
+1. Extend `SERVER_BUILD_INFO` with more fields:
+   - `appVersion` — from `package.json` (read once at startup).
+   - `gitSha` (new key; keep existing `build` for back-compat alias).
+   - `repoUrl` — from `package.json` `repository.url`, normalized to https (strip `git+`, `.git`).
+   - `env` — `process.env.NODE_ENV ?? "development"`.
+   - `startedAt` — ISO timestamp captured at module load.
+   - `nodeVersion` — `process.version`.
+2. Add helper `readPackageJson()` near `readOpenApiVersion()`.
+3. `/version` returns the extended object (keep `api` + `build` keys; add new ones alongside).
 
-## Verify
-`npx tsc --noEmit` (server) + `npm test`.
+No new endpoint — existing `/settings/llm` and `/settings/skills` already expose model, engine, base URL, and skill dirs. Footer fetches what it needs from existing routes.
+
+## Frontend changes
+
+### `frontend/src/api/queries.ts`
+Add `useVersion()` hook → `GET /version`, long `staleTime`.
+
+```ts
+export interface VersionInfo {
+  api: string;
+  build: string;       // back-compat alias for gitSha
+  appVersion: string;
+  gitSha: string;
+  repoUrl: string;
+  env: string;
+  startedAt: string;
+  nodeVersion: string;
+}
+```
+
+### New: `frontend/src/components/StatusBar.tsx`
+- Fixed-position bottom strip (`fixed bottom-0 inset-x-0 z-40`), thin (~26px), monospace, small font, neutral bg with top border.
+- Compact line: `vX.Y.Z · api X.Y.Z · sha · env · model · engine · uptime`.
+- Right side: GitHub link, `/docs` link, chevron toggle.
+- Expanded panel: grid of all fields including `baseUrl`, `userName`, `nodeVersion`, `startedAt`, configured skill dir count.
+- Uses `useVersion()`, `useLlmSettings()`, `useSkillsSettings()`, `useAuth`.
+- Uptime: client computes from `startedAt`, ticks every 30s.
+- Env pill colored: `production` red, `development` amber, else gray.
+- Hide when route is `/login`.
+
+### `frontend/src/App.tsx`
+- Render `<StatusBar />` inside `Shell` after `<main>`.
+- Add bottom padding so content isn't covered.
+
+## Files touched
+- `src/app.ts` — extend `SERVER_BUILD_INFO`, helper, `/version` payload.
+- `frontend/src/api/queries.ts` — `useVersion` + `VersionInfo` type.
+- `frontend/src/components/StatusBar.tsx` — new.
+- `frontend/src/App.tsx` — mount StatusBar, adjust shell padding.
+
+## Verification
+- `npx tsc --noEmit`
+- `npm run build`
+- `curl localhost:38001/version` shows new fields
+- Visual: bar visible on Home + Session; expand works; hidden on /login
+
+## Out of scope
+- No new env-exposing endpoint. Data dir / wiki dir omitted (not on existing public routes).
+- No auth on `/version` — matches existing internal-tool posture.
+- No PIN-gated info in footer.

@@ -5,6 +5,7 @@ import { Input } from "../ui/Input";
 import { cn } from "../../utils/cn";
 import {
   useLlmSettings,
+  useProbeLlmModels,
   useSkillsSettings,
   useSaveLlmSettings,
   useSaveSkillsDirs,
@@ -90,6 +91,7 @@ function AppearanceTab() {
 function LlmTab() {
   const { data } = useLlmSettings();
   const save = useSaveLlmSettings();
+  const probeModels = useProbeLlmModels();
   const [provider, setProvider] = useState("ollama");
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -100,6 +102,7 @@ function LlmTab() {
   const [cliCommand, setCliCommand] = useState("cline");
   const [cliInjectHistory, setCliInjectHistory] = useState(true);
   const [pin, setPin] = useState("");
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
 
   useEffect(() => {
     if (!data) return;
@@ -131,6 +134,20 @@ function LlmTab() {
     );
   };
 
+  const canProbeModels = !probeModels.isPending;
+
+  const fetchModels = () => {
+    probeModels.mutate(
+      {
+        pin,
+        provider,
+        baseUrl: provider === "openai" ? undefined : baseUrl || undefined,
+        apiKey: apiKey || undefined,
+      },
+      { onSuccess: (res) => setFetchedModels(res.models) }
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div>
@@ -147,7 +164,30 @@ function LlmTab() {
       </div>
       <div>
         <label className={fieldLabel}>Model</label>
-        <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="llama3.1:8b" />
+        <div className="flex gap-2">
+          <Input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="llama3.1:8b"
+          />
+          <Button size="sm" onClick={fetchModels} disabled={!canProbeModels}>
+            {probeModels.isPending ? "Fetching…" : "Fetch models"}
+          </Button>
+        </div>
+        {fetchedModels.length > 0 && (
+          <select
+            className={cn(selectClass, "mt-2")}
+            value={fetchedModels.includes(model) ? model : ""}
+            onChange={(e) => setModel(e.target.value)}
+          >
+            <option value="">Select fetched model</option>
+            {fetchedModels.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       {provider !== "openai" && (
         <div>
@@ -243,6 +283,7 @@ function LlmTab() {
           placeholder="Required to save"
         />
       </div>
+      {probeModels.isError && <Banner kind="error">{probeModels.error.message}</Banner>}
       {save.isError && <Banner kind="error">{save.error.message}</Banner>}
       {save.isSuccess && <Banner kind="ok">LLM settings saved.</Banner>}
       <Button
