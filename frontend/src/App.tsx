@@ -6,7 +6,7 @@ import Session from "./pages/Session";
 import Header from "./components/Header";
 import { TransferBanner } from "./components/Transfer/Banner";
 import { WikiBanner } from "./components/Wiki/Banner";
-import { StatusBar } from "./components/StatusBar";
+import { StatusBar, STATUS_BAR_HEIGHT } from "./components/StatusBar";
 import { useThemeBootstrap } from "./state/theme";
 import { useAuth } from "./state/auth";
 
@@ -27,7 +27,7 @@ function Shell() {
   const location = useLocation();
   const onLogin = location.pathname === "/login";
   return (
-    <div className={`h-screen flex flex-col overflow-hidden ${onLogin ? "" : "pb-[26px]"}`}>
+    <div className="h-screen flex flex-col overflow-hidden" style={{ paddingBottom: onLogin ? 0 : STATUS_BAR_HEIGHT }}>
       <Header />
       <TransferBanner />
       <WikiBanner />

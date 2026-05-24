@@ -25,9 +25,9 @@ The public HTTP surface is documented in [`docs/openapi.yaml`](docs/openapi.yaml
 
 - `GET /openapi.yaml` — the spec.
 - `GET /docs` — Redoc renders the spec in a browser tab.
-- `GET /version` — `{ api: <spec version>, build: <git sha> }`. Clients can call this on startup and compare against their pinned major.
+- `GET /version` — `{ api, appVersion, gitSha, build, repoUrl, env, startedAt, nodeVersion }`. `api` and `appVersion` both equal `package.json` version (single source of truth; CI enforces `info.version` === package version). `build` is a back-compat alias for `gitSha`. Clients can compare `api` against their pinned major on startup.
 
-**Versioning.** `info.version` in `docs/openapi.yaml` is the canonical contract version. Patch = doc-only, minor = additive, major = breaking. `npm run openapi:check` (script `scripts/check-openapi.mjs`) lints structure and diffs against the committed `docs/openapi.previous.yaml` snapshot — breaking change without a major bump fails. When bumping, update both `docs/openapi.previous.yaml` and `docs/openapi-CHANGELOG.md`.
+**Versioning.** `package.json` `version` is the **single source of truth** for the whole system. `info.version` in `docs/openapi.yaml` and the `api` / `appVersion` fields in `GET /version` all mirror it. `npm run openapi:check` fails if `info.version` !== `package.json` version, lints structure, and diffs against `docs/openapi.previous.yaml` — breaking change without a major bump fails. When bumping the app version: bump `package.json`, bump `info.version` to match, refresh `docs/openapi.previous.yaml` to the prior released spec, add a `docs/openapi-CHANGELOG.md` entry. Semver still applies to the spec (patch = doc-only, minor = additive, major = breaking) — if the bump can't be done without a breaking spec change, the app version bump must be a major too.
 
 **Scope.** Spec covers read + run analysis + wiki write. Admin/PIN-gated settings routes are intentionally `x-internal` and excluded — they are UI-only and not part of the public contract.
 

@@ -48,7 +48,7 @@ export function useVersion() {
   return useQuery<VersionInfo>({
     queryKey: ["version"],
     queryFn: () => api("/version"),
-    staleTime: 60_000,
+    staleTime: Infinity,
   });
 }
 

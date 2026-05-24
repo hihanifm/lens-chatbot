@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { useLlmSettings, useSkillsSettings, useVersion } from "../api/queries";
 import { useAuth } from "../state/auth";
+
+/** Single source of truth for the bar height — imported by App.tsx for padding. */
+export const STATUS_BAR_HEIGHT = 26; // px
 
 function formatUptime(startedAt: string, nowMs: number): string {
   const startedMs = Date.parse(startedAt);
@@ -55,15 +58,16 @@ export function StatusBar() {
   const model = llm?.model ?? "unknown";
   const engine = llm?.engine ?? "unknown";
   const repoUrl = version?.repoUrl ?? "";
-  const baseUrl = llm?.baseUrl ?? (llm?.provider === "openai" ? "https://api.openai.com/v1" : "unknown");
+  const baseUrl = llm?.baseUrl ?? "—";
   const skillDirCount = skills?.configured?.length ?? 0;
 
   return (
     <>
       {expanded && (
         <div
-          className="fixed inset-x-0 bottom-[26px] z-40 border-t border-gray-300 dark:border-slate-700
+          className="fixed inset-x-0 z-40 border-t border-gray-300 dark:border-slate-700
             bg-gray-50 dark:bg-slate-900/95 px-4 py-3 text-[11px] sm:text-xs font-mono text-gray-700 dark:text-slate-200"
+          style={{ bottom: STATUS_BAR_HEIGHT }}
         >
           <div className="w-full max-w-6xl mx-auto grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
             <div>version: {version?.appVersion ?? "unknown"}</div>
@@ -81,8 +85,9 @@ export function StatusBar() {
         </div>
       )}
       <div
-        className="fixed bottom-0 inset-x-0 z-40 h-[26px] border-t border-gray-300 dark:border-slate-700
+        className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-300 dark:border-slate-700
           bg-gray-100 dark:bg-slate-900 text-[11px] font-mono text-gray-700 dark:text-slate-200"
+        style={{ height: STATUS_BAR_HEIGHT }}
       >
         <div className="w-full max-w-6xl mx-auto h-full px-3 flex items-center justify-between gap-3">
           <div className="min-w-0 truncate">
@@ -97,16 +102,17 @@ export function StatusBar() {
             ) : (
               <span className="opacity-60">GitHub</span>
             )}
-            <Link to="/docs" className="hover:underline">
+            <a href="/docs" target="_blank" rel="noreferrer" className="hover:underline">
               Docs
-            </Link>
+            </a>
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
               className="hover:underline"
               aria-label={expanded ? "Collapse status bar details" : "Expand status bar details"}
+              aria-expanded={expanded}
             >
-              {expanded ? "v" : "^"}
+              {expanded ? "▼" : "▲"}
             </button>
           </div>
         </div>

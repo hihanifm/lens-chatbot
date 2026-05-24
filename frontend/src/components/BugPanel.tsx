@@ -117,10 +117,21 @@ export function BugPanel({
     !!bug?.owner ||
     !!bug?.module ||
     (bug?.comments?.length ?? 0) > 0;
+  const detailsLabel = expanded
+    ? "Hide details"
+    : bug?.comments?.length
+      ? `Show details · ${bug.comments.length} comment${bug.comments.length === 1 ? "" : "s"}`
+      : "Show details";
 
   return (
     <div className="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-4">
-      <div className="flex items-start justify-between gap-4">
+      <div
+        className={
+          "flex items-start justify-between gap-4 " +
+          (hasDetails ? "cursor-pointer select-none" : "")
+        }
+        onClick={hasDetails ? onToggleDetails : undefined}
+      >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-gray-400 dark:text-slate-500">{bugId}</span>
@@ -131,19 +142,12 @@ export function BugPanel({
           </h1>
           {bug && <MetaLine bug={bug} />}
         </div>
-        <div className="shrink-0 flex items-center gap-2">
+        <div
+          className="shrink-0 flex items-center gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
           {hasDetails && (
-            <button
-              type="button"
-              onClick={onToggleDetails}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-1"
-            >
-              {expanded
-                ? "Hide details"
-                : bug?.comments?.length
-                  ? `Show details · ${bug.comments.length} comment${bug.comments.length === 1 ? "" : "s"}`
-                  : "Show details"}
-            </button>
+            <span className="text-xs text-blue-600 dark:text-blue-400 mr-1">{detailsLabel}</span>
           )}
           {actions}
           <button

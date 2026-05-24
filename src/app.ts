@@ -28,19 +28,8 @@ import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const OPENAPI_SPEC_PATH = path.resolve(MODULE_DIR, "../docs/openapi.yaml");
 const PACKAGE_JSON_PATH = path.resolve(MODULE_DIR, "../package.json");
-
-/** Read `info.version` from the OpenAPI spec without pulling in a YAML parser dep. */
-function readOpenApiVersion(): string {
-  try {
-    const head = readFileSync(OPENAPI_SPEC_PATH, "utf8").slice(0, 2048);
-    const m = head.match(/^\s*version:\s*([^\s#]+)/m);
-    return m?.[1] ?? "unknown";
-  } catch {
-    return "unknown";
-  }
-}
+const OPENAPI_SPEC_PATH = path.resolve(MODULE_DIR, "../docs/openapi.yaml");
 
 function readGitSha(): string {
   try {
@@ -72,11 +61,13 @@ const PACKAGE_JSON = readPackageJson();
 const GIT_SHA = readGitSha();
 const SERVER_STARTED_AT = new Date().toISOString();
 
+const APP_VERSION = PACKAGE_JSON.version ?? "unknown";
+
 const SERVER_BUILD_INFO = {
-  api: readOpenApiVersion(),
+  api: APP_VERSION,
   build: GIT_SHA,
   gitSha: GIT_SHA,
-  appVersion: PACKAGE_JSON.version ?? "unknown",
+  appVersion: APP_VERSION,
   repoUrl: normalizeRepoUrl(PACKAGE_JSON.repository),
   env: process.env.NODE_ENV ?? "development",
   startedAt: SERVER_STARTED_AT,

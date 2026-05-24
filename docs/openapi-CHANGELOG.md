@@ -8,6 +8,17 @@ each entry mirrors `info.version` in the spec. Format follows
 - **MINOR** — additive change (new route, new optional field)
 - **PATCH** — doc-only change (descriptions, examples)
 
+## [0.9.0] — 2026-05-24
+
+### Changed
+
+- `info.version` now mirrors `package.json` version as the single source of truth
+  for the whole system (frontend, backend `/version`, OpenAPI spec). CI enforces
+  equality via `npm run openapi:check`.
+- `VersionInfo.api` clarified as an alias for `appVersion`.
+
+No contract changes — additive version bump only.
+
 ## [0.2.0] — 2026-05-24
 
 ### Added

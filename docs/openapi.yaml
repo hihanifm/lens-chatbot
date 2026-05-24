@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Lens Chatbot API
-  version: 0.2.0
+  version: 0.9.0
   summary: HTTP contract for the lens-chatbot bug-troubleshooting service.
   description: |
     Public HTTP surface of the lens-chatbot server (`src/app.ts`).
@@ -807,9 +807,9 @@ components:
       type: object
       required: [api, build, appVersion, gitSha, repoUrl, env, startedAt, nodeVersion]
       properties:
-        api:        { type: string, description: "Mirrors `info.version` of this spec." }
+        api:        { type: string, description: "Alias for `appVersion`. Single source of truth is `package.json` version; `info.version` of this spec and this field all mirror it." }
         build:      { type: string, description: "Back-compat alias for `gitSha`." }
-        appVersion: { type: string, description: "App version from `package.json`." }
+        appVersion: { type: string, description: "App version from `package.json` — the single source of truth for the whole system." }
         gitSha:     { type: string, description: "Git sha of the running server, or `dev` when unknown." }
         repoUrl:    { type: string, description: "Repository URL normalized to https when available." }
         env:        { type: string, description: "Runtime NODE_ENV (defaults to `development`)." }

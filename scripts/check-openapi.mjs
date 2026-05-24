@@ -79,6 +79,14 @@ if (!current.openapi?.startsWith("3.")) fail("openapi must start with '3.'");
 else ok(`openapi ${current.openapi}`);
 if (!current.info?.version) fail("info.version missing");
 else ok(`info.version ${current.info.version}`);
+
+// Single source of truth: openapi info.version must match package.json version.
+const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+if (current.info?.version && pkg.version && current.info.version !== pkg.version) {
+  fail(`info.version (${current.info.version}) must equal package.json version (${pkg.version}) — single source of truth`);
+} else if (current.info?.version === pkg.version) {
+  ok(`info.version matches package.json (${pkg.version})`);
+}
 if (!current.paths || !Object.keys(current.paths).length) fail("paths block is empty");
 else ok(`${Object.keys(current.paths).length} paths`);
 
