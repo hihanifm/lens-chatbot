@@ -3,6 +3,7 @@ import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
 import { SkillPicker, filterSkills } from "./SkillPicker";
 import { SkillChip } from "./SkillChip";
+import { ModelPicker } from "./ModelPicker";
 import { useSkills, type SkillInfo } from "../../api/queries";
 
 interface ComposerProps {
@@ -13,9 +14,11 @@ interface ComposerProps {
   disabled?: boolean;
   selectedFiles?: string[];
   onRemoveFile?: (path: string) => void;
+  /** Logged-in user — drives the per-user model picker. Picker is hidden when null. */
+  userId?: string | null;
 }
 
-export function Composer({ streaming, onSend, onAbort, onFocus, disabled, selectedFiles = [], onRemoveFile }: ComposerProps) {
+export function Composer({ streaming, onSend, onAbort, onFocus, disabled, selectedFiles = [], onRemoveFile, userId }: ComposerProps) {
   const [value, setValue] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SkillInfo[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -95,8 +98,9 @@ export function Composer({ streaming, onSend, onAbort, onFocus, disabled, select
 
   return (
     <div className="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3">
-      {(selectedSkills.length > 0 || selectedFiles.length > 0) && (
-        <div className="mb-2 flex flex-wrap gap-1.5" id="context-bar">
+      {(userId || selectedSkills.length > 0 || selectedFiles.length > 0) && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5" id="context-bar">
+          {userId && <ModelPicker userId={userId} />}
           {selectedSkills.map((s) => (
             <SkillChip key={s.name} name={s.name} onRemove={() => removeSkill(s.name)} />
           ))}
@@ -114,7 +118,7 @@ export function Composer({ streaming, onSend, onAbort, onFocus, disabled, select
                   <button
                     type="button"
                     onClick={() => onRemoveFile(path)}
-                    className="ml-0.5 opacity-60 hover:opacity-100 leading-none"
+                    className="ml-0.5 text-emerald-600 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-100"
                     aria-label={`Remove ${name}`}
                   >
                     ×
