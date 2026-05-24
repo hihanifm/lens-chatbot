@@ -121,6 +121,7 @@ export default function Session() {
               onSend={(q, skills) => send(q, { skills })}
               onAbort={abort}
               onFocus={collapseAll}
+              userId={userId}
               selectedFiles={data.session.selected_files ?? []}
               onRemoveFile={(path) => toggleFile.mutate({ filePath: path, selected: false })}
             />

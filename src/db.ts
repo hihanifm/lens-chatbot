@@ -8,21 +8,27 @@ const DB_PATH = process.env.DATA_DIR
   : "lens-chatbot.db";
 const db = new DatabaseSync(DB_PATH);
 
+// Canonical schema. Pre-alpha — no migration support. Wipe the dev DB
+// (`make dev-clean` / `make dock-clean`) if you pull a schema change.
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL UNIQUE,
-    pin_hash   TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
+    pin_hash        TEXT NOT NULL,
+    preferred_model TEXT,
+    created_at      TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS sessions (
-    id             TEXT PRIMARY KEY,
-    bug_id         TEXT NOT NULL,
-    workspace_path TEXT,
-    selected_files TEXT DEFAULT '[]',
-    status         TEXT DEFAULT 'active',
-    created_at     TEXT NOT NULL
+    id                TEXT PRIMARY KEY,
+    bug_id            TEXT NOT NULL,
+    workspace_path    TEXT,
+    selected_files    TEXT DEFAULT '[]',
+    cline_session_id  TEXT,
+    last_model        TEXT,
+    last_activity_at  TEXT,
+    status            TEXT DEFAULT 'active',
+    created_at        TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS messages (
@@ -30,6 +36,7 @@ db.exec(`
     session_id TEXT NOT NULL,
     role       TEXT NOT NULL,
     content    TEXT NOT NULL,
+    user_name  TEXT DEFAULT 'User',
     created_at TEXT NOT NULL
   );
 
@@ -37,20 +44,10 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
-`);
 
-try {
-  db.exec(`ALTER TABLE messages ADD COLUMN user_name TEXT DEFAULT 'User'`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE sessions ADD COLUMN cline_session_id TEXT`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE sessions ADD COLUMN last_model TEXT`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE users ADD COLUMN preferred_model TEXT`);
-} catch { /* column already exists */ }
+  CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+  CREATE INDEX IF NOT EXISTS idx_sessions_bug_status ON sessions(bug_id, status);
+`);
 
 export interface User {
   id: string;
@@ -97,6 +94,7 @@ export interface Session {
   selected_files: string[];
   cline_session_id?: string;
   last_model?: string;
+  last_activity_at?: string;
   status: string;
   created_at: string;
 }
@@ -115,9 +113,14 @@ export const sessions = {
     const id = randomUUID();
     const now = new Date().toISOString();
     db.prepare(
-      "INSERT INTO sessions (id, bug_id, workspace_path, created_at) VALUES (?, ?, ?, ?)"
-    ).run(id, bugId, workspacePath, now);
+      "INSERT INTO sessions (id, bug_id, workspace_path, last_activity_at, created_at) VALUES (?, ?, ?, ?, ?)"
+    ).run(id, bugId, workspacePath, now, now);
     return sessions.get(id)!;
+  },
+
+  /** Bump `last_activity_at` to now — called by every session mutator and on each user/assistant message. */
+  touch(id: string): void {
+    db.prepare("UPDATE sessions SET last_activity_at = ? WHERE id = ?").run(new Date().toISOString(), id);
   },
 
   get(id: string): Session | undefined {
@@ -148,6 +151,7 @@ export const sessions = {
       JSON.stringify(files),
       id
     );
+    sessions.touch(id);
   },
 
   removeFile(id: string, filePath: string): void {
@@ -158,18 +162,22 @@ export const sessions = {
       JSON.stringify(files),
       id
     );
+    sessions.touch(id);
   },
 
   setClineSessionId(id: string, clineSessionId: string): void {
     db.prepare("UPDATE sessions SET cline_session_id = ? WHERE id = ?").run(clineSessionId, id);
+    sessions.touch(id);
   },
 
   clearClineSessionId(id: string): void {
     db.prepare("UPDATE sessions SET cline_session_id = NULL WHERE id = ?").run(id);
+    sessions.touch(id);
   },
 
   setLastModel(id: string, model: string): void {
     db.prepare("UPDATE sessions SET last_model = ? WHERE id = ?").run(model, id);
+    sessions.touch(id);
   },
 
   findActiveByBugId(bugId: string): Session | undefined {
@@ -180,9 +188,13 @@ export const sessions = {
     return { ...row, selected_files: JSON.parse(row.selected_files as string) };
   },
 
-  /** Sessions created before the given ISO timestamp — used by the retention sweeper. */
+  /**
+   * Sessions whose last activity is older than the given ISO timestamp — used by the
+   * retention sweeper. Falls back to `created_at` for sessions that predate the
+   * `last_activity_at` column (cannot exist under the fresh schema, but defensive).
+   */
   listExpiredBefore(cutoffIso: string): Session[] {
-    return (db.prepare("SELECT * FROM sessions WHERE created_at < ?").all(cutoffIso) as any[]).map(
+    return (db.prepare("SELECT * FROM sessions WHERE COALESCE(last_activity_at, created_at) < ?").all(cutoffIso) as any[]).map(
       (r) => ({ ...r, selected_files: JSON.parse(r.selected_files) })
     );
   },
@@ -199,6 +211,7 @@ export const messages = {
     db.prepare(
       "INSERT INTO messages (session_id, role, content, user_name, created_at) VALUES (?, ?, ?, ?, ?)"
     ).run(sessionId, role, content, userName, new Date().toISOString());
+    sessions.touch(sessionId);
   },
 
   list(sessionId: string): Message[] {

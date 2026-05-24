@@ -123,6 +123,33 @@ export function useLlmSettings() {
   });
 }
 
+export function useAvailableModels() {
+  return useQuery<{ models: string[] }>({
+    queryKey: ["settings", "llm", "models"],
+    queryFn: () => api("/settings/llm/models"),
+    staleTime: 30_000,
+    // Provider can be unreachable / 502 — fail soft, the picker will fall back to the current model only.
+    retry: false,
+  });
+}
+
+export function useUserPreferredModel(userId: string | null) {
+  return useQuery<{ model: string | null }>({
+    queryKey: ["settings", "user-model", userId],
+    enabled: !!userId,
+    queryFn: () => api(`/settings/user/model?userId=${encodeURIComponent(userId!)}`),
+  });
+}
+
+export function useSetUserPreferredModel() {
+  const qc = useQueryClient();
+  return useMutation<{ model: string | null }, Error, { userId: string; model: string | null }>({
+    mutationFn: (vars) => apiJson("/settings/user/model", vars, "PUT"),
+    onSuccess: (_data, vars) =>
+      qc.invalidateQueries({ queryKey: ["settings", "user-model", vars.userId] }),
+  });
+}
+
 export function useSkillsSettings() {
   return useQuery<{ dirs: string[]; env: string[]; extra: string[]; configured: string[] }>({
     queryKey: ["settings", "skills"],

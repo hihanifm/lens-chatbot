@@ -131,7 +131,12 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
  */
 const BUG_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 export function isValidBugId(s: unknown): s is string {
-  return typeof s === "string" && BUG_ID_RE.test(s);
+  if (typeof s !== "string") return false;
+  if (!BUG_ID_RE.test(s)) return false;
+  // Require at least one alphanumeric so that pure-dot segments (".", "..", "...")
+  // — the path-traversal payloads the regex character class would otherwise allow —
+  // are rejected.
+  return /[A-Za-z0-9]/.test(s);
 }
 
 async function listDownloadedAttachmentPaths(workspacePath: string): Promise<string[]> {
