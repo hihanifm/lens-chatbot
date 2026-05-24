@@ -66,8 +66,7 @@ export function StatusBar() {
             bg-gray-50 dark:bg-slate-900/95 px-4 py-3 text-[11px] sm:text-xs font-mono text-gray-700 dark:text-slate-200"
         >
           <div className="w-full max-w-6xl mx-auto grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-            <div>appVersion: {version?.appVersion ?? "unknown"}</div>
-            <div>api: {version?.api ?? "unknown"}</div>
+            <div>version: {version?.appVersion ?? "unknown"}</div>
             <div>gitSha: {version?.gitSha ?? version?.build ?? "dev"}</div>
             <div>env: {env}</div>
             <div>model: {model}</div>
@@ -87,7 +86,7 @@ export function StatusBar() {
       >
         <div className="w-full max-w-6xl mx-auto h-full px-3 flex items-center justify-between gap-3">
           <div className="min-w-0 truncate">
-            v{version?.appVersion ?? "unknown"} · api {version?.api ?? "unknown"} · {sha} ·{" "}
+            v{version?.appVersion ?? "unknown"} · {sha} ·{" "}
             <span className={`inline-flex items-center rounded px-1 ${envClass}`}>{env}</span> · {model} · {engine} · up {uptime}
           </div>
           <div className="shrink-0 flex items-center gap-3">
