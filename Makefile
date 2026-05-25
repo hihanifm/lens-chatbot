@@ -9,19 +9,17 @@ NODE_22_VER    := 22.15.0
 NODE_22_TARBALL := node-v$(NODE_22_VER)-linux-x64.tar.xz
 NODE_22_URL    := https://nodejs.org/dist/v$(NODE_22_VER)/$(NODE_22_TARBALL)
 
-.PHONY: help setup check-node install-node dev ui ui-build dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
+.PHONY: help setup check-node install-node dev dev-ps dev-logs dev-stop dev-clean dock dock-rebuild dock-clean up down build rebuild logs restart ps \
         prod-up prod-down prod-logs prod-build clean test-e2e test-e2e-live sync-cline-system-prompts
 
 help:
 	@echo "Dev modes:                                                   Ports: dev=38001"
 	@echo "  make setup              Install deps + create .env (run once after clone)"
 	@echo "  make install-node       Install Node 22 (nvm → apt → local tarball fallbacks)"
-	@echo "  make dev                Run as plain Node on port 38001 (background, logs → data/dev/dev.log)"
-	@echo "  make ui                 Run the Vite React dev server (HMR) on port 38002, proxying to 38001"
-	@echo "  make ui-build           Build the React UI → frontend/dist (served by the Node server)"
-	@echo "  make dev-ps             Show plain Node dev process status"
-	@echo "  make dev-logs           Tail plain Node dev logs"
-	@echo "  make dev-stop           Stop plain Node dev process"
+	@echo "  make dev                Run backend + Vite UI together (background, logs → data/local/dev.log + ui.log)"
+	@echo "  make dev-ps             Show backend + UI dev process status"
+	@echo "  make dev-logs           Tail backend + UI logs"
+	@echo "  make dev-stop           Stop backend + UI dev processes"
 	@echo "  make dev-clean          Wipe data/local (DB + workspaces)"
 	@echo "  make dock-clean         Wipe data/dev (DB + workspaces)"
 	@echo "  make dock               Run in Docker dev container (port 38001)"
@@ -116,40 +114,87 @@ setup: check-node
 	npm install
 	npm --prefix frontend install
 	@echo ""
-	@echo "Setup complete. Run: make dev  (and 'make ui' for live React HMR)"
+	@echo "Setup complete. Run: make dev"
 
 dev: check-node
 	@mkdir -p ./data/local
-	@[ -d frontend/dist ] || { echo "Building React UI (one-off — use 'make ui' for HMR)..."; $(MAKE) ui-build; }
-	@[ -f ./data/local/dev.pid ] && kill $$(cat ./data/local/dev.pid) 2>/dev/null && echo "Stopped previous process." || true
+	@[ -d frontend/node_modules ] || npm --prefix frontend install
+	@API_PORT=$${PORT:-38001}; UI_PORT=$${UI_PORT:-38002}; \
+	if [ -f ./data/local/dev.pid ]; then \
+		OLD_PID=$$(awk 'NR==1 {print; exit}' ./data/local/dev.pid); \
+		if kill -0 $$OLD_PID 2>/dev/null; then \
+			kill $$OLD_PID 2>/dev/null || true; \
+			echo "Stopped previous process (pid=$$OLD_PID)."; \
+		fi; \
+		rm -f ./data/local/dev.pid; \
+	fi; \
+	if [ -f ./data/local/ui.pid ]; then \
+		OLD_UI_PID=$$(awk 'NR==1 {print; exit}' ./data/local/ui.pid); \
+		if kill -0 $$OLD_UI_PID 2>/dev/null; then \
+			kill $$OLD_UI_PID 2>/dev/null || true; \
+			echo "Stopped previous UI process (pid=$$OLD_UI_PID)."; \
+		fi; \
+		rm -f ./data/local/ui.pid; \
+	fi; \
+	for PORT_TO_USE in $$API_PORT $$UI_PORT; do \
+	ATTEMPTS=0; \
+	while true; do \
+		EXISTING_PID=$$(lsof -nP -iTCP:$$PORT_TO_USE -sTCP:LISTEN -t 2>/dev/null | awk 'NR==1 {print; exit}'); \
+		if [ -z "$$EXISTING_PID" ]; then \
+			break; \
+		fi; \
+		kill $$EXISTING_PID 2>/dev/null || true; \
+		sleep 1; \
+		STILL_PID=$$(lsof -nP -iTCP:$$PORT_TO_USE -sTCP:LISTEN -t 2>/dev/null | awk 'NR==1 {print; exit}'); \
+		if [ "$$STILL_PID" = "$$EXISTING_PID" ]; then \
+			kill -9 $$EXISTING_PID 2>/dev/null || true; \
+			sleep 1; \
+		fi; \
+		ATTEMPTS=$$((ATTEMPTS + 1)); \
+		if [ $$ATTEMPTS -ge 5 ]; then \
+			echo "Failed to free port $$PORT_TO_USE after multiple attempts."; \
+			exit 1; \
+		fi; \
+	done; \
+	done
 	@nohup env PORT=$${PORT:-38001} DATA_DIR=./data/local \
 	  LLM_BASE_URL=$${LLM_BASE_URL:-http://localhost:11434/v1} \
 	  NODE_OPTIONS=--experimental-sqlite \
-	  node node_modules/.bin/tsx src/index.ts \
+	  node node_modules/.bin/tsx --watch src/index.ts \
 	  >> ./data/local/dev.log 2>&1 & echo $$! > ./data/local/dev.pid
-	@echo "Started on http://localhost:38001 (pid=$$(cat ./data/local/dev.pid)) — logs: make dev-logs  stop: make dev-stop"
-
-ui:
-	@[ -d frontend/node_modules ] || npm --prefix frontend install
-	@echo "Vite dev server → http://localhost:38002  (proxying API to http://localhost:38001)"
-	npm --prefix frontend run dev
-
-ui-build:
-	@[ -d frontend/node_modules ] || npm --prefix frontend install
-	npm --prefix frontend run build
+	@nohup env PORT=$${UI_PORT:-38002} npm --prefix frontend run dev -- --host 0.0.0.0 --port $${UI_PORT:-38002} \
+	  >> ./data/local/ui.log 2>&1 & echo $$! > ./data/local/ui.pid
+	@echo "Backend http://localhost:$${PORT:-38001} (pid=$$(awk 'NR==1 {print; exit}' ./data/local/dev.pid)); UI http://localhost:$${UI_PORT:-38002} (pid=$$(awk 'NR==1 {print; exit}' ./data/local/ui.pid))"
+	@echo "Logs: make dev-logs  stop: make dev-stop"
 
 dev-logs:
-	tail -f ./data/local/dev.log
+	tail -f ./data/local/dev.log ./data/local/ui.log
 
 dev-ps:
-	@[ -f ./data/local/dev.pid ] && ps -p $$(cat ./data/local/dev.pid) 2>/dev/null || echo "Not running."
+	@echo "Backend:"
+	@[ -f ./data/local/dev.pid ] && ps -p $$(awk 'NR==1 {print; exit}' ./data/local/dev.pid) 2>/dev/null || echo "  Not running."
+	@echo "UI:"
+	@[ -f ./data/local/ui.pid ] && ps -p $$(awk 'NR==1 {print; exit}' ./data/local/ui.pid) 2>/dev/null || echo "  Not running."
 
 dev-stop:
-	@[ -f ./data/local/dev.pid ] \
-	  && kill $$(cat ./data/local/dev.pid) 2>/dev/null \
-	  && rm -f ./data/local/dev.pid \
-	  && echo "Stopped." \
-	  || echo "Not running."
+	@STOPPED=0; \
+	if [ -f ./data/local/dev.pid ]; then \
+		PID=$$(awk 'NR==1 {print; exit}' ./data/local/dev.pid); \
+		kill $$PID 2>/dev/null || true; \
+		rm -f ./data/local/dev.pid; \
+		STOPPED=1; \
+	fi; \
+	if [ -f ./data/local/ui.pid ]; then \
+		PID=$$(awk 'NR==1 {print; exit}' ./data/local/ui.pid); \
+		kill $$PID 2>/dev/null || true; \
+		rm -f ./data/local/ui.pid; \
+		STOPPED=1; \
+	fi; \
+	if [ $$STOPPED -eq 1 ]; then \
+		echo "Stopped."; \
+	else \
+		echo "Not running."; \
+	fi
 
 dev-clean:
 	rm -rf ./data/local

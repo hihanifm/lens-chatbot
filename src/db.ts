@@ -308,13 +308,19 @@ function readAgentSettingsRow(): Partial<AgentSettings> {
 export const settings = {
   getLlmConfig(): LlmConfig {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'llm'").get() as any;
-    if (row) return JSON.parse(row.value) as LlmConfig;
-    return {
-      provider: (process.env.LLM_PROVIDER ?? "ollama") as LlmConfig["provider"],
-      model: process.env.LLM_MODEL ?? "llama3.1:8b",
-      baseUrl: process.env.LLM_BASE_URL,
-      apiKey: process.env.LLM_API_KEY,
-    };
+    const cfg: LlmConfig = row
+      ? (JSON.parse(row.value) as LlmConfig)
+      : {
+          provider: (process.env.LLM_PROVIDER ?? "ollama") as LlmConfig["provider"],
+          model: process.env.LLM_MODEL ?? "llama3.1:8b",
+          baseUrl: process.env.LLM_BASE_URL,
+          apiKey: process.env.LLM_API_KEY,
+        };
+    // Env always wins for baseUrl — it's infra config (which host Ollama is on),
+    // not a user preference. Lets docker-compose and make dev override without
+    // requiring a settings UI save.
+    if (process.env.LLM_BASE_URL) cfg.baseUrl = process.env.LLM_BASE_URL;
+    return cfg;
   },
 
   setLlmConfig(cfg: LlmConfig): void {

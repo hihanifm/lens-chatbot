@@ -8,6 +8,10 @@ each entry mirrors `info.version` in the spec. Format follows
 - **MINOR** — additive change (new route, new optional field)
 - **PATCH** — doc-only change (descriptions, examples)
 
+## [0.10.0] — 2026-05-24
+
+Version bump tracking `package.json` 0.10.0 release. No spec changes.
+
 ## [0.9.0] — 2026-05-24
 
 ### Changed

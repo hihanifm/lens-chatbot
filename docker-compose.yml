@@ -34,6 +34,7 @@ services:
       WIKI_DIR: /app/wiki
       PROMPTS_DIR: /app/prompts
       PUBLIC_URL: "http://localhost:${DEV_PORT:-38001}"
+      LLM_BASE_URL: "http://host.docker.internal:11434/v1"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -66,6 +67,7 @@ services:
       WIKI_DIR: /app/wiki
       PROMPTS_DIR: /app/prompts
       PUBLIC_URL: "http://localhost:${PROD_PORT:-38000}"
+      LLM_BASE_URL: "http://host.docker.internal:11434/v1"
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"

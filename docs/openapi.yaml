@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Lens Chatbot API
-  version: 0.9.0
+  version: 0.10.0
   summary: HTTP contract for the lens-chatbot bug-troubleshooting service.
   description: |
     Public HTTP surface of the lens-chatbot server (`src/app.ts`).

@@ -665,8 +665,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       selectedSkillNames = [...new Set(rawSkills)].filter((s) => knownNames.has(s));
     }
 
-    const user = users.getById(req.query.userId as string);
-    if (!user) return res.status(400).json({ error: "userId required" });
+    const analyzeUserId = req.query.userId as string;
+    if (!analyzeUserId) return res.status(400).json({ error: "userId required" });
+    const user = users.getById(analyzeUserId);
+    if (!user) return res.status(401).json({ error: "user not found — session may have expired, please log in again" });
     const clientId = (req.query.clientId as string) || randomUUID();
 
     if (activeAnalyses.has(req.params.id))
@@ -798,8 +800,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!session) return res.status(404).json({ error: "session not found" });
     if (!session.workspace_path) return res.status(400).json({ error: "no workspace loaded" });
 
-    const user = users.getById(req.query.userId as string);
-    if (!user) return res.status(400).json({ error: "userId required" });
+    const luckyUserId = req.query.userId as string;
+    if (!luckyUserId) return res.status(400).json({ error: "userId required" });
+    const user = users.getById(luckyUserId);
+    if (!user) return res.status(401).json({ error: "user not found — session may have expired, please log in again" });
     const clientId = (req.query.clientId as string) || randomUUID();
 
     if (activeAnalyses.has(req.params.id))
@@ -819,9 +823,11 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     };
 
     const lensSessionId = req.params.id;
+    log.info("lucky:request", { sessionId: lensSessionId, userId: user.id, clientId });
     let clientDisconnected = false;
     req.on("close", () => {
       clientDisconnected = true;
+      log.info("lucky:client-disconnected", { sessionId: lensSessionId, clientId });
     });
 
     writeStatus("[Lucky] Starting…");
@@ -834,7 +840,10 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
       let luckyExtrasOnDisk = 0;
       try {
         bugJson = JSON.parse(await fs.readFile(path.join(session.workspace_path, "bug.json"), "utf8"));
-      } catch { /* no bug.json — use user-selected_files for Lucky */ }
+        log.info("lucky:bug-json-loaded", { sessionId: lensSessionId, attachmentCount: (bugJson.attachments ?? []).length });
+      } catch (err: any) {
+        log.info("lucky:no-bug-json", { sessionId: lensSessionId, reason: err.message });
+      }
 
       if (bugJson && !clientDisconnected) {
         const maxLuckyAttachments = Number(process.env.MAX_LUCKY_ATTACHMENTS ?? 20);
@@ -852,7 +861,9 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
             try {
               writeStatus(`[Lucky] Downloading ${att.name}...`);
               await downloadAttachment(tracker, session.bug_id, att.id, att.name, session.workspace_path);
+              log.info("lucky:attachment-downloaded", { sessionId: lensSessionId, name: att.name });
             } catch (err: any) {
+              log.warn("lucky:attachment-download-failed", { sessionId: lensSessionId, name: att.name, error: err.message });
               writeStatus(`[Lucky] Skipping ${att.name}: ${err.message}`);
               downloaded = false;
             }
@@ -862,18 +873,23 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
             const extractBaseDir = path.join(session.workspace_path, "attachments", path.basename(att.name, ".zip"));
             try {
               const entries = await listZipContents(attPath, extractBaseDir);
+              log.info("lucky:zip-contents", { sessionId: lensSessionId, zip: att.name, entryCount: entries.length });
               for (const entry of entries) {
                 if (clientDisconnected) break;
                 if (!entry.extracted) {
                   try {
                     writeStatus(`[Lucky] Extracting ${entry.innerPath}...`);
                     candidatePaths.push(await extractZipEntry(attPath, entry.innerPath, extractBaseDir));
-                  } catch { /* skip bad entry */ }
+                  } catch (err: any) {
+                    log.warn("lucky:zip-entry-extract-failed", { sessionId: lensSessionId, zip: att.name, entry: entry.innerPath, error: err.message });
+                  }
                 } else if (entry.filePath) {
                   candidatePaths.push(entry.filePath);
                 }
               }
-            } catch { /* skip unreadable zip */ }
+            } catch (err: any) {
+              log.warn("lucky:zip-read-failed", { sessionId: lensSessionId, zip: att.name, error: err.message });
+            }
           } else {
             candidatePaths.push(attPath);
           }
@@ -884,6 +900,7 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           // anything else stays on disk for the agent to discover via shell if it needs more.
           // If `critical` is empty (skill missing or no critical globs match), fall back to
           // priority+useful so we never send zero files.
+          log.info("lucky:classify-start", { sessionId: lensSessionId, candidateCount: candidatePaths.length });
           const classified = await classifyBatch(candidatePaths, session.workspace_path);
           const criticalFiles = classified.filter((c) => isCritical(c.classification)).map((c) => c.absPath);
           const autoSelectFiles = classified.filter((c) => shouldAutoSelect(c.classification)).map((c) => c.absPath);
@@ -938,13 +955,14 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
           fullResponse += event.content;
           writeLucky({ type: "text", content: event.content, user: user.name, clientId });
         } else if (event.type === "done") {
-          log.info("lucky:done", { sessionId: req.params.id, durationMs: Date.now() - luckyStartedAt, responseLen: fullResponse.length });
+          log.info("lucky:done", { sessionId: req.params.id, durationMs: Date.now() - luckyStartedAt, responseLen: fullResponse.length, clientDisconnected });
           const bubbleText = fullResponse || "[Lucky analysis produced no output]";
           messages.add(req.params.id, "assistant", bubbleText);
           const reports = await listNewAgentReports(updatedSession.workspace_path, reportSnapshot);
           writeLucky({ type: "done", user: user.name, clientId, reports });
           break;
         } else if (event.type === "error") {
+          log.error("lucky:agent-error", { sessionId: req.params.id, error: event.content, durationMs: Date.now() - luckyStartedAt });
           messages.add(req.params.id, "assistant", `[Analysis error: ${event.content}]`);
           writeLucky({ type: "error", content: event.content, user: user.name, clientId });
           break;

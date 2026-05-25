@@ -1,6 +1,6 @@
 {
   "name": "lens-chatbot",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "scripts": {
     "predev": "node -e \"if(+process.versions.node.split('.')[0]<22){console.error('ERROR: Node 22+ required (found '+process.version+')');process.exit(1)}\"",
