@@ -3,15 +3,13 @@ import { Tree } from "./Tree";
 import { UploadPanel } from "./UploadPanel";
 import { Spinner } from "../ui/Spinner";
 import { useWorkspaceFiles, useToggleFile } from "../../api/queries";
-import { ReportModal } from "../Chat/ReportModal";
 
 const WIDTH_KEY = "lens-chatbot:drawer-width";
 const MIN = 260;
-const MAX = 560;
 
 function readWidth(): number {
   const n = Number(localStorage.getItem(WIDTH_KEY));
-  return Number.isFinite(n) && n >= MIN && n <= MAX ? n : 320;
+  return Number.isFinite(n) && n >= MIN ? n : 320;
 }
 
 export function ExplorerDrawer({
@@ -32,7 +30,6 @@ export function ExplorerDrawer({
   const { data: tree, isLoading } = useWorkspaceFiles(sessionId, open);
   const toggle = useToggleFile(sessionId);
   const selected = new Set(selectedFiles);
-  const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   const onToggle = useCallback(
     (filePath: string, isSelected: boolean) => {
@@ -42,30 +39,15 @@ export function ExplorerDrawer({
   );
 
   const onOpen = useCallback((filePath: string) => {
-    setPreviewPath(filePath);
-  }, []);
-
-  const previewReport = previewPath
-    ? {
-        name: previewPath.split("/").pop() || previewPath,
-        relativePath: previewPath,
-        size: 0,
-      }
-    : null;
-
-  useEffect(() => {
-    if (!open) setPreviewPath(null);
-  }, [open]);
-
-  useEffect(() => {
-    setPreviewPath(null);
+    const url = `/session/${sessionId}/workspace/download?filePath=${encodeURIComponent(filePath)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   }, [sessionId]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
       // Drawer is anchored to the right edge.
-      const next = Math.min(MAX, Math.max(MIN, window.innerWidth - e.clientX));
+      const next = Math.min(window.innerWidth, Math.max(MIN, window.innerWidth - e.clientX));
       setWidth(next);
     };
     const onUp = () => {
@@ -130,12 +112,6 @@ export function ExplorerDrawer({
         )}
       </div>
       <UploadPanel sessionId={sessionId} bugId={bugId} />
-      <ReportModal
-        open={!!previewPath}
-        onClose={() => setPreviewPath(null)}
-        sessionId={sessionId}
-        report={previewReport}
-      />
     </aside>
   );
 }
