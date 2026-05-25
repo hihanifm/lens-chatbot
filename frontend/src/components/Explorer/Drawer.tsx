@@ -3,6 +3,7 @@ import { Tree } from "./Tree";
 import { UploadPanel } from "./UploadPanel";
 import { Spinner } from "../ui/Spinner";
 import { useWorkspaceFiles, useToggleFile } from "../../api/queries";
+import { ReportModal } from "../Chat/ReportModal";
 
 const WIDTH_KEY = "lens-chatbot:drawer-width";
 const MIN = 260;
@@ -31,6 +32,7 @@ export function ExplorerDrawer({
   const { data: tree, isLoading } = useWorkspaceFiles(sessionId, open);
   const toggle = useToggleFile(sessionId);
   const selected = new Set(selectedFiles);
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   const onToggle = useCallback(
     (filePath: string, isSelected: boolean) => {
@@ -38,6 +40,26 @@ export function ExplorerDrawer({
     },
     [toggle]
   );
+
+  const onOpen = useCallback((filePath: string) => {
+    setPreviewPath(filePath);
+  }, []);
+
+  const previewReport = previewPath
+    ? {
+        name: previewPath.split("/").pop() || previewPath,
+        relativePath: previewPath,
+        size: 0,
+      }
+    : null;
+
+  useEffect(() => {
+    if (!open) setPreviewPath(null);
+  }, [open]);
+
+  useEffect(() => {
+    setPreviewPath(null);
+  }, [sessionId]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -98,10 +120,22 @@ export function ExplorerDrawer({
           </div>
         )}
         {tree && (
-          <Tree tree={tree} sessionId={sessionId} selected={selected} onToggle={onToggle} />
+          <Tree
+            tree={tree}
+            sessionId={sessionId}
+            selected={selected}
+            onToggle={onToggle}
+            onOpen={onOpen}
+          />
         )}
       </div>
       <UploadPanel sessionId={sessionId} bugId={bugId} />
+      <ReportModal
+        open={!!previewPath}
+        onClose={() => setPreviewPath(null)}
+        sessionId={sessionId}
+        report={previewReport}
+      />
     </aside>
   );
 }

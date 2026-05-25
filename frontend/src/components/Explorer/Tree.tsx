@@ -16,9 +16,11 @@ interface TreeProps {
   sessionId: string;
   selected: Set<string>;
   onToggle: (filePath: string, selected: boolean) => void;
+  onOpen?: (filePath: string) => void;
 }
 
 type ToggleFn = (filePath: string, selected: boolean) => void;
+type OpenFn = (filePath: string) => void;
 
 function pendingItems(nodes: AttachmentNode[]): DownloadItem[] {
   return nodes
@@ -31,12 +33,14 @@ export function FileRow({
   filePath,
   selected,
   onToggle,
+  onOpen,
   hint,
 }: {
   name: string;
   filePath: string;
   selected: Set<string>;
   onToggle: ToggleFn;
+  onOpen?: OpenFn;
   hint?: string;
 }) {
   const isOn = selected.has(filePath);
@@ -51,7 +55,19 @@ export function FileRow({
         checked={isOn}
         onChange={(e) => onToggle(filePath, e.target.checked)}
       />
-      <span className="truncate text-gray-700 dark:text-slate-200">{name}</span>
+      <button
+        type="button"
+        onClick={(e) => e.preventDefault()}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpen?.(filePath);
+        }}
+        className="truncate text-left text-gray-700 dark:text-slate-200 hover:underline"
+        title="Double-click to open"
+      >
+        {name}
+      </button>
       {hint && (
         <span className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{hint}</span>
       )}
@@ -64,11 +80,13 @@ function AttachmentRow({
   sessionId,
   selected,
   onToggle,
+  onOpen,
 }: {
   node: AttachmentNode;
   sessionId: string;
   selected: Set<string>;
   onToggle: ToggleFn;
+  onOpen?: OpenFn;
 }) {
   if (node.isZip) {
     return (
@@ -80,6 +98,7 @@ function AttachmentRow({
         downloaded={node.downloaded}
         selected={selected}
         onToggle={onToggle}
+        onOpen={onOpen}
       />
     );
   }
@@ -98,6 +117,7 @@ function AttachmentRow({
       filePath={node.filePath}
       selected={selected}
       onToggle={onToggle}
+      onOpen={onOpen}
     />
   );
 }
@@ -143,12 +163,14 @@ function AttachmentSection({
   sessionId,
   selected,
   onToggle,
+  onOpen,
 }: {
   title: string;
   nodes: AttachmentNode[];
   sessionId: string;
   selected: Set<string>;
   onToggle: ToggleFn;
+  onOpen?: OpenFn;
 }) {
   const qc = useQueryClient();
   const start = useDownload((s) => s.start);
@@ -177,6 +199,7 @@ function AttachmentSection({
           sessionId={sessionId}
           selected={selected}
           onToggle={onToggle}
+          onOpen={onOpen}
         />
       ))}
     </Section>
@@ -187,10 +210,12 @@ function InternalFolder({
   folder,
   selected,
   onToggle,
+  onOpen,
 }: {
   folder: InternalFolderNode;
   selected: Set<string>;
   onToggle: ToggleFn;
+  onOpen?: OpenFn;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -206,7 +231,13 @@ function InternalFolder({
       {open && (
         <div className="pl-4">
           {folder.folders.map((f) => (
-            <InternalFolder key={f.relativePath} folder={f} selected={selected} onToggle={onToggle} />
+            <InternalFolder
+              key={f.relativePath}
+              folder={f}
+              selected={selected}
+              onToggle={onToggle}
+              onOpen={onOpen}
+            />
           ))}
           {folder.files.map((f) => (
             <FileRow
@@ -215,6 +246,7 @@ function InternalFolder({
               filePath={f.filePath}
               selected={selected}
               onToggle={onToggle}
+              onOpen={onOpen}
               hint={f.description}
             />
           ))}
@@ -229,17 +261,25 @@ function InternalSection({
   count,
   selected,
   onToggle,
+  onOpen,
 }: {
   roots: InternalRoots;
   count: number;
   selected: Set<string>;
   onToggle: ToggleFn;
+  onOpen?: OpenFn;
 }) {
   if (count === 0) return null;
   return (
     <Section title="Workspace Internals" count={count} defaultOpen={false}>
       {roots.folders.map((f) => (
-        <InternalFolder key={f.relativePath} folder={f} selected={selected} onToggle={onToggle} />
+        <InternalFolder
+          key={f.relativePath}
+          folder={f}
+          selected={selected}
+          onToggle={onToggle}
+          onOpen={onOpen}
+        />
       ))}
       {roots.files.map((f) => (
         <FileRow
@@ -248,6 +288,7 @@ function InternalSection({
           filePath={f.filePath}
           selected={selected}
           onToggle={onToggle}
+          onOpen={onOpen}
           hint={f.description}
         />
       ))}
@@ -255,7 +296,7 @@ function InternalSection({
   );
 }
 
-export function Tree({ tree, sessionId, selected, onToggle }: TreeProps) {
+export function Tree({ tree, sessionId, selected, onToggle, onOpen }: TreeProps) {
   const hasAny =
     tree.bugAttachments.length > 0 ||
     tree.comments.length > 0 ||
@@ -278,6 +319,7 @@ export function Tree({ tree, sessionId, selected, onToggle }: TreeProps) {
           sessionId={sessionId}
           selected={selected}
           onToggle={onToggle}
+          onOpen={onOpen}
         />
       )}
       {tree.comments.map((c) => (
@@ -288,6 +330,7 @@ export function Tree({ tree, sessionId, selected, onToggle }: TreeProps) {
           sessionId={sessionId}
           selected={selected}
           onToggle={onToggle}
+          onOpen={onOpen}
         />
       ))}
       <InternalSection
@@ -295,6 +338,7 @@ export function Tree({ tree, sessionId, selected, onToggle }: TreeProps) {
         count={tree.internalFileCount}
         selected={selected}
         onToggle={onToggle}
+        onOpen={onOpen}
       />
     </div>
   );

@@ -12,6 +12,7 @@ interface ZipNodeProps {
   downloaded: boolean;
   selected: Set<string>;
   onToggle: (filePath: string, selected: boolean) => void;
+  onOpen?: (filePath: string) => void;
 }
 
 // A zip attachment — contents are listed lazily on expand, individual entries
@@ -24,6 +25,7 @@ export function ZipNode({
   downloaded,
   selected,
   onToggle,
+  onOpen,
 }: ZipNodeProps) {
   const [open, setOpen] = useState(false);
   const { data, isLoading } = useZipContents(sessionId, open ? zipPath ?? null : null);
@@ -85,9 +87,25 @@ export function ZipNode({
                     Extract
                   </button>
                 )}
-                <span className="truncate text-gray-700 dark:text-slate-200">
-                  {entry.innerPath}
-                </span>
+                {entry.extracted && entry.filePath ? (
+                  <button
+                    type="button"
+                    onClick={(e) => e.preventDefault()}
+                    onDoubleClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpen?.(entry.filePath!);
+                    }}
+                    className="truncate text-left text-gray-700 dark:text-slate-200 hover:underline"
+                    title="Double-click to open"
+                  >
+                    {entry.innerPath}
+                  </button>
+                ) : (
+                  <span className="truncate text-gray-700 dark:text-slate-200">
+                    {entry.innerPath}
+                  </span>
+                )}
               </div>
             );
           })}
