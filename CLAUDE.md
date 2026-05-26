@@ -51,7 +51,7 @@ make restart         # down + up without rebuild
 make logs            # tail dev container logs
 make prod-up         # build + start prod stack (port 38000)
 
-npm test                 # unit tests (node:test via tsx --test) — llmSanitize, workspaceExplorer, workspacePaths, agentReports, db.agentSettings
+npm test                 # unit tests (node:test via tsx --test) — llmSanitize, workspaceExplorer, workspacePaths, agentReports, db.agentSettings, cliOutputParser, dispatchingAgentRunner, app.bugId
 npm run test:e2e         # Playwright e2e suite (spins up real Express + MockBugTracker + StubAgentRunner)
 npm run test:e2e:ui      # same, with Playwright UI
 npm run test:e2e:live    # live suite against real Ollama (see playwright.live.config.ts)
@@ -80,6 +80,9 @@ Key env vars:
 | `PRIOR_REPORTS_LIMIT` | `3` | Cap on prior `agent_notes/*.md` reports loaded into each chat-path analyze turn (newest first). Set `0` to disable. Lucky's first turn always skips priors; follow-ups go through `/analyze` and load priors normally. |
 | `DATA_DIR` | `/app/data` (Docker), CWD (local) | Workspaces, DB, wiki root |
 | `SESSION_RETENTION_DAYS` | `0` (disabled) | When > 0, the retention sweeper (`src/services/retention.ts`) deletes sessions older than this many days, plus their messages and workspace dirs. Opt-in only — the sweep is destructive. Runs on startup and every 24h. |
+| `LLM_SANITIZE` | `1` (on) | Master switch for PII/telecom redaction (`llmSanitize.ts`). Set to `0` to disable all rules. |
+| `LLM_SANITIZE_STRICT` | `1` (on) | Enables stricter redaction patterns (IP addresses, UUIDs, device IDs). Set to `0` to disable. |
+| `LLM_SANITIZE_JWT` | `1` (on) | Redacts JWT tokens from text sent to LLMs. Set to `0` to disable. |
 
 Additional make targets:
 
@@ -98,9 +101,12 @@ make clean       # remove containers, volumes, prune images
 ```
 frontend/                ← React + Vite + Tailwind SPA (the UI). `npm run ui:build` → frontend/dist
   src/pages/             ← Login, Home, Session
-  src/components/        ← Header, Sidebar, BugPanel, Chat/*, Explorer/*, Settings/*, Wiki/*, Lucky/*, ui/*
+  src/components/        ← Header, Sidebar, BugPanel, Chat/*, Explorer/*, Settings/*, Wiki/*, Lucky/*, Presence/*, Transfer/*, ui/*
+                           Chat/EngineeringLog.tsx  ← collapsible per-turn agent trace (status events + tool commands); auto-expands while streaming
+                           Presence/Bar.tsx         ← avatar row fed by useListen presence events
+                           Transfer/Banner.tsx      ← global upload+download progress banner; serial queue via state/transferQueue
   src/hooks/             ← useAnalyze (analyze+lucky SSE), useListen (presence + remote mirror)
-  src/state/             ← zustand stores: auth, theme (light default), sessions, upload
+  src/state/             ← zustand stores: auth, theme (light default), sessions, upload, download, transferQueue, wiki
   src/api/               ← fetch client + react-query hooks + shared types
 static/login.html        ← legacy fallback page; the React app serves /login itself
 src/index.ts             ← entry point: wires MockBugTracker + ClineCoreAgentRunner, calls createApp()
@@ -119,6 +125,9 @@ src/prompts/
 src/services/
   bugTracker.ts          ← BugTracker interface + MockBugTracker + InternalBugTracker stub
   attachmentService.ts   ← workspace creation, file download, bug_summary.md write
+  bugSummarizer.ts       ← LLM-based synthesis of bug_summary.md via ClineCore inline (not the agent runner)
+  attachmentFilter.ts    ← classifies attachments as critical/priority/useful/skip/oversize; reads JSON rules from skills/attachment-filter.md with 30s cache; falls back to DEFAULT_RULES
+  llmSanitize.ts         ← regex PII/telecom redaction applied to questions and transcripts before LLM; env-controlled (LLM_SANITIZE, LLM_SANITIZE_STRICT, LLM_SANITIZE_JWT)
   workspaceExplorer.ts   ← builds VirtualTree (AttachmentNodes + CommentSections) for file explorer
   wikiService.ts         ← create/list/read troubleshooting wiki entries; buildWikiSynthesisPrompt (uses wiki-synthesis.md template)
 src/agent/
@@ -137,6 +146,7 @@ e2e/
   live.spec.ts           ← live tests against real Ollama (DATA_DIR=./e2e/.live-data)
   server.ts              ← stub test server
   liveServer.ts          ← live test server
+  global-setup.live.ts   ← preflight: checks Ollama connectivity and model availability before live suite
   stubAgentRunner.ts     ← AgentRunner stub that emits predictable "E2E mock analysis" reply
 fixtures/                ← static fixture files for tests
 ```
@@ -204,7 +214,7 @@ DATA_DIR/workspaces/BUG-ID/
 
 A 🗂 Files drawer in the UI lets users browse all workspace files grouped by the bug comment that uploaded them, and toggle individual files into or out of the agent context. **Workspace Internals** lists `bug.json`, `bug_summary.md`, and a collapsible `agent_notes/` tree (`internalRoots` on `GET /workspace/files`) — not a flat file list; `attachments/` stays under Bug Attachments only.
 
-**Upload progress**: local file uploads (adhoc create or Files drawer) show a global `#upload-banner` below the header with bug ID, filename, MB progress, and phase (`Uploading` / `Saving on server…`). Progress stays visible when switching sessions or with the drawer closed. Only one in-flight upload per session. Server streams multipart bodies to `workspace/.upload-tmp/` via multer `diskStorage`, then renames into `attachments/` (not memory buffers).
+**Transfer progress**: `Transfer/Banner.tsx` shows a global banner below the header for both uploads and downloads. Transfers run serially via `state/transferQueue`; at most one is active with a "· N queued" suffix for waiting transfers. Progress persists across session switches and drawer toggles. Server streams multipart upload bodies to `workspace/.upload-tmp/` via multer `diskStorage`, then renames into `attachments/` (not memory buffers).
 
 **Zip behavior**: zips are no longer auto-extracted on download. The zip file is saved to disk; contents are listed lazily when the user expands the zip node. Individual entries are extracted to disk when the user clicks `[Extract]`; adding to agent context is a separate step via `[+ Add]`.
 
@@ -254,17 +264,29 @@ Wiki endpoints:
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /auth` | Login with `{ name, pin }` → returns `{ userId }` |
+| `GET /users/:id` | Get user info |
 | `POST /session/adhoc` | Create ad-hoc session (`{ title, description?, bugId? }`) |
 | `POST /session/:id/refresh-bug` | Re-fetch bug details from tracker |
 | `POST /session/:id/abort` | Abort current in-progress agent analysis |
 | `POST /session/:id/stop` | Stop agent and clear `cline_session_id` (resets to fresh session) |
 | `GET /session/:id/lucky` | SSE stream: structured RCA via `LuckyAnalyzer` |
+| `GET /session/:id/report?filePath=…` | Render an `agent_notes/*.md` file as a styled standalone HTML page (used by ReportModal) |
+| `GET /session/:id/attachment/download` | Download a workspace attachment by path |
+| `GET /session/:id/workspace/download` | Download the entire workspace as a zip |
+| `GET /session/:id/workspace/file` | Read a single workspace file as text |
+| `GET /session/:id/attachment/:attId/stream` | Stream attachment content as SSE (used by DownloadButton for large files) |
+| `GET /session/:id/wiki/synthesize` | Trigger LLM wiki-entry synthesis for a session |
 | `GET /skills` | List all loaded skills with frontmatter (name, description, triggers) |
 | `GET /settings/llm` | Current LLM config (API key redacted to last 4 chars) |
 | `PUT /settings/llm` | Update LLM config (requires PIN) |
 | `POST /settings/llm/models` | List available models from the upstream LLM provider |
+| `GET /settings/llm/models` | Cached model list from last successful fetch |
+| `GET /settings/user/model` | Per-user model preference |
+| `PUT /settings/user/model` | Update per-user model preference (backing the ModelPicker in Composer) |
 | `GET /settings/skills` | Skills dirs: `configured` (env + DB merge), `env`, `extra`, `dirs` (alias for `extra`) |
 | `PUT /settings/skills` | Update extra skill directories (requires PIN, paths must exist) |
+| `GET /settings/features` | Read feature flags |
+| `PUT /settings/features` | Update feature flags (requires PIN) |
 | `PUT /settings/admin/pin` | Change admin PIN (requires current PIN) |
 
 ## Skills system

@@ -519,10 +519,6 @@ export function createApp(tracker: BugTracker, runner: AgentRunner): express.App
     if (!filePath) return res.status(403).json({ error: "path outside workspace" });
     const name = path.basename(filePath);
     const inline = req.query.disposition !== "attachment";
-    const ext = path.extname(name).toLowerCase();
-    const contentType =
-      ext === ".md" ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8";
-    res.setHeader("Content-Type", contentType);
     res.setHeader(
       "Content-Disposition",
       `${inline ? "inline" : "attachment"}; filename="${name.replace(/"/g, "%22")}"`,

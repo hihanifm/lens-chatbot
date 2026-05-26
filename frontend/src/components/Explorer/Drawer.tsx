@@ -39,7 +39,7 @@ export function ExplorerDrawer({
   );
 
   const onOpen = useCallback((filePath: string) => {
-    const url = `/session/${sessionId}/workspace/download?filePath=${encodeURIComponent(filePath)}`;
+    const url = `/session/${sessionId}/workspace/file?filePath=${encodeURIComponent(filePath)}&disposition=inline`;
     window.open(url, "_blank", "noopener,noreferrer");
   }, [sessionId]);
 
