@@ -35,6 +35,12 @@ The public HTTP surface is documented in [`docs/openapi.yaml`](docs/openapi.yaml
 
 Future phases (TS SDK, MCP server, release automation) live in [`docs/integration-plan.md`](docs/integration-plan.md).
 
+## Versioning
+
+- Single source of truth: `package.json` version propagates to OpenAPI spec (`info.version`), backend (`GET /version`), and frontend.
+- When bumping versions, update `package.json` only; `npm run openapi:check` enforces consistency across surfaces in CI.
+- Always verify type-checks pass after version-related changes: `npx tsc --noEmit`.
+
 ## Dev commands
 
 ```bash
