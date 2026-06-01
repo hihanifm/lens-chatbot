@@ -65,12 +65,17 @@ function isUnderWorkspace(workspacePath: string, resolved: string): boolean {
   return resolved === path.resolve(workspacePath) || resolved.startsWith(root);
 }
 
+function reportsDescription(fileName: string): string {
+  if (fileName.endsWith(".md")) return "Agent report saved for future reference";
+  return "Report artifact";
+}
+
 function agentNotesDescription(fileName: string): string {
   if (fileName.startsWith("http-egress-") && fileName.endsWith(".json")) {
     return "HTTP egress log (raw wire-level LLM call, redacted)";
   }
   if (fileName.endsWith(".md")) {
-    return "Agent report saved for future reference";
+    return "Agent scratchpad note";
   }
   if (fileName.startsWith("llm-request-") && fileName.endsWith(".json")) {
     return "LLM request payload logged for this turn";
@@ -100,6 +105,7 @@ function countInternalFolderFiles(folder: InternalFolderNode): number {
 async function buildInternalFolder(
   workspacePath: string,
   relativeDir: string,
+  descriptionFn: (name: string) => string = agentNotesDescription,
 ): Promise<InternalFolderNode> {
   const absDir = path.resolve(workspacePath, relativeDir);
   if (!isUnderWorkspace(workspacePath, absDir)) {
@@ -131,10 +137,10 @@ async function buildInternalFolder(
         name: entry.name,
         relativePath,
         filePath: abs,
-        description: agentNotesDescription(entry.name),
+        description: descriptionFn(entry.name),
       });
     } else if (entry.isDirectory()) {
-      folders.push(await buildInternalFolder(workspacePath, rel));
+      folders.push(await buildInternalFolder(workspacePath, rel, descriptionFn));
     }
   }
 
@@ -186,6 +192,10 @@ async function buildInternalRoots(workspacePath: string): Promise<InternalRoots>
   }
 
   const folders: InternalFolderNode[] = [];
+  const reportsDir = path.join(workspacePath, "reports");
+  if (await fileExists(reportsDir)) {
+    folders.push(await buildInternalFolder(workspacePath, "reports", reportsDescription));
+  }
   const agentNotesDir = path.join(workspacePath, "agent_notes");
   if (await fileExists(agentNotesDir)) {
     folders.push(await buildInternalFolder(workspacePath, "agent_notes"));

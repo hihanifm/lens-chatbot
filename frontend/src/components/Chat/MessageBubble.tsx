@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { cn } from "../../utils/cn";
 import { fmtTime } from "../../utils/time";
 import { EngineeringLog } from "./EngineeringLog";
 import { Markdown } from "../ui/Markdown";
-import type { ChatMessage } from "./types";
+import { ReportModal } from "./ReportModal";
+import type { ChatMessage, ReportRef } from "./types";
 
 export type { ChatMessage } from "./types";
 
@@ -16,7 +18,8 @@ function SkillChip({ name }: { name: string }) {
   );
 }
 
-export function MessageBubble({ msg }: { msg: ChatMessage; sessionId?: string }) {
+export function MessageBubble({ msg, sessionId }: { msg: ChatMessage; sessionId?: string }) {
+  const [openReport, setOpenReport] = useState<ReportRef | null>(null);
 
   if (msg.role === "englog") {
     return <EngineeringLog lines={msg.logLines ?? []} streaming={msg.streaming} />;
@@ -80,6 +83,30 @@ export function MessageBubble({ msg }: { msg: ChatMessage; sessionId?: string })
       <span className="text-[11px] text-gray-400 dark:text-slate-600 px-1 mt-0.5">
         {msg.streaming ? "…" : fmtTime(msg.createdAt ?? Date.now())}
       </span>
+      {!isUser && !msg.streaming && msg.reports && msg.reports.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5 px-1">
+          {msg.reports.map((r) => (
+            <button
+              key={r.relativePath}
+              onClick={() => setOpenReport(r)}
+              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full
+                bg-slate-100 text-slate-600 border border-slate-200
+                hover:bg-slate-200 hover:text-slate-800
+                dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700
+                dark:hover:bg-slate-700 dark:hover:text-slate-100
+                transition-colors"
+            >
+              <span aria-hidden>📄</span> {r.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <ReportModal
+        open={openReport !== null}
+        onClose={() => setOpenReport(null)}
+        sessionId={sessionId ?? ""}
+        report={openReport}
+      />
     </div>
   );
 }

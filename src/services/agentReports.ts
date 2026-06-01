@@ -42,7 +42,7 @@ async function collectAgentNoteMdPaths(
 }
 
 export async function snapshotAgentReportPaths(workspacePath: string): Promise<Set<string>> {
-  const paths = await collectAgentNoteMdPaths(workspacePath, "agent_notes");
+  const paths = await collectAgentNoteMdPaths(workspacePath, "reports");
   return new Set(paths);
 }
 
@@ -50,7 +50,7 @@ export async function listNewAgentReports(
   workspacePath: string,
   before: Set<string>,
 ): Promise<AgentReportFile[]> {
-  const paths = await collectAgentNoteMdPaths(workspacePath, "agent_notes");
+  const paths = await collectAgentNoteMdPaths(workspacePath, "reports");
   const reports: AgentReportFile[] = [];
 
   for (const relativePath of paths) {
